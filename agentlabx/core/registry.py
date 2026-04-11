@@ -20,13 +20,13 @@ class PluginRegistry:
     """Central registry for all plugin types."""
 
     def __init__(self) -> None:
-        self._plugins: dict[PluginType, dict[str, type]] = {}
+        self._plugins: dict[PluginType, dict[str, Any]] = {}
 
     def register(
         self,
         plugin_type: PluginType,
         name: str,
-        cls: type,
+        cls: Any,
         *,
         override: bool = False,
     ) -> None:
@@ -39,7 +39,7 @@ class PluginRegistry:
             raise ValueError(msg)
         bucket[name] = cls
 
-    def resolve(self, plugin_type: PluginType, name: str) -> type:
+    def resolve(self, plugin_type: PluginType, name: str) -> Any:
         bucket = self._plugins.get(plugin_type, {})
         if name not in bucket:
             available = list(bucket.keys())
@@ -50,11 +50,11 @@ class PluginRegistry:
     def has_plugin(self, plugin_type: PluginType, name: str) -> bool:
         return name in self._plugins.get(plugin_type, {})
 
-    def list_plugins(self, plugin_type: PluginType) -> dict[str, type]:
+    def list_plugins(self, plugin_type: PluginType) -> dict[str, Any]:
         return dict(self._plugins.get(plugin_type, {}))
 
     def register_decorator(self, plugin_type: PluginType, name: str) -> Any:
-        def wrapper(cls: type) -> type:
+        def wrapper(cls: Any) -> Any:
             self.register(plugin_type, name, cls)
             return cls
 
