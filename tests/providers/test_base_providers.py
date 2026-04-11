@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
-import pytest
+
 from agentlabx.providers.code_agent.base import BaseCodeAgent, CodeContext, CodeResult
 from agentlabx.providers.execution.base import BaseExecutionBackend, ExecutionResult
 from agentlabx.providers.llm.base import BaseLLMProvider, LLMResponse
@@ -9,8 +10,12 @@ from agentlabx.providers.storage.base import BaseStorageBackend
 
 
 class DummyLLMProvider(BaseLLMProvider):
-    async def query(self, *, model: str, prompt: str, system_prompt: str = "", temperature: float = 0.0) -> LLMResponse:
-        return LLMResponse(content="dummy response", tokens_in=10, tokens_out=5, model=model, cost=0.001)
+    async def query(
+        self, *, model: str, prompt: str, system_prompt: str = "", temperature: float = 0.0
+    ) -> LLMResponse:
+        return LLMResponse(
+            content="dummy response", tokens_in=10, tokens_out=5, model=model, cost=0.001
+        )
 
 
 class TestBaseLLMProvider:
@@ -24,7 +29,9 @@ class TestBaseLLMProvider:
 
 class DummyExecutionBackend(BaseExecutionBackend):
     async def execute(self, *, code: str, workspace: Path, timeout: int = 120) -> ExecutionResult:
-        return ExecutionResult(success=True, stdout="output", stderr="", exit_code=0, execution_time=1.5)
+        return ExecutionResult(
+            success=True, stdout="output", stderr="", exit_code=0, execution_time=1.5
+        )
 
     async def cleanup(self, workspace: Path) -> None:
         pass
@@ -53,7 +60,9 @@ class DummyStorageBackend(BaseStorageBackend):
     async def load_state(self, session_id: str, stage: str) -> dict[str, Any] | None:
         return self._store.get(f"{session_id}/{stage}")
 
-    async def save_artifact(self, session_id: str, artifact_type: str, name: str, data: bytes) -> str:
+    async def save_artifact(
+        self, session_id: str, artifact_type: str, name: str, data: bytes
+    ) -> str:
         key = f"{session_id}/{artifact_type}/{name}"
         self._store[key] = data
         return key

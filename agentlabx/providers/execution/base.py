@@ -1,7 +1,10 @@
 """Base execution backend contract."""
+
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 from pydantic import BaseModel
 
 
@@ -15,7 +18,9 @@ class ExecutionResult(BaseModel):
 
 class BaseExecutionBackend(ABC):
     @abstractmethod
-    async def execute(self, *, code: str, workspace: Path, timeout: int = 120) -> ExecutionResult: ...
+    async def execute(
+        self, *, code: str, workspace: Path, timeout: int = 120
+    ) -> ExecutionResult: ...
 
     @abstractmethod
     async def cleanup(self, workspace: Path) -> None: ...

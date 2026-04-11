@@ -1,0 +1,4 @@
+# Superpowers Agent Cache
+.superpowers/*
+
+*.pyc

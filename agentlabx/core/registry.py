@@ -43,10 +43,7 @@ class PluginRegistry:
         bucket = self._plugins.get(plugin_type, {})
         if name not in bucket:
             available = list(bucket.keys())
-            msg = (
-                f"Plugin '{name}' not found under {plugin_type.value}. "
-                f"Available: {available}"
-            )
+            msg = f"Plugin '{name}' not found under {plugin_type.value}. Available: {available}"
             raise KeyError(msg)
         return bucket[name]
 
@@ -60,4 +57,5 @@ class PluginRegistry:
         def wrapper(cls: type) -> type:
             self.register(plugin_type, name, cls)
             return cls
+
         return wrapper

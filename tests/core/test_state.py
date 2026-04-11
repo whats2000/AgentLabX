@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from agentlabx.core.state import (
-    AgentMessage,
     CostTracker,
     CrossStageRequest,
     EvidenceLink,
     ExperimentResult,
     Hypothesis,
-    PipelineState,
     ReproducibilityRecord,
-    StageError,
     Transition,
     create_initial_state,
 )
@@ -58,7 +55,7 @@ class TestReproducibilityRecord:
             random_seed=42,
             environment_hash="abc123",
             run_command="python train.py --seed 42",
-            timestamp=datetime(2026, 4, 12, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 12, tzinfo=UTC),
         )
         assert rec.random_seed == 42
         assert rec.container_image is None
@@ -71,7 +68,7 @@ class TestExperimentResult:
             random_seed=42,
             environment_hash="abc123",
             run_command="python train.py",
-            timestamp=datetime(2026, 4, 12, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 12, tzinfo=UTC),
         )
         result = ExperimentResult(
             tag="baseline",
@@ -121,7 +118,7 @@ class TestTransition:
             to_stage="data_preparation",
             reason="Dataset quality issues found",
             triggered_by="agent",
-            timestamp=datetime(2026, 4, 12, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 12, tzinfo=UTC),
         )
         assert t.triggered_by == "agent"
 
@@ -146,9 +143,7 @@ class TestCreateInitialState:
         assert state["transition_log"] == []
 
     def test_state_has_all_stage_output_keys(self):
-        state = create_initial_state(
-            session_id="s1", user_id="u1", research_topic="test"
-        )
+        state = create_initial_state(session_id="s1", user_id="u1", research_topic="test")
         for key in [
             "literature_review",
             "plan",

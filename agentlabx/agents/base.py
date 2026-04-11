@@ -1,9 +1,13 @@
 """Base agent contract with differentiated memory scopes."""
+
 from __future__ import annotations
+
 import fnmatch
 from abc import ABC, abstractmethod
 from typing import Any
+
 from pydantic import BaseModel
+
 from agentlabx.tools.base import BaseTool
 
 
@@ -27,7 +31,15 @@ class AgentContext(BaseModel):
 
 
 class BaseAgent(ABC):
-    def __init__(self, *, name: str, role: str, system_prompt: str, tools: list[BaseTool], memory_scope: MemoryScope) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        role: str,
+        system_prompt: str,
+        tools: list[BaseTool],
+        memory_scope: MemoryScope,
+    ) -> None:
         self.name = name
         self.role = role
         self.system_prompt = system_prompt

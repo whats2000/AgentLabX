@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Any
+
 import pytest
+
 from agentlabx.core.state import PipelineState, create_initial_state
 from agentlabx.stages.base import BaseStage, StageContext, StageResult
 
@@ -60,16 +61,35 @@ class TestStageResult:
         assert result.requests is None
 
     def test_backtrack_with_hint(self):
-        result = StageResult(output={}, status="backtrack", next_hint="data_preparation", reason="Data quality issues", feedback="Need cleaner dataset")
+        result = StageResult(
+            output={},
+            status="backtrack",
+            next_hint="data_preparation",
+            reason="Data quality issues",
+            feedback="Need cleaner dataset",
+        )
         assert result.status == "backtrack"
         assert result.next_hint == "data_preparation"
 
     def test_negative_result(self):
-        result = StageResult(output={"finding": "no significant improvement"}, status="negative_result", reason="CoT did not improve accuracy beyond baseline")
+        result = StageResult(
+            output={"finding": "no significant improvement"},
+            status="negative_result",
+            reason="CoT did not improve accuracy beyond baseline",
+        )
         assert result.status == "negative_result"
 
     def test_request_status(self):
         from agentlabx.core.state import CrossStageRequest
-        req = CrossStageRequest(from_stage="report_writing", to_stage="experimentation", request_type="experiment", description="Need ablation study", status="pending")
-        result = StageResult(output={}, status="request", reason="Missing ablation for paper", requests=[req])
+
+        req = CrossStageRequest(
+            from_stage="report_writing",
+            to_stage="experimentation",
+            request_type="experiment",
+            description="Need ablation study",
+            status="pending",
+        )
+        result = StageResult(
+            output={}, status="request", reason="Missing ablation for paper", requests=[req]
+        )
         assert len(result.requests) == 1

@@ -1,7 +1,10 @@
 """Base code agent contract for external code generation."""
+
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 from pydantic import BaseModel
 
 
@@ -26,7 +29,9 @@ class BaseCodeAgent(ABC):
     async def generate(self, task: str, context: CodeContext, workspace: Path) -> CodeResult: ...
 
     @abstractmethod
-    async def edit(self, instruction: str, files: list[Path], context: CodeContext) -> CodeResult: ...
+    async def edit(
+        self, instruction: str, files: list[Path], context: CodeContext
+    ) -> CodeResult: ...
 
     @abstractmethod
     async def debug(self, error: str, files: list[Path], execution_log: str) -> CodeResult: ...

@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import pytest
+
 from agentlabx.agents.base import AgentContext, BaseAgent, MemoryScope
 
 
@@ -50,27 +52,45 @@ class IncompleteAgent(BaseAgent):
 class TestBaseAgent:
     def test_concrete_agent_instantiates(self):
         scope = MemoryScope(read=["plan.*"], write=["experiment_code"])
-        agent = DummyAgent(name="test_agent", role="test role", system_prompt="You are a test agent.", tools=[], memory_scope=scope)
+        agent = DummyAgent(
+            name="test_agent",
+            role="test role",
+            system_prompt="You are a test agent.",
+            tools=[],
+            memory_scope=scope,
+        )
         assert agent.name == "test_agent"
         assert agent.role == "test role"
 
     def test_abstract_agent_cannot_instantiate(self):
         with pytest.raises(TypeError):
-            IncompleteAgent(name="x", role="x", system_prompt="x", tools=[], memory_scope=MemoryScope())
+            IncompleteAgent(
+                name="x", role="x", system_prompt="x", tools=[], memory_scope=MemoryScope()
+            )
 
     async def test_inference_returns_string(self):
-        agent = DummyAgent(name="test", role="test", system_prompt="test", tools=[], memory_scope=MemoryScope())
+        agent = DummyAgent(
+            name="test", role="test", system_prompt="test", tools=[], memory_scope=MemoryScope()
+        )
         ctx = AgentContext(phase="experimentation", state={}, working_memory={})
         result = await agent.inference("hello", ctx)
         assert result == "Response to: hello"
 
     def test_get_context_default(self):
-        agent = DummyAgent(name="test", role="test", system_prompt="You are a test.", tools=[], memory_scope=MemoryScope())
+        agent = DummyAgent(
+            name="test",
+            role="test",
+            system_prompt="You are a test.",
+            tools=[],
+            memory_scope=MemoryScope(),
+        )
         ctx_str = agent.get_context("experimentation")
         assert "You are a test." in ctx_str
 
     def test_reset_clears_history(self):
-        agent = DummyAgent(name="test", role="test", system_prompt="test", tools=[], memory_scope=MemoryScope())
+        agent = DummyAgent(
+            name="test", role="test", system_prompt="test", tools=[], memory_scope=MemoryScope()
+        )
         agent.conversation_history.append({"role": "user", "content": "hello"})
         assert len(agent.conversation_history) == 1
         agent.reset()
