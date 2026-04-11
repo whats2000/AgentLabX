@@ -1,0 +1,155 @@
+"""Tests for session manager: SessionPreferences, Session, SessionManager."""
+
+from __future__ import annotations
+
+import pytest
+
+from agentlabx.core.session import (
+    Session,
+    SessionManager,
+    SessionPreferences,
+    SessionStatus,
+)
+
+
+class TestSessionPreferences:
+    def test_defaults(self):
+        prefs = SessionPreferences()
+        assert prefs.mode == "auto"
+        assert prefs.stage_controls == {}
+        assert prefs.backtrack_control == "auto"
+
+    def test_get_stage_control_default(self):
+        prefs = SessionPreferences()
+        assert prefs.get_stage_control("literature_review") == "auto"
+
+    def test_get_stage_control_custom(self):
+        prefs = SessionPreferences(stage_controls={"experimentation": "hitl"})
+        assert prefs.get_stage_control("experimentation") == "hitl"
+        assert prefs.get_stage_control("literature_review") == "auto"
+
+    def test_update_returns_new_instance(self):
+        prefs = SessionPreferences()
+        updated = prefs.update(mode="hitl", backtrack_control="hitl")
+        assert updated.mode == "hitl"
+        assert updated.backtrack_control == "hitl"
+        # Original unchanged
+        assert prefs.mode == "auto"
+
+    def test_update_stage_controls(self):
+        prefs = SessionPreferences()
+        updated = prefs.update(stage_controls={"peer_review": "hitl"})
+        assert updated.stage_controls["peer_review"] == "hitl"
+
+
+class TestSession:
+    def test_create_session(self):
+        session = Session(
+            session_id="sess-001",
+            user_id="user-001",
+            research_topic="Scaling laws",
+        )
+        assert session.session_id == "sess-001"
+        assert session.user_id == "user-001"
+        assert session.research_topic == "Scaling laws"
+        assert session.status == SessionStatus.CREATED
+
+    def test_status_transitions(self):
+        session = Session(
+            session_id="sess-001",
+            user_id="user-001",
+            research_topic="Test",
+        )
+        session.start()
+        assert session.status == SessionStatus.RUNNING
+
+        session.pause()
+        assert session.status == SessionStatus.PAUSED
+
+        session.resume()
+        assert session.status == SessionStatus.RUNNING
+
+        session.complete()
+        assert session.status == SessionStatus.COMPLETED
+
+    def test_fail_transition(self):
+        session = Session(
+            session_id="sess-001",
+            user_id="user-001",
+            research_topic="Test",
+        )
+        session.start()
+        session.fail()
+        assert session.status == SessionStatus.FAILED
+
+    def test_invalid_transition_raises(self):
+        session = Session(
+            session_id="sess-001",
+            user_id="user-001",
+            research_topic="Test",
+        )
+        # Can't pause from CREATED
+        with pytest.raises((ValueError, RuntimeError)):
+            session.pause()
+
+    def test_update_preferences_while_running(self):
+        session = Session(
+            session_id="sess-001",
+            user_id="user-001",
+            research_topic="Test",
+        )
+        session.start()
+        new_prefs = SessionPreferences(mode="hitl")
+        session.update_preferences(new_prefs)
+        assert session.preferences.mode == "hitl"
+
+
+class TestSessionManager:
+    def setup_method(self):
+        self.manager = SessionManager()
+
+    def test_create_session(self):
+        session = self.manager.create_session(
+            user_id="user-001",
+            research_topic="Scaling laws",
+        )
+        assert session.session_id is not None
+        assert session.user_id == "user-001"
+        assert session.research_topic == "Scaling laws"
+        assert session.status == SessionStatus.CREATED
+
+    def test_get_session(self):
+        session = self.manager.create_session(
+            user_id="user-001",
+            research_topic="Test",
+        )
+        retrieved = self.manager.get_session(session.session_id)
+        assert retrieved is session
+
+    def test_get_nonexistent_raises(self):
+        with pytest.raises((KeyError, ValueError)):
+            self.manager.get_session("nonexistent-id")
+
+    def test_list_sessions(self):
+        s1 = self.manager.create_session(user_id="user-001", research_topic="T1")
+        s2 = self.manager.create_session(user_id="user-002", research_topic="T2")
+        all_sessions = self.manager.list_sessions()
+        assert s1 in all_sessions
+        assert s2 in all_sessions
+
+    def test_list_by_user(self):
+        s1 = self.manager.create_session(user_id="user-001", research_topic="T1")
+        s2 = self.manager.create_session(user_id="user-001", research_topic="T2")
+        s3 = self.manager.create_session(user_id="user-002", research_topic="T3")
+        user_sessions = self.manager.list_sessions(user_id="user-001")
+        assert s1 in user_sessions
+        assert s2 in user_sessions
+        assert s3 not in user_sessions
+
+    def test_unique_ids(self):
+        sessions = [
+            self.manager.create_session(user_id="user-001", research_topic=f"T{i}")
+            for i in range(10)
+        ]
+        ids = [s.session_id for s in sessions]
+        assert len(set(ids)) == 10
