@@ -54,8 +54,9 @@ agentlabx/
     base.py              # BaseStage ABC — run(), validate(), on_enter(), on_exit()
     literature_review.py
     plan_formulation.py
-    data_preparation.py
-    experimentation.py
+    data_exploration.py  # EDA, data quality analysis — can trigger plan revision
+    data_preparation.py  # Cleaning, feature engineering, pipeline code
+    experimentation.py   # Baselines → main experiments → ablations (enforced)
     results_interpretation.py
     report_writing.py
     peer_review.py
@@ -209,8 +210,10 @@ The pipeline is NOT a linear production line. It models how real research labs w
 **Zone-based collaboration:**
 
 - **Discovery Zone** (Literature Review + Plan Formulation) — PhD student and postdoc explore the problem space
-- **Implementation Zone** (Data Preparation + Experimentation) — engineers build and iterate
+- **Implementation Zone** (Data Exploration + Data Preparation + Experimentation) — engineers analyze data, build, and iterate
 - **Synthesis Zone** (Interpretation + Report Writing + Peer Review) — team synthesizes results
+
+**Cross-cutting capabilities:** Literature search is both a stage (dedicated deep dive in Discovery) AND a tool available to all agents in all stages. Any agent can invoke `arxiv_search` or `semantic_scholar` mid-workflow — discovering a critical baseline paper during experimentation or a missing citation during report writing is normal research behavior.
 
 **Transition rules:**
 
@@ -219,6 +222,7 @@ The pipeline is NOT a linear production line. It models how real research labs w
 | Within a zone | Agents move freely — self-loop, iterate, peer handoff. No approval needed. |
 | Forward between zones | Automatic on stage completion |
 | Backward across zones | Auto mode: PI agent decides. HITL mode: human approves. Always logged. |
+| Targeted requests | Any stage can emit `experiment_requests` or `literature_requests` to other stages without a full backtrack (e.g., report writing says "we need one more ablation study" → feeds to experimentation as a targeted task). |
 
 ### 3.2 Stage Architecture
 
@@ -233,11 +237,18 @@ Stage exit returns a `StageResult`:
 ```python
 class StageResult:
     output: Any           # Stage output data
-    status: Literal["done", "backtrack"]
+    status: Literal["done", "backtrack", "negative_result", "request"]
     next_hint: str | None # Suggested next stage
     reason: str           # Why this decision
     feedback: str | None  # Context for target stage
+    requests: list[CrossStageRequest] | None  # Targeted requests to other stages
 ```
+
+**Status semantics:**
+- `done` — stage completed successfully, advance
+- `backtrack` — stage needs an earlier stage re-run with feedback
+- `negative_result` — experiment conclusively showed no significant improvement. This is a valid research outcome, not a failure. The PI agent decides: publish the negative finding, pivot the hypothesis, or try a different approach.
+- `request` — stage completed but needs targeted work from another stage (e.g., report writing needs one more ablation study from experimentation). Not a full backtrack — the requesting stage pauses and resumes when the request is fulfilled.
 
 ### 3.3 PI Agent — Intelligent Transition Handler
 
@@ -249,10 +260,14 @@ When a stage exits, the PI agent evaluates: "Given the research goals, what we'v
 - Advance to next stage (normal flow)
 - Send back to a specific stage with targeted feedback
 - Request additional iteration within current stage
+- Accept a negative result as a valid finding worth reporting
+- Pivot the active hypothesis based on accumulated evidence
 - Recommend completion
 - Flag for human review (uncertain decision)
 
-**Override priority:** human override > hard limits (iteration caps, cost ceiling) > PI agent judgment > stage self-assessment > default sequence.
+**PI agent resilience:** The PI agent includes a confidence score with each decision. If confidence is below a configurable threshold, the system falls back to the default sequence rather than acting on a low-confidence routing decision. PI decision accuracy is tracked over the session (did backtracks actually improve outcomes? did "advance" decisions lead to successful completions?) for observability and future tuning.
+
+**Override priority:** human override > hard limits (iteration caps, cost ceiling) > PI agent judgment (if confident) > default sequence fallback (if PI uncertain) > stage self-assessment.
 
 In HITL mode, the PI agent still makes a recommendation, but the human has final say. Switching modes doesn't change the architecture.
 
@@ -265,14 +280,22 @@ class PipelineState(TypedDict):
     user_id: str
     research_topic: str
 
+    # Hypothesis tracking — the scientific backbone of the session
+    hypotheses: list[Hypothesis]  # See §3.5
+
     # Stage outputs (versioned — each re-run appends, not overwrites)
     literature_review: list[LitReviewResult]
     plan: list[ResearchPlan]
+    data_exploration: list[EDAResult]       # EDA findings, data quality reports
     dataset_code: list[str]
-    experiment_results: list[ExperimentResult]
+    experiment_results: list[ExperimentResult]  # See §3.6 for required fields
     interpretation: list[str]
     report: list[ReportResult]
     review: list[ReviewResult]
+
+    # Cross-stage requests (targeted, not full backtracks)
+    pending_requests: list[CrossStageRequest]
+    completed_requests: list[CrossStageRequest]
 
     # Pipeline control
     current_stage: str
@@ -300,7 +323,64 @@ class PipelineState(TypedDict):
 
 Stage outputs are **versioned** — when a stage runs multiple times, results append to a list. The latest entry is the "active" version used by downstream stages. Previous versions remain for comparison.
 
-### 3.5 Two Execution Modes
+### 3.5 Hypothesis Tracking
+
+Real research is hypothesis-driven. The pipeline explicitly tracks hypotheses as first-class state:
+
+```python
+class Hypothesis:
+    id: str
+    statement: str                              # "Chain-of-thought with 5-shot examples will improve MATH accuracy by >5%"
+    status: Literal["active", "supported", "refuted", "abandoned"]
+    evidence_for: list[EvidenceLink]            # Links to experiment results supporting this
+    evidence_against: list[EvidenceLink]        # Links to experiment results contradicting this
+    parent_hypothesis: str | None               # If this was derived from pivoting another
+    created_at_stage: str                       # Which stage proposed it
+    resolved_at_stage: str | None               # Which stage resolved it
+
+class EvidenceLink:
+    experiment_result_index: int                # Points to experiment_results[i]
+    metric: str                                 # "accuracy", "f1", etc.
+    value: float
+    interpretation: str                         # "Accuracy improved by 4.8%, supporting H1"
+```
+
+The PI agent uses hypothesis status as structured input for routing decisions: "H1 is refuted — should we abandon this line entirely, or is there a variant worth testing?" This is far more rigorous than reading summaries.
+
+Plan formulation proposes initial hypotheses. Experimentation links results to hypotheses. Interpretation updates hypothesis status. The PI agent tracks which hypotheses are active when making transition decisions.
+
+### 3.6 Experimentation — Internal Structure
+
+The experimentation stage has required internal phases that enforce scientific rigor:
+
+1. **Baselines** — establish what "no improvement" looks like. The stage cannot exit `done` without at least one baseline result. Baselines are linked to the null hypothesis.
+2. **Main experiments** — test the active hypotheses against the baselines.
+3. **Ablation studies** — systematically remove/modify components to understand what actually contributes to improvements. Required before the stage can exit `done` if main experiments show positive results.
+
+This is enforced via stage validation: `ExperimentationStage.validate()` checks that `experiment_results` contains at least one entry tagged as `baseline` and, if positive results exist, at least one tagged as `ablation`.
+
+### 3.7 Reproducibility
+
+Every `ExperimentResult` automatically captures reproducibility metadata:
+
+```python
+class ExperimentResult:
+    # ... output fields ...
+    reproducibility: ReproducibilityRecord
+
+class ReproducibilityRecord:
+    random_seed: int                    # Exact seed used
+    environment_hash: str               # Hash of Python environment (pip freeze)
+    run_command: str                     # Exact command that produced this result
+    container_image: str | None          # Docker image tag if containerized
+    git_ref: str | None                  # Commit hash of referenced code
+    dependencies_snapshot: dict          # Frozen dependency versions
+    timestamp: datetime
+```
+
+The execution backend captures these automatically — the researcher doesn't need to think about it. Results are reproducible by re-running `run_command` with the same `random_seed` in an environment matching `environment_hash`.
+
+### 3.8 Two Execution Modes
 
 **Full Automatic:** Agents run autonomously. Each stage decides when it's done and what comes next. Safety nets: per-stage iteration limits, global cost ceiling, cycle detection, full transition log.
 
@@ -342,14 +422,19 @@ memory_scope:
 
 **Agent memory scopes:**
 
-| Agent | Sees | Does NOT see |
-|---|---|---|
-| **PI Agent** | All stage summaries, transition history, budget, review feedback, past decisions | Implementation code, raw data, individual conversations |
-| **Professor** | Full lit review, experiment metrics, report drafts, review feedback | Raw experiment code, data preprocessing, debug logs |
-| **Postdoc** | Lit review summary, full plan (owns it), experiment design, results with analysis | Low-level code, infrastructure details |
-| **PhD Student** | Full paper texts, detailed notes, plan details, experiment results, professor guidance | Infrastructure/DevOps, other sessions |
-| **ML Engineer** | Plan methodology, full experiment code (owns it), execution logs, dataset schema | Full papers, report drafts, review commentary |
-| **SW Engineer** | Data requirements, dataset code (owns it), data validation, ML engineer requests | Literature, experiment methodology, reports |
+Scopes use `read` (full access), `summarize` (abstracted view), and no entry (no access). The goal is differentiated depth, NOT silos. Real research teams share context — the difference is how much detail each role needs.
+
+| Agent | Full access | Summarized access | No access |
+|---|---|---|---|
+| **PI Agent** | Transition history, budget, review feedback, hypothesis status, past decisions | All stage outputs (summary level) | Implementation code, raw data, individual agent conversations |
+| **Professor** | Full lit review, report drafts, review feedback | Experiment results (metrics + interpretation), plan (methodology) | Raw code, debug logs, data preprocessing steps |
+| **Postdoc** | Full plan (owns it), experiment design, results with analysis, lit review | Implementation code (approach summary) | Infrastructure config, debug logs |
+| **PhD Student** | Full paper texts, detailed notes, plan details, experiment results, professor guidance | Implementation code (approach + results) | Infrastructure/DevOps, other sessions |
+| **ML Engineer** | Plan methodology, full experiment code (owns it), execution logs, dataset schema | Literature review (abstracts + key findings), report (results section) | Full paper texts, report writing drafts, professor-student conversations |
+| **SW Engineer** | Data requirements, dataset code (owns it), data validation, ML engineer data requests | Plan (data requirements), experiment methodology (what data shape is needed) | Full literature, report drafts, review commentary |
+| **Reviewers** | Final report ONLY | Nothing | All internal state, transition history, agent conversations, failed attempts |
+
+**Note on Reviewers:** The reviewer agents intentionally have the most restricted scope. They see only the final report — no access to transition history, agent messages, or failed attempts. This simulates real blind peer review where reviewers come in cold and judge the paper on its own merits. Optionally, a different LLM provider can be configured for review to reduce model-level bias.
 
 ### 4.2 Context Assembly Pipeline
 
@@ -379,10 +464,11 @@ When a stage is stuck, the system can trigger a lab meeting — a special cross-
 
 - Consecutive failures (default: 3)
 - Score plateau over N rounds (default: 2)
-- Budget threshold reached (default: 70% spent)
 - Agent explicitly flags "I'm stuck"
 - Scheduled periodic checkpoints
 - Human requests meeting via UI/API
+
+**Budget triggers are separate from stuck triggers.** A budget warning (e.g., 70% spent) does NOT trigger a lab meeting — meetings burn more budget. Instead, budget warnings shift the PI agent's decision bias toward wrapping up: prefer completing over iterating, prefer publishing negative results over exploring more hypotheses, prefer advancing to synthesis over running more experiments. This is configured via `budget_policy`, not `lab_meeting.triggers`.
 
 ### 5.2 Meeting Flow
 
@@ -399,10 +485,15 @@ lab_meeting:
   triggers:
     consecutive_failures: 3
     score_plateau_rounds: 2
-    budget_threshold: 0.7
     scheduled_interval: null  # or every N iterations
   participants: auto  # or explicit agent list
   max_discussion_rounds: 5
+
+# Separate from lab meetings — budget influences PI decision bias, not meetings
+budget_policy:
+  warning_threshold: 0.7       # At 70% spent, PI biases toward wrapping up
+  critical_threshold: 0.9      # At 90% spent, PI must advance or complete
+  hard_ceiling: 1.0            # Pipeline stops
 ```
 
 ---
@@ -466,6 +557,7 @@ code_agent:
 | GET | `/api/sessions/{id}/artifacts` | Papers, code, data |
 | GET | `/api/sessions/{id}/transitions` | Pipeline transition history |
 | GET | `/api/sessions/{id}/cost` | Token usage and cost |
+| GET | `/api/sessions/{id}/hypotheses` | Hypothesis status and evidence |
 | GET | `/api/plugins` | Available stages, tools, agents |
 
 ### 7.2 WebSocket
@@ -525,6 +617,7 @@ Endpoint: `ws://host:port/ws/sessions/{id}`
 - `CostTracker` — @ant-design/plots budget visualization
 - `CheckpointModal` — HITL approval dialog with PI recommendation
 - `FeedbackInput` — human → agent messaging
+- `HypothesisTracker` — visual status of all hypotheses (active/supported/refuted/abandoned) with linked evidence
 
 ---
 
@@ -665,18 +758,24 @@ Adds: OAuth/JWT auth, Kubernetes execution backend, Redis for WebSocket pub/sub,
 Priority: **pipeline modularity first**.
 
 ### MVP includes:
-- LangGraph pipeline with all 7 default stages as plugins
-- PI agent as intelligent transition handler
+- LangGraph pipeline with all 8 default stages as plugins (including data exploration)
+- PI agent as intelligent transition handler with confidence-based fallback
+- Hypothesis tracking as first-class pipeline state
+- Experimentation stage with enforced baselines and ablation structure
+- Reproducibility metadata auto-captured by execution backend
 - Agent config system (YAML + code extensibility)
-- Differentiated agent memory scopes
-- Lab meeting subgraph
+- Differentiated agent memory scopes (permeable, not siloed) with blind reviewer isolation
+- Literature search as both a stage AND a cross-cutting tool available to all agents
+- Cross-stage targeted requests (report → experiment without full backtrack)
+- Lab meeting subgraph with proper budget/stuck separation
+- Budget policy system (warning → conservative PI, not more meetings)
 - Subprocess execution backend (Docker as opt-in)
 - SQLite + local filesystem storage
 - LiteLLM-based LLM provider with cost tracking
 - Built-in code agent (fallback) + Claude Code adapter
 - GitHub search + session artifact search tools
 - FastAPI server with REST + WebSocket
-- Functional React/Ant Design UI (session list, pipeline view, agent activity feed, mode controls, per-stage review toggles)
+- Functional React/Ant Design UI (session list, pipeline view, agent activity feed, mode controls, per-stage review toggles, hypothesis tracker)
 - Plugin registry with decorator and YAML config registration
 - Configuration hierarchy with per-session overrides
 - `agentlabx serve` one-command startup
@@ -690,3 +789,4 @@ Priority: **pipeline modularity first**.
 - Additional code agent adapters (Aider, Codex)
 - Scheduled periodic lab meetings
 - Cross-session artifact sharing UI
+- Configurable alternative LLM provider for reviewer agents (bias reduction)
