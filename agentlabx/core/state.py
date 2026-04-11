@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import operator
 from datetime import datetime
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel
 
@@ -121,35 +122,59 @@ class ReviewResult(BaseModel):
 
 
 class PipelineState(TypedDict):
+    """Typed state for LangGraph pipeline.
+
+    Fields use Annotated[list, operator.add] for accumulating values across nodes.
+    LangGraph uses these reducer annotations to merge node outputs into state —
+    without them, returning a list field from a node would overwrite rather than append.
+
+    Fields that get overwritten per-node (current_stage, next_stage, etc.) use plain types.
+    """
+
+    # Identity (set once, never changes)
     session_id: str
     user_id: str
     research_topic: str
-    hypotheses: list[Hypothesis]
-    literature_review: list[LitReviewResult]
-    plan: list[ResearchPlan]
-    data_exploration: list[EDAResult]
-    dataset_code: list[str]
-    experiment_results: list[ExperimentResult]
-    interpretation: list[str]
-    report: list[ReportResult]
-    review: list[ReviewResult]
-    pending_requests: list[CrossStageRequest]
-    completed_requests: list[CrossStageRequest]
+
+    # Accumulating stage outputs — appended via operator.add reducer
+    hypotheses: Annotated[list[Hypothesis], operator.add]
+    literature_review: Annotated[list[LitReviewResult], operator.add]
+    plan: Annotated[list[ResearchPlan], operator.add]
+    data_exploration: Annotated[list[EDAResult], operator.add]
+    dataset_code: Annotated[list[str], operator.add]
+    experiment_results: Annotated[list[ExperimentResult], operator.add]
+    interpretation: Annotated[list[str], operator.add]
+    report: Annotated[list[ReportResult], operator.add]
+    review: Annotated[list[ReviewResult], operator.add]
+
+    # Cross-stage requests — accumulating
+    pending_requests: Annotated[list[CrossStageRequest], operator.add]
+    completed_requests: Annotated[list[CrossStageRequest], operator.add]
+
+    # Pipeline control — overwritten per-node
     current_stage: str
     stage_config: dict[str, Any]
+
+    # Routing — overwritten per-node
     next_stage: str | None
     human_override: str | None
     default_sequence: list[str]
-    completed_stages: list[str]
+
+    # Tracking — completed_stages accumulates, others overwritten
+    completed_stages: Annotated[list[str], operator.add]
     stage_iterations: dict[str, int]
     total_iterations: int
     max_stage_iterations: dict[str, int]
     max_total_iterations: int
-    transition_log: list[Transition]
-    review_feedback: list[ReviewResult]
-    messages: list[AgentMessage]
+
+    # History — all accumulating
+    transition_log: Annotated[list[Transition], operator.add]
+    review_feedback: Annotated[list[ReviewResult], operator.add]
+    messages: Annotated[list[AgentMessage], operator.add]
+    errors: Annotated[list[StageError], operator.add]
+
+    # Cost tracker — overwritten (CostTracker has internal mutation via add_usage)
     cost_tracker: CostTracker
-    errors: list[StageError]
 
 
 def create_initial_state(
