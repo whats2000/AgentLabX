@@ -2447,4 +2447,479 @@ After completing all 10 tasks, you will have:
 - **PipelineBuilder** — assembles LangGraph StateGraph with dynamic routing, compiles with checkpointer
 - **End-to-end integration test** — full 8-stage pipeline runs to completion
 
-**What's deferred to Plan 3:** Real LLM inference (LiteLLM), PI agent with actual LLM judgment, real stage implementations, tool plugins, execution backends, storage backends.
+**What's deferred to Plan 3:** Real LLM inference (LiteLLM), real stage implementations, tool plugins, execution backends, storage backends.
+
+---
+
+## Addendum: Review Fixes (apply during execution)
+
+### Fix A: StageRunner Must Return Reducer-Compatible State
+
+**Applies to: Task 6 (StageRunner)**
+
+`PipelineState` now uses `Annotated[list[X], operator.add]` reducers. When a node returns state with list fields, LangGraph will **append** those values. So StageRunner must NOT spread-copy accumulating fields — it should only return the fields it changes.
+
+**Fix:** In `runner.py`, instead of `{**state, "errors": errors}`, return only the delta:
+```python
+# WRONG (clobbers accumulating fields):
+return {**state, "errors": [error], "stage_iterations": stage_iters}
+
+# RIGHT (return only changed fields — LangGraph merges via reducers):
+return {"current_stage": self.stage.name, "stage_iterations": stage_iters,
+        "total_iterations": total_iters, "errors": [error]}
+```
+
+The node should return a **partial dict** with only the keys it wants to update. LangGraph handles merging via reducer annotations.
+
+### Fix B: Pipeline Builder Uses Command Pattern
+
+**Applies to: Task 9 (PipelineBuilder)**
+
+Replace the `_transition_decision` state hack with LangGraph's `Command(goto=...)` pattern. Each stage node returns a `Command` that routes to the transition node, and the transition node returns a `Command` that routes to the next stage or END.
+
+**Key change in pipeline.py:**
+```python
+from langgraph.types import Command
+
+# Stage node returns Command to go to transition
+async def make_stage_node(state: PipelineState, _runner=runner) -> Command:
+    updated = await _runner.run(state)
+    return Command(update=updated, goto="transition")
+
+# Transition node returns Command to go to next stage or END
+def transition_node(state: PipelineState) -> Command:
+    decision = transition_handler.decide(state, self.preferences)
+    completed = list(state.get("completed_stages", []))
+    current = state.get("current_stage", "")
+    if current and current not in completed:
+        completed.append(current)
+
+    if decision.action == "complete" or decision.next_stage is None:
+        return Command(
+            update={"completed_stages": [current] if current else [],
+                    "next_stage": None, "human_override": None},
+            goto=END,
+        )
+    return Command(
+        update={"completed_stages": [current] if current else [],
+                "next_stage": None, "human_override": None},
+        goto=decision.next_stage,
+    )
+```
+
+This eliminates the undeclared `_transition_decision` key and is idiomatic LangGraph 0.4+.
+
+---
+
+### Task 11: Skeleton PI Agent
+
+**Files:**
+- Create: `agentlabx/agents/pi_agent.py`
+- Create: `tests/agents/test_pi_agent.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/agents/test_pi_agent.py
+from __future__ import annotations
+
+import pytest
+
+from agentlabx.agents.pi_agent import PIAgent, PIDecision
+from agentlabx.core.session import SessionPreferences
+from agentlabx.core.state import create_initial_state
+from agentlabx.stages.transition import TransitionHandler
+
+
+@pytest.fixture()
+def pi_agent() -> PIAgent:
+    handler = TransitionHandler(
+        default_sequence=[
+            "literature_review",
+            "plan_formulation",
+            "experimentation",
+            "report_writing",
+            "peer_review",
+        ]
+    )
+    return PIAgent(
+        transition_handler=handler,
+        confidence_threshold=0.6,
+    )
+
+
+@pytest.fixture()
+def base_state():
+    return create_initial_state(
+        session_id="s1",
+        user_id="u1",
+        research_topic="test",
+        default_sequence=[
+            "literature_review",
+            "plan_formulation",
+            "experimentation",
+            "report_writing",
+            "peer_review",
+        ],
+    )
+
+
+class TestPIAgent:
+    async def test_advance_with_high_confidence(self, pi_agent, base_state):
+        base_state["current_stage"] = "literature_review"
+        base_state["completed_stages"] = ["literature_review"]
+        decision = await pi_agent.decide(base_state, SessionPreferences())
+        assert decision.next_stage == "plan_formulation"
+        assert decision.confidence >= 0.6
+
+    async def test_fallback_on_low_confidence(self, pi_agent, base_state):
+        """When PI is uncertain, fall back to default sequence."""
+        base_state["current_stage"] = "literature_review"
+        base_state["completed_stages"] = ["literature_review"]
+        # With mock, confidence is always high — this tests the threshold mechanism
+        pi_agent.confidence_threshold = 1.1  # Force fallback
+        decision = await pi_agent.decide(base_state, SessionPreferences())
+        # Should still work — falls back to TransitionHandler
+        assert decision.next_stage is not None
+
+    async def test_tracks_decision_history(self, pi_agent, base_state):
+        base_state["current_stage"] = "literature_review"
+        base_state["completed_stages"] = ["literature_review"]
+        await pi_agent.decide(base_state, SessionPreferences())
+        assert len(pi_agent.decision_history) == 1
+
+    async def test_budget_warning_biases_completion(self, pi_agent, base_state):
+        base_state["current_stage"] = "experimentation"
+        base_state["completed_stages"] = [
+            "literature_review", "plan_formulation", "experimentation",
+        ]
+        base_state["cost_tracker"].total_cost = 8.0  # 80% of default 10.0 ceiling
+        decision = await pi_agent.decide(
+            base_state,
+            SessionPreferences(),
+            budget_warning=True,
+        )
+        assert decision.next_stage is not None
+        assert decision.budget_note is not None
+
+
+class TestPIDecision:
+    def test_create_decision(self):
+        d = PIDecision(
+            next_stage="experimentation",
+            action="advance",
+            reason="Research progressing well",
+            confidence=0.85,
+        )
+        assert d.confidence == 0.85
+        assert d.budget_note is None
+        assert d.used_fallback is False
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd d:/GitHub/AgentLabX && uv run pytest tests/agents/test_pi_agent.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement pi_agent.py**
+
+```python
+# agentlabx/agents/pi_agent.py
+"""PI Agent — intelligent transition handler with confidence scoring.
+
+Skeleton implementation for Plan 2: uses rule-based TransitionHandler
+as the decision engine, wraps it with confidence scoring and budget awareness.
+Plan 3 replaces the mock LLM judgment with real inference.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+from agentlabx.core.session import SessionPreferences
+from agentlabx.core.state import PipelineState
+from agentlabx.stages.transition import TransitionHandler
+
+
+class PIDecision(BaseModel):
+    """Decision made by the PI agent."""
+
+    next_stage: str | None
+    action: str
+    reason: str
+    confidence: float
+    budget_note: str | None = None
+    used_fallback: bool = False
+
+
+class PIAgent:
+    """Principal Investigator agent — makes transition decisions.
+
+    Wraps TransitionHandler with:
+    - Confidence scoring (mock in Plan 2, LLM-based in Plan 3)
+    - Budget awareness (bias toward completion when budget is tight)
+    - Decision history tracking for observability
+    """
+
+    def __init__(
+        self,
+        transition_handler: TransitionHandler,
+        confidence_threshold: float = 0.6,
+    ) -> None:
+        self.transition_handler = transition_handler
+        self.confidence_threshold = confidence_threshold
+        self.decision_history: list[PIDecision] = []
+
+    async def decide(
+        self,
+        state: PipelineState,
+        preferences: SessionPreferences,
+        budget_warning: bool = False,
+    ) -> PIDecision:
+        """Make a transition decision.
+
+        In Plan 2 (mock), this wraps the rule-based TransitionHandler
+        and adds a fixed confidence score. Plan 3 will add LLM-based
+        judgment where the PI agent actually reasons about the research.
+        """
+        # Get rule-based decision
+        rule_decision = self.transition_handler.decide(state, preferences)
+
+        # Mock confidence (Plan 3: LLM evaluates and provides real confidence)
+        confidence = 0.85
+
+        # Budget awareness
+        budget_note = None
+        if budget_warning:
+            budget_note = "Budget warning active — biasing toward completion"
+            # In a real implementation, this would influence the LLM prompt
+
+        # Check confidence threshold
+        used_fallback = False
+        if confidence < self.confidence_threshold:
+            # Low confidence — fall back to default sequence
+            used_fallback = True
+            # The rule-based handler IS the fallback, so we use its decision as-is
+
+        decision = PIDecision(
+            next_stage=rule_decision.next_stage,
+            action=rule_decision.action,
+            reason=rule_decision.reason,
+            confidence=confidence,
+            budget_note=budget_note,
+            used_fallback=used_fallback,
+        )
+
+        self.decision_history.append(decision)
+        return decision
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd d:/GitHub/AgentLabX && uv run pytest tests/agents/test_pi_agent.py -v`
+Expected: All PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agentlabx/agents/pi_agent.py tests/agents/test_pi_agent.py
+git commit -m "feat(agents): add skeleton PI agent with confidence scoring and budget awareness"
+```
+
+---
+
+### Task 12: Skeleton Lab Meeting Subgraph
+
+**Files:**
+- Create: `agentlabx/stages/lab_meeting.py`
+- Create: `tests/stages/test_lab_meeting.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# tests/stages/test_lab_meeting.py
+from __future__ import annotations
+
+import pytest
+
+from agentlabx.core.state import StageError, create_initial_state
+from agentlabx.stages.base import StageContext
+from agentlabx.stages.lab_meeting import LabMeeting, LabMeetingTrigger
+
+
+@pytest.fixture()
+def state():
+    return create_initial_state(
+        session_id="s1", user_id="u1", research_topic="MATH benchmark"
+    )
+
+
+@pytest.fixture()
+def context():
+    return StageContext(settings={}, event_bus=None, registry=None)
+
+
+class TestLabMeetingTrigger:
+    def test_no_trigger_on_fresh_state(self, state):
+        trigger = LabMeetingTrigger(consecutive_failures=3, score_plateau_rounds=2)
+        assert trigger.should_trigger(state) is False
+
+    def test_triggers_on_consecutive_failures(self, state):
+        trigger = LabMeetingTrigger(consecutive_failures=3, score_plateau_rounds=2)
+        from datetime import datetime, timezone
+
+        for i in range(3):
+            state["errors"] = list(state["errors"]) + [
+                StageError(
+                    stage="experimentation",
+                    error_type="RuntimeError",
+                    message=f"Failure {i}",
+                    timestamp=datetime.now(timezone.utc),
+                )
+            ]
+        assert trigger.should_trigger(state) is True
+
+    def test_does_not_trigger_below_threshold(self, state):
+        trigger = LabMeetingTrigger(consecutive_failures=3, score_plateau_rounds=2)
+        from datetime import datetime, timezone
+
+        state["errors"] = [
+            StageError(
+                stage="experimentation",
+                error_type="RuntimeError",
+                message="Failure",
+                timestamp=datetime.now(timezone.utc),
+            )
+        ]
+        assert trigger.should_trigger(state) is False
+
+
+class TestLabMeeting:
+    async def test_lab_meeting_runs(self, state, context):
+        meeting = LabMeeting()
+        result = await meeting.run(state, context)
+        assert result.status == "done"
+        assert "action_items" in result.output
+
+    async def test_lab_meeting_returns_action_items(self, state, context):
+        meeting = LabMeeting()
+        result = await meeting.run(state, context)
+        assert isinstance(result.output["action_items"], list)
+        assert len(result.output["action_items"]) > 0
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd d:/GitHub/AgentLabX && uv run pytest tests/stages/test_lab_meeting.py -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement lab_meeting.py**
+
+```python
+# agentlabx/stages/lab_meeting.py
+"""Lab meeting — cross-zone collaboration subgraph.
+
+Skeleton implementation for Plan 2: returns mock discussion results.
+Plan 3 replaces with multi-agent LLM dialogue.
+"""
+
+from __future__ import annotations
+
+from agentlabx.core.state import PipelineState
+from agentlabx.stages.base import BaseStage, StageContext, StageResult
+
+
+class LabMeetingTrigger:
+    """Determines whether a lab meeting should be triggered."""
+
+    def __init__(
+        self,
+        consecutive_failures: int = 3,
+        score_plateau_rounds: int = 2,
+    ) -> None:
+        self.consecutive_failures = consecutive_failures
+        self.score_plateau_rounds = score_plateau_rounds
+
+    def should_trigger(self, state: PipelineState) -> bool:
+        """Check if a lab meeting should be triggered based on current state."""
+        errors = state.get("errors", [])
+        if len(errors) >= self.consecutive_failures:
+            # Check if recent errors are consecutive (from the same stage)
+            recent = errors[-self.consecutive_failures :]
+            if all(e.stage == recent[0].stage for e in recent):
+                return True
+        return False
+
+
+class LabMeeting(BaseStage):
+    """Lab meeting — multi-agent discussion when a stage is stuck.
+
+    Skeleton implementation: returns mock action items.
+    Plan 3 will implement real multi-agent dialogue where:
+    1. Stuck agent presents the problem
+    2. Other agents contribute from their perspectives
+    3. PI agent synthesizes action items
+    4. Meeting summary distributed to agents' working memory
+    """
+
+    name = "lab_meeting"
+    description = "Cross-zone collaboration meeting when a stage is stuck"
+    required_agents = []  # Dynamically determined based on participants
+    required_tools = []
+
+    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
+        current_stage = state.get("current_stage", "unknown")
+        topic = state.get("research_topic", "the research")
+
+        return StageResult(
+            output={
+                "action_items": [
+                    f"Review approach for {current_stage}",
+                    "Consider alternative methodology",
+                    "Check if data quality is sufficient",
+                ],
+                "discussion_summary": (
+                    f"Lab meeting held to discuss challenges in {current_stage} "
+                    f"for '{topic}'. Team suggested reviewing approach and "
+                    f"considering alternatives."
+                ),
+                "participants": ["pi_agent", "postdoc", "phd_student", "ml_engineer"],
+            },
+            status="done",
+            reason=f"Lab meeting complete — 3 action items for {current_stage}",
+        )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd d:/GitHub/AgentLabX && uv run pytest tests/stages/test_lab_meeting.py -v`
+Expected: All PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agentlabx/stages/lab_meeting.py tests/stages/test_lab_meeting.py
+git commit -m "feat(stages): add skeleton lab meeting with trigger detection"
+```
+
+---
+
+## Updated Summary
+
+After completing all 12 tasks, you will have:
+
+- **LangGraph dependency** installed and wired
+- **7 agent YAML configs** with differentiated memory scopes
+- **AgentConfigLoader** + **ConfigAgent** — YAML → agent instances with mock inference
+- **ContextAssembler** — memory-scope-based state filtering
+- **SessionManager** — lifecycle, preferences, per-stage HITL controls
+- **StageRunner** — LangGraph-compatible node wrapper (reducer-aware)
+- **TransitionHandler** — priority-based rule engine (human > limits > hints > sequence)
+- **Skeleton PI Agent** — wraps TransitionHandler with confidence scoring and budget awareness
+- **8 skeleton stages** + **lab meeting subgraph** — all registered via plugin system
+- **PipelineBuilder** — LangGraph StateGraph using `Command` pattern for routing
+- **End-to-end integration test** — full pipeline runs to completion
+
+**What's deferred to Plan 3:** Real LLM inference via LiteLLM, PI agent with actual LLM judgment, real stage implementations with agent dialogue, real lab meeting multi-agent discussion, tool plugins, execution backends, storage backends.
