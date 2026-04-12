@@ -113,10 +113,25 @@ async def build_app_context(
     # LLM provider: mock for CI/local dev, LiteLLM for production
     llm_provider: BaseLLMProvider = MockLLMProvider() if use_mock_llm else LiteLLMProvider()
 
-    return AppContext(
+    context = AppContext(
         settings=settings,
         registry=registry,
         session_manager=session_manager,
         storage=storage,
         llm_provider=llm_provider,
     )
+
+    # PipelineExecutor (Task 6) — checkpoint DB sits next to artifacts_path
+    from agentlabx.server.executor import PipelineExecutor
+
+    checkpoint_db_path = Path(settings.storage.artifacts_path).parent / "checkpoints.db"
+    executor = PipelineExecutor(
+        registry=registry,
+        session_manager=session_manager,
+        llm_provider=llm_provider,
+        checkpoint_db_path=str(checkpoint_db_path),
+    )
+    await executor.initialize()
+    context.executor = executor
+
+    return context

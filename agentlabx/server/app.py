@@ -36,6 +36,8 @@ def create_app(
         try:
             yield
         finally:
+            if context.executor is not None:
+                await context.executor.close()
             await context.storage.close()
 
     app = FastAPI(
