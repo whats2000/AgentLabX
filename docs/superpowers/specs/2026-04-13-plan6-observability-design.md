@@ -226,16 +226,16 @@ Plan 6 does not inject the log into downstream agent contexts (that is Plan 7). 
 ┌──────────────────────────────────────────────────────────┐
 │ Header: topic · session_id · status                      │
 ├──────────────────────────────────────────────────────────┤
-│  GraphTopology (always on, resizable ~320px)            │
-│  rich stage nodes: status · iter · agent · control · $  │
-├─────────┬────────────────────────────────┬──────────────┤
+│  GraphTopology (always on, resizable ~320px)             │
+│  rich stage nodes: status · iter · agent · control · $   │
+├─────────┬────────────────────────────────┬───────────────┤
 │ Left    │ Tabs:                          │ Right sider   │
 │ (slim)  │ • Conversations (default)      │ Agent Monitor │
 │ Pause   │ • Artifacts                    │ Hypotheses    │
 │ Resume  │ • Experiments                  │ PI Decisions  │
 │ Cancel  │ • Cost                         │ Cost (compact)│
-├─────────┴────────────────────────────────┴──────────────┤
-│ FeedbackInput (sticky bottom)                           │
+├─────────┴────────────────────────────────┴───────────────┤
+│ FeedbackInput (sticky bottom)                            │
 └──────────────────────────────────────────────────────────┘
 ```
 
