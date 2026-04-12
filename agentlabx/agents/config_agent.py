@@ -28,7 +28,7 @@ class ConfigAgent(BaseAgent):
         tools: list[Any],
         memory_scope: MemoryScope,
         max_history_length: int = 10,
-        mock_responses: deque[str] | None = None,
+        mock_responses: list[str] | deque[str] | None = None,
         llm_provider: Any = None,
         model: str = "claude-sonnet-4-6",
     ) -> None:
@@ -40,7 +40,10 @@ class ConfigAgent(BaseAgent):
             memory_scope=memory_scope,
         )
         self.max_history_length = max_history_length
-        self._mock_responses: deque[str] | None = mock_responses
+        # Normalize list → deque so callers can pass either type
+        self._mock_responses: deque[str] | None = (
+            deque(mock_responses) if mock_responses is not None else None
+        )
         self.llm_provider = llm_provider
         self.model = model
 
@@ -48,7 +51,7 @@ class ConfigAgent(BaseAgent):
     def from_config(
         cls,
         config: AgentConfig,
-        mock_responses: deque[str] | None = None,
+        mock_responses: list[str] | deque[str] | None = None,
         *,
         llm_provider: Any = None,
         model: str = "claude-sonnet-4-6",
