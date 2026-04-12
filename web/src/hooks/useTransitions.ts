@@ -3,9 +3,8 @@ import { api } from "../api/client";
 
 /**
  * Shape of a transition record returned by /api/sessions/{id}/transitions.
- * The OpenAPI response is currently typed as `unknown` (schema gap), so we
- * declare the expected fields here. Task 16 should regenerate once the
- * backend exposes the concrete Transition schema.
+ * The generated TransitionsResponse types the outer envelope, but the inner
+ * transition records are `{ [key: string]: unknown }` so we narrow here.
  */
 export interface Transition {
   from_stage: string;
@@ -20,7 +19,7 @@ export function useTransitions(sessionId: string) {
     queryKey: ["transitions", sessionId],
     queryFn: async () => {
       const raw = await api.getTransitions(sessionId);
-      return (raw ?? []) as Transition[];
+      return (raw?.transitions ?? []) as unknown as Transition[];
     },
     enabled: !!sessionId,
   });

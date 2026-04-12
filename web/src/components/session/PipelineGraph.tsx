@@ -100,10 +100,17 @@ function PipelineGraphInner({ sessionId }: Props) {
 
   const sessionExtra = (session ?? {}) as SessionWithStageInfo;
   const currentStage = sessionExtra.current_stage ?? "";
-  const completed = sessionExtra.completed_stages ?? [];
-  const errors: string[] = (sessionExtra.errors ?? [])
-    .map((e) => (typeof e === "string" ? e : (e?.stage ?? "")))
-    .filter((s): s is string => !!s);
+  const completed = useMemo(
+    () => sessionExtra.completed_stages ?? [],
+    [sessionExtra.completed_stages],
+  );
+  const errors: string[] = useMemo(
+    () =>
+      (sessionExtra.errors ?? [])
+        .map((e) => (typeof e === "string" ? e : (e?.stage ?? "")))
+        .filter((s): s is string => !!s),
+    [sessionExtra.errors],
+  );
 
   const positions = useMemo(() => stagePositions(), []);
 

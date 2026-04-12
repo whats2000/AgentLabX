@@ -5,8 +5,39 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/sessions", tags=["session-data"])
+
+
+class ArtifactsResponse(BaseModel):
+    literature_review: list[dict[str, Any]]
+    plan: list[dict[str, Any]]
+    data_exploration: list[dict[str, Any]]
+    dataset_code: list[str]
+    experiment_results: list[dict[str, Any]]
+    interpretation: list[str]
+    report: list[dict[str, Any]]
+    review: list[dict[str, Any]]
+
+
+class TransitionsResponse(BaseModel):
+    transitions: list[dict[str, Any]]
+    completed_stages: list[str]
+    current_stage: str
+    stage_iterations: dict[str, int]
+    total_iterations: int
+
+
+class CostResponse(BaseModel):
+    total_tokens_in: int
+    total_tokens_out: int
+    total_cost: float
+
+
+class HypothesesResponse(BaseModel):
+    hypotheses: list[dict[str, Any]]
+    total_records: int
 
 
 async def _get_state(request: Request, session_id: str) -> dict[str, Any]:
@@ -48,7 +79,7 @@ def _serialize(items: Any) -> Any:
     return items
 
 
-@router.get("/{session_id}/artifacts")
+@router.get("/{session_id}/artifacts", response_model=ArtifactsResponse)
 async def list_artifacts(request: Request, session_id: str):
     """Return all stage outputs (lit reviews, plans, experiments, reports)."""
     state = await _get_state(request, session_id)
@@ -64,7 +95,7 @@ async def list_artifacts(request: Request, session_id: str):
     }
 
 
-@router.get("/{session_id}/transitions")
+@router.get("/{session_id}/transitions", response_model=TransitionsResponse)
 async def list_transitions(request: Request, session_id: str):
     """Return the transition log and stage tracking info."""
     state = await _get_state(request, session_id)
@@ -77,7 +108,7 @@ async def list_transitions(request: Request, session_id: str):
     }
 
 
-@router.get("/{session_id}/cost")
+@router.get("/{session_id}/cost", response_model=CostResponse)
 async def get_cost(request: Request, session_id: str):
     """Return current LLM usage and cost for the session."""
     context = request.app.state.context
@@ -102,7 +133,7 @@ async def get_cost(request: Request, session_id: str):
     }
 
 
-@router.get("/{session_id}/hypotheses")
+@router.get("/{session_id}/hypotheses", response_model=HypothesesResponse)
 async def list_hypotheses(request: Request, session_id: str):
     """Return active hypotheses (latest record per ID — Fix H)."""
     from agentlabx.core.state import active_hypotheses

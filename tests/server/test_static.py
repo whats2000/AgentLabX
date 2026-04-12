@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from agentlabx.server.static import mount_spa
 
-
 INDEX_HTML = "<!doctype html><html><body>react root</body></html>"
 ASSET_JS = "console.log('agentlabx');"
 

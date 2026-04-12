@@ -257,10 +257,59 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ArtifactsResponse */
+        ArtifactsResponse: {
+            /** Literature Review */
+            literature_review: {
+                [key: string]: unknown;
+            }[];
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            }[];
+            /** Data Exploration */
+            data_exploration: {
+                [key: string]: unknown;
+            }[];
+            /** Dataset Code */
+            dataset_code: string[];
+            /** Experiment Results */
+            experiment_results: {
+                [key: string]: unknown;
+            }[];
+            /** Interpretation */
+            interpretation: string[];
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            }[];
+            /** Review */
+            review: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** CostResponse */
+        CostResponse: {
+            /** Total Tokens In */
+            total_tokens_in: number;
+            /** Total Tokens Out */
+            total_tokens_out: number;
+            /** Total Cost */
+            total_cost: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HypothesesResponse */
+        HypothesesResponse: {
+            /** Hypotheses */
+            hypotheses: {
+                [key: string]: unknown;
+            }[];
+            /** Total Records */
+            total_records: number;
         };
         /** PreferencesUpdateRequest */
         PreferencesUpdateRequest: {
@@ -329,6 +378,23 @@ export interface components {
             research_topic: string;
             /** Status */
             status: string;
+        };
+        /** TransitionsResponse */
+        TransitionsResponse: {
+            /** Transitions */
+            transitions: {
+                [key: string]: unknown;
+            }[];
+            /** Completed Stages */
+            completed_stages: string[];
+            /** Current Stage */
+            current_stage: string;
+            /** Stage Iterations */
+            stage_iterations: {
+                [key: string]: number;
+            };
+            /** Total Iterations */
+            total_iterations: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -656,7 +722,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ArtifactsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -687,7 +753,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransitionsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -718,7 +784,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CostResponse"];
                 };
             };
             /** @description Validation Error */
@@ -749,7 +815,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HypothesesResponse"];
                 };
             };
             /** @description Validation Error */

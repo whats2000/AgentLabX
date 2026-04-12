@@ -66,7 +66,7 @@ describe("PipelineGraph", () => {
       preferences: {},
       config_overrides: {},
     });
-    mockedApi.getTransitions.mockResolvedValue([]);
+    mockedApi.getTransitions.mockResolvedValue({ transitions: [] });
     renderGraph();
     expect(await screen.findByText(/DISCOVERY/)).toBeInTheDocument();
     expect(screen.getByText(/IMPLEMENTATION/)).toBeInTheDocument();
@@ -84,7 +84,7 @@ describe("PipelineGraph", () => {
       preferences: {},
       config_overrides: {},
     });
-    mockedApi.getTransitions.mockResolvedValue([]);
+    mockedApi.getTransitions.mockResolvedValue({ transitions: [] });
     renderGraph();
     expect(await screen.findByText("Literature Review")).toBeInTheDocument();
     expect(screen.getByText("Plan Formulation")).toBeInTheDocument();
@@ -103,15 +103,15 @@ describe("PipelineGraph", () => {
       config_overrides: {},
     });
     // 4 backtracks — toggle should appear
-    mockedApi.getTransitions.mockResolvedValue(
-      Array.from({ length: 4 }).map((_, i) => ({
+    mockedApi.getTransitions.mockResolvedValue({
+      transitions: Array.from({ length: 4 }).map((_, i) => ({
         from_stage: "experimentation",
         to_stage: "data_preparation",
         reason: `r${i}`,
         triggered_by: "agent",
         timestamp: new Date().toISOString(),
       })),
-    );
+    });
     renderGraph();
     expect(
       await screen.findByText(/Show all backtracks \(4\)/),
@@ -129,15 +129,17 @@ describe("PipelineGraph", () => {
       preferences: {},
       config_overrides: {},
     });
-    mockedApi.getTransitions.mockResolvedValue([
-      {
-        from_stage: "experimentation",
-        to_stage: "data_preparation",
-        reason: "r0",
-        triggered_by: "agent",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+    mockedApi.getTransitions.mockResolvedValue({
+      transitions: [
+        {
+          from_stage: "experimentation",
+          to_stage: "data_preparation",
+          reason: "r0",
+          triggered_by: "agent",
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
     renderGraph();
     await screen.findByText("Literature Review");
     expect(screen.queryByText(/Show all backtracks/)).not.toBeInTheDocument();
