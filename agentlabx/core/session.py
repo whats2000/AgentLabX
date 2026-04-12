@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agentlabx.core.events import EventBus
+
 
 class SessionPreferences(BaseModel):
     """User preferences for a research session."""
@@ -55,6 +57,7 @@ class Session(BaseModel):
     research_topic: str
     status: SessionStatus = SessionStatus.CREATED
     preferences: SessionPreferences = Field(default_factory=SessionPreferences)
+    event_bus: EventBus = Field(default_factory=EventBus)  # Fix B: own bus at creation
 
     model_config = {"arbitrary_types_allowed": True}
 

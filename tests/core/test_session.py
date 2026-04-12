@@ -153,3 +153,33 @@ class TestSessionManager:
         ]
         ids = [s.session_id for s in sessions]
         assert len(set(ids)) == 10
+
+
+class TestSessionEventBus:
+    def test_session_has_event_bus_on_creation(self):
+        from agentlabx.core.events import EventBus
+
+        session = Session(
+            session_id="s1",
+            user_id="u1",
+            research_topic="test",
+        )
+        assert isinstance(session.event_bus, EventBus)
+
+    def test_each_session_has_own_bus(self):
+        s1 = Session(session_id="a", user_id="u", research_topic="t")
+        s2 = Session(session_id="b", user_id="u", research_topic="t")
+        assert s1.event_bus is not s2.event_bus
+
+    async def test_session_bus_receives_events(self):
+        from agentlabx.core.events import Event
+
+        session = Session(session_id="s1", user_id="u1", research_topic="test")
+        received = []
+
+        async def handler(event):
+            received.append(event)
+
+        session.event_bus.subscribe("test", handler)
+        await session.event_bus.emit(Event(type="test", data={"x": 1}))
+        assert len(received) == 1
