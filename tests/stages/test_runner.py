@@ -210,3 +210,115 @@ class TestStageRunner:
         runner = StageRunner(ContextCaptureStage(), context=custom_ctx)
         await runner.run(initial_state)
         assert received_context[0].settings == {"key": "val"}
+
+
+class TestStageRunnerEvents:
+    @pytest.fixture()
+    def initial_state(self):
+        return create_initial_state(session_id="s1", user_id="u1", research_topic="test")
+
+    async def test_emits_stage_started_event(self, initial_state):
+        from agentlabx.core.events import Event, EventBus
+
+        bus = EventBus()
+        received: list[Event] = []
+
+        async def handler(event: Event) -> None:
+            received.append(event)
+
+        bus.subscribe("stage_started", handler)
+
+        ctx = StageContext(settings={}, event_bus=bus, registry=None)
+        runner = StageRunner(SuccessStage(), context=ctx)
+        await runner.run(initial_state)
+        assert len(received) == 1
+        assert received[0].data["stage"] == "success_stage"
+
+    async def test_emits_stage_completed_on_success(self, initial_state):
+        from agentlabx.core.events import Event, EventBus
+
+        bus = EventBus()
+        received: list[Event] = []
+
+        async def handler(event: Event) -> None:
+            received.append(event)
+
+        bus.subscribe("stage_completed", handler)
+
+        ctx = StageContext(settings={}, event_bus=bus, registry=None)
+        runner = StageRunner(SuccessStage(), context=ctx)
+        await runner.run(initial_state)
+        assert len(received) == 1
+        assert received[0].data["status"] == "done"
+
+    async def test_emits_stage_failed_on_exception(self, initial_state):
+        from agentlabx.core.events import Event, EventBus
+
+        bus = EventBus()
+        received: list[Event] = []
+
+        async def handler(event: Event) -> None:
+            received.append(event)
+
+        bus.subscribe("stage_failed", handler)
+
+        ctx = StageContext(settings={}, event_bus=bus, registry=None)
+        runner = StageRunner(FailingStage(), context=ctx)
+        await runner.run(initial_state)
+        assert len(received) == 1
+        assert "Stage crashed" in received[0].data["message"]
+
+    async def test_failed_does_not_emit_completed(self, initial_state):
+        """Fix K: stage_completed and stage_failed are mutually exclusive."""
+        from agentlabx.core.events import Event, EventBus
+
+        bus = EventBus()
+        received_completed: list[Event] = []
+        received_failed: list[Event] = []
+
+        async def on_completed(event: Event) -> None:
+            received_completed.append(event)
+
+        async def on_failed(event: Event) -> None:
+            received_failed.append(event)
+
+        bus.subscribe("stage_completed", on_completed)
+        bus.subscribe("stage_failed", on_failed)
+
+        ctx = StageContext(settings={}, event_bus=bus, registry=None)
+        runner = StageRunner(FailingStage(), context=ctx)
+        await runner.run(initial_state)
+        assert len(received_failed) == 1
+        assert len(received_completed) == 0  # Never both
+
+    async def test_paused_event_blocks_execution(self, initial_state):
+        """Fix A: paused_event.wait() blocks stage.run when cleared."""
+        import asyncio
+
+        paused_event = asyncio.Event()
+        # Don't set it — starts in cleared (paused) state
+        ctx = StageContext(
+            settings={},
+            event_bus=None,
+            registry=None,
+            paused_event=paused_event,
+        )
+        runner = StageRunner(SuccessStage(), context=ctx)
+
+        # Start the runner — it should block on paused_event.wait()
+        task = asyncio.create_task(runner.run(initial_state))
+        # Give it a moment to reach the wait
+        await asyncio.sleep(0.05)
+        assert not task.done()
+
+        # Resume by setting the event
+        paused_event.set()
+        result = await asyncio.wait_for(task, timeout=2.0)
+        assert result["current_stage"] == "success_stage"
+
+    async def test_paused_event_none_runs_immediately(self, initial_state):
+        """paused_event=None → no pause support, runs through."""
+        ctx = StageContext(settings={}, event_bus=None, registry=None, paused_event=None)
+        runner = StageRunner(SuccessStage(), context=ctx)
+        result = await runner.run(initial_state)
+        assert result["current_stage"] == "success_stage"

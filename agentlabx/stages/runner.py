@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from agentlabx.core.events import Event
 from agentlabx.core.state import PipelineState, StageError
 from agentlabx.stages.base import BaseStage, StageContext
 
@@ -12,10 +13,10 @@ from agentlabx.stages.base import BaseStage, StageContext
 class StageRunner:
     """Wraps a BaseStage for execution within a LangGraph graph.
 
-    Returns a PARTIAL state dict containing only the fields that changed.
-    LangGraph merges this into the full state using the reducer annotations
-    defined on PipelineState (Annotated[list[X], operator.add] for accumulating
-    fields, plain types for overwrite fields).
+    Returns a PARTIAL state dict. Emits stage_started / stage_completed /
+    stage_failed events via context.event_bus (mutually exclusive: success
+    emits started+completed, failure emits started+failed). Awaits
+    context.paused_event before invoking the stage (cooperative pause).
     """
 
     def __init__(self, stage: BaseStage, context: StageContext | None = None) -> None:
@@ -32,11 +33,26 @@ class StageRunner:
         stage_iterations, total_iterations, next_stage) take precedence over
         anything the stage writes with the same name.
         """
-        # Start with stage output (if any), then overlay runner tracking fields
         update: dict[str, Any] = {}
+        session_id = state.get("session_id", "")
+
+        # Emit stage_started
+        if self.context.event_bus is not None:
+            await self.context.event_bus.emit(
+                Event(
+                    type="stage_started",
+                    data={"stage": self.stage.name, "session_id": session_id},
+                    source=self.stage.name,
+                )
+            )
 
         # Call on_enter (may modify state — but we pass original state)
         entered_state = self.stage.on_enter(state)
+
+        # Cooperative pause — wait if paused (Fix A)
+        paused_event = self.context.paused_event
+        if paused_event is not None:
+            await paused_event.wait()
 
         try:
             result = await self.stage.run(entered_state, self.context)
@@ -54,6 +70,22 @@ class StageRunner:
             # Cross-stage requests (reducer field — return only NEW requests)
             if result.requests:
                 update["pending_requests"] = list(result.requests)
+
+            # Emit stage_completed (only on success path — Fix K: never both)
+            if self.context.event_bus is not None:
+                await self.context.event_bus.emit(
+                    Event(
+                        type="stage_completed",
+                        data={
+                            "stage": self.stage.name,
+                            "session_id": session_id,
+                            "status": result.status,
+                            "reason": result.reason,
+                            "next_hint": result.next_hint,
+                        },
+                        source=self.stage.name,
+                    )
+                )
         except Exception as e:
             error = StageError(
                 stage=self.stage.name,
@@ -64,6 +96,27 @@ class StageRunner:
             )
             # errors is a reducer field — return only the NEW error
             update["errors"] = [error]
+
+            # Clear next_stage on failure so the transition handler falls through
+            # to priority-5 advance (or priority-6 complete). Without this, a
+            # stale next_stage value from a prior transition would re-route back
+            # to this same stage indefinitely.
+            update["next_stage"] = None
+
+            # Emit stage_failed (only on exception path — Fix K: never both)
+            if self.context.event_bus is not None:
+                await self.context.event_bus.emit(
+                    Event(
+                        type="stage_failed",
+                        data={
+                            "stage": self.stage.name,
+                            "session_id": session_id,
+                            "error_type": type(e).__name__,
+                            "message": str(e),
+                        },
+                        source=self.stage.name,
+                    )
+                )
 
         # Runner-owned tracking fields — these always take precedence over
         # anything the stage may have written with the same key.
