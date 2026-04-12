@@ -1,9 +1,9 @@
-"""Skeleton implementations for all 8 default research pipeline stages.
+"""Default research pipeline stages.
 
-These stages exist for pipeline orchestration testing. They return empty output
-and status="done" so the pipeline flows through them without populating state.
-Real stage implementations (with actual agent dialogue and tool use) arrive
-progressively starting in Plan 3.
+Skeleton stages exist for pipeline orchestration testing (Plan 2). Real stage
+implementations arrive progressively starting in Plan 3. The four Plan 3 stages
+(literature_review, plan_formulation, report_writing, peer_review) are now real
+implementations imported from their own modules.
 
 Skeleton output is intentionally empty. Returning typed placeholder data
 (e.g., a string for dataset_code which requires list[str]) would crash the
@@ -16,38 +16,17 @@ from __future__ import annotations
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.state import PipelineState
 from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.literature_review import LiteratureReviewStage
+from agentlabx.stages.peer_review import PeerReviewStage
+from agentlabx.stages.plan_formulation import PlanFormulationStage
+from agentlabx.stages.report_writing import ReportWritingStage
 
-
-class LiteratureReviewStage(BaseStage):
-    """Placeholder — real implementation in Plan 3."""
-
-    name = "literature_review"
-    description = "Search and summarise related academic literature"
-    required_agents = ["phd_student"]
-    required_tools = ["arxiv_search", "semantic_scholar"]
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Literature review stage completed (skeleton)",
-        )
-
-
-class PlanFormulationStage(BaseStage):
-    """Placeholder — real implementation in Plan 3."""
-
-    name = "plan_formulation"
-    description = "Formulate research plan, goals, and initial hypotheses"
-    required_agents = ["pi_agent", "phd_student"]
-    required_tools = []
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Plan formulation stage completed (skeleton)",
-        )
+__all__ = [
+    "LiteratureReviewStage",
+    "PlanFormulationStage",
+    "ReportWritingStage",
+    "PeerReviewStage",
+]
 
 
 class DataExplorationStage(BaseStage):
@@ -111,38 +90,6 @@ class ResultsInterpretationStage(BaseStage):
             output={},
             status="done",
             reason="Results interpretation stage completed (skeleton)",
-        )
-
-
-class ReportWritingStage(BaseStage):
-    """Placeholder — real implementation in Plan 3."""
-
-    name = "report_writing"
-    description = "Write, structure, and refine the research paper"
-    required_agents = ["phd_student"]
-    required_tools = ["latex_compiler"]
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Report writing stage completed (skeleton)",
-        )
-
-
-class PeerReviewStage(BaseStage):
-    """Placeholder — real implementation in Plan 3."""
-
-    name = "peer_review"
-    description = "Simulate peer review: score, decide, and provide feedback"
-    required_agents = ["reviewer_agent"]
-    required_tools = []
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Peer review stage completed (skeleton)",
         )
 
 

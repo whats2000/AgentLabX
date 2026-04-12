@@ -1,4 +1,9 @@
-"""Tests for all 8 skeleton research pipeline stages."""
+"""Tests for the research pipeline stages registered via skeleton.py.
+
+The four Plan 3 real stages (LiteratureReviewStage, PlanFormulationStage,
+ReportWritingStage, PeerReviewStage) have dedicated test modules. This file
+covers the remaining skeleton stages and cross-stage invariants.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +17,6 @@ from agentlabx.stages.skeleton import (
     DataExplorationStage,
     DataPreparationStage,
     ExperimentationStage,
-    LiteratureReviewStage,
-    PeerReviewStage,
-    PlanFormulationStage,
-    ReportWritingStage,
     ResultsInterpretationStage,
     register_default_stages,
 )
@@ -36,26 +37,13 @@ def context():
 
 
 # ---------------------------------------------------------------------------
-# Individual stage tests
+# Individual stage tests — skeleton stages only
+# Real Plan 3 stages have dedicated test modules:
+#   tests/stages/test_literature_review_real.py
+#   tests/stages/test_plan_formulation_real.py
+#   tests/stages/test_report_writing_real.py
+#   tests/stages/test_peer_review_real.py
 # ---------------------------------------------------------------------------
-
-
-class TestLiteratureReviewStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await LiteratureReviewStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert LiteratureReviewStage.name == "literature_review"
-
-
-class TestPlanFormulationStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await PlanFormulationStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert PlanFormulationStage.name == "plan_formulation"
 
 
 class TestDataExplorationStage:
@@ -94,24 +82,6 @@ class TestResultsInterpretationStage:
         assert ResultsInterpretationStage.name == "results_interpretation"
 
 
-class TestReportWritingStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await ReportWritingStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert ReportWritingStage.name == "report_writing"
-
-
-class TestPeerReviewStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await PeerReviewStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert PeerReviewStage.name == "peer_review"
-
-
 # ---------------------------------------------------------------------------
 # Cross-stage invariant tests
 # ---------------------------------------------------------------------------
@@ -137,8 +107,16 @@ class TestSkeletonStageInvariants:
         for cls in ALL_STAGES:
             assert isinstance(cls.required_tools, list), f"{cls.name}.required_tools not a list"
 
-    async def test_all_stages_run_successfully(self, state, context):
-        for cls in ALL_STAGES:
+    async def test_skeleton_stages_run_successfully(self, state, context):
+        # Only skeleton stages (no registry required) should return status="done"
+        # Real Plan 3 stages return "backtrack" without a registry — tested separately.
+        skeleton_only = [
+            DataExplorationStage,
+            DataPreparationStage,
+            ExperimentationStage,
+            ResultsInterpretationStage,
+        ]
+        for cls in skeleton_only:
             result = await cls().run(state, context)
             assert result.status == "done", f"{cls.name} did not return status='done'"
 
