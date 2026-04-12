@@ -2503,42 +2503,56 @@ _VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
 }
 ```
 
-### Fix F: Centralize session persistence
+### Fix F: Centralize session persistence via SessionManager wrapper
 
-Rather than remembering to call `persist_session` on every transition,
-instrument `Session._transition` to fire a callback:
+Rather than remembering to call `persist_session` on every transition, and
+rather than fire-and-forget transition hooks (which swallow persistence
+errors into the event loop), add thin transition-and-persist methods to
+`SessionManager`:
 
 ```python
-class Session:
-    def __init__(self, ...) -> None:
-        ...
-        self._transition_hooks: list = []
+# agentlabx/core/session.py (or wherever SessionManager lives)
+class SessionManager:
+    async def start_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.start()
+        await self.persist_session(session)
 
-    def add_transition_hook(self, hook) -> None:
-        """Hook signature: async def(session) -> None. Called after every transition."""
-        self._transition_hooks.append(hook)
+    async def pause_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.pause()
+        await self.persist_session(session)
 
-    def _transition(self, target: SessionStatus) -> None:
-        valid = _VALID_TRANSITIONS.get(self.status, set())
-        if target not in valid:
-            raise ValueError(f"Cannot {target.value} from {self.status.value}")
-        self.status = target
-        # Fire hooks — schedule on the running loop if we're in one
-        for hook in self._transition_hooks:
-            try:
-                asyncio.get_running_loop().create_task(hook(self))
-            except RuntimeError:
-                # Not in an async context — hook must handle sync call
-                pass
+    async def resume_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.resume()
+        await self.persist_session(session)
+
+    async def complete_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.complete()
+        await self.persist_session(session)
+
+    async def fail_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.fail()
+        await self.persist_session(session)
 ```
 
-When `PipelineExecutor` creates a session (or when SessionManager creates one
-with storage), register a hook that calls `persist_session`. This removes the
-per-call responsibility from every transition site.
+This keeps persistence errors synchronous and logged at the call site.
+Callers (`PipelineExecutor`, REST routes) go through these wrappers instead of
+`session.start()` directly.
 
-Simpler alternative if the hook pattern feels heavy: make `SessionManager`
-wrap `session.start()/pause()/resume()/complete()/fail()` in methods that do
-both the transition AND persistence. Either approach is fine; pick one.
+**Why not transition hooks:** `asyncio.get_running_loop().create_task(...)`
+is fire-and-forget. If `persist_session` raises (disk full, SQLite lock, etc.)
+the error disappears into the event loop. With the wrapper approach, the
+exception propagates to the REST handler which returns a 500, or the executor
+which can decide whether to fail the session. Error visibility > API
+elegance here.
+
+**Exception:** `Session` itself should still expose raw `start()/pause()/...`
+for unit tests that don't want to touch storage. Only the async wrappers on
+`SessionManager` trigger persistence.
 
 ### Fix G: Single event subscription per session (WS amplification)
 
@@ -2685,6 +2699,11 @@ by the `serve` command:
 
 ```python
 # agentlabx/cli/main.py
+# NOTE: module-level state is NOT reload-safe. uvicorn --reload spawns a new
+# process on file change, which resets this global. The dev flow is
+# "ctrl-C + restart" when flags change, so this is a non-issue in practice —
+# just be aware that flipping --mock-llm while a reload-watched process is
+# running won't take effect until a full restart.
 _USE_MOCK_LLM = False
 
 
