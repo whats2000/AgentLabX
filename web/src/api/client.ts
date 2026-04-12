@@ -1,20 +1,26 @@
 import createClient from "openapi-fetch";
-import type { paths } from "./generated";
+import type { components, paths } from "./generated";
 
 const client = createClient<paths>({ baseUrl: "" });
 
-export class APIError extends Error {
+export class APIError<B = unknown> extends Error {
   constructor(
     public status: number,
-    public body: unknown,
+    public body: B,
   ) {
     super(`API ${status}: ${JSON.stringify(body)}`);
   }
 }
 
-function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
+export function isValidationError(
+  err: unknown,
+): err is APIError<components["schemas"]["HTTPValidationError"]> {
+  return err instanceof APIError && err.status === 422;
+}
+
+function unwrap<T, E>(result: { data?: T; error?: E; response: Response }): T {
   if (result.error !== undefined) {
-    throw new APIError(result.response.status, result.error);
+    throw new APIError<E>(result.response.status, result.error);
   }
   return result.data as T;
 }
