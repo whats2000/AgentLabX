@@ -13,15 +13,20 @@ from agentlabx.core.state import CrossStageRequest, PipelineState
 class StageContext(BaseModel):
     """Runtime context passed to every stage.
 
-    Stages receive this with all the infrastructure they need:
+    Stages receive this with all the infrastructure they need.
+
+    Fields:
     - registry: PluginRegistry for resolving agents and tools
     - event_bus: EventBus for emitting progress events
     - settings: Application settings
-    - llm_provider: BaseLLMProvider instance — stages pass this to agents when
-      instantiating them. None → agents run in mock mode (Plan 2 default).
-    - cost_tracker: Shared CostTracker that agents update after each LLM call.
+    - llm_provider: BaseLLMProvider instance — stages pass this to agents
+      when instantiating them. None → agents run in mock mode (Plan 2 default).
+    - cost_tracker: Shared CostTracker accumulated across agent calls.
       None → no cost accumulation. PipelineBuilder wires this to the session's
       state["cost_tracker"] so budget policies can see live spend.
+    - paused_event: asyncio.Event — set=running, cleared=paused. StageRunner
+      awaits this between on_enter and stage.run for cooperative pause.
+      None = no pause support (default).
     """
 
     settings: Any = None
@@ -29,6 +34,7 @@ class StageContext(BaseModel):
     registry: Any = None
     llm_provider: Any = None
     cost_tracker: Any = None
+    paused_event: Any = None
     model_config = {"arbitrary_types_allowed": True}
 
 

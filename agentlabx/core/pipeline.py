@@ -7,9 +7,12 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from agentlabx.core.events import EventBus
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.session import SessionPreferences
-from agentlabx.core.state import PipelineState
+from agentlabx.core.state import CostTracker, PipelineState
+from agentlabx.providers.llm.base import BaseLLMProvider
+from agentlabx.stages.base import StageContext
 from agentlabx.stages.runner import StageRunner
 from agentlabx.stages.transition import TransitionHandler
 
@@ -34,7 +37,12 @@ class PipelineBuilder:
     def build(
         self,
         stage_sequence: list[str],
+        *,
         checkpointer: Any | None = None,
+        llm_provider: BaseLLMProvider | None = None,
+        cost_tracker: CostTracker | None = None,
+        event_bus: EventBus | None = None,
+        stage_context: StageContext | None = None,
     ) -> Any:
         """Create and compile a StateGraph for the given stage sequence.
 
@@ -44,6 +52,15 @@ class PipelineBuilder:
             Ordered list of stage names (must be registered under PluginType.STAGE).
         checkpointer:
             LangGraph checkpointer instance. Defaults to MemorySaver().
+        llm_provider:
+            LLM provider to wire into all stage contexts.
+        cost_tracker:
+            Shared cost tracker to wire into all stage contexts.
+        event_bus:
+            Event bus to wire into all stage contexts.
+        stage_context:
+            If provided, used as-is (allows executor to inject a context with
+            paused_event etc.). Otherwise, one is constructed from the other kwargs.
 
         Returns
         -------
@@ -52,14 +69,33 @@ class PipelineBuilder:
         if checkpointer is None:
             checkpointer = MemorySaver()
 
+        if stage_context is None:
+            # Only wire the registry into the stage context when at least one
+            # provider or bus is explicitly supplied. This preserves backward
+            # compatibility for tests that rely on registry=None causing real
+            # stages to degrade gracefully instead of hard-failing on missing
+            # agent/tool registrations.
+            wired_registry = (
+                self.registry
+                if (llm_provider is not None or cost_tracker is not None or event_bus is not None)
+                else None
+            )
+            stage_context = StageContext(
+                settings={},
+                event_bus=event_bus,
+                registry=wired_registry,
+                llm_provider=llm_provider,
+                cost_tracker=cost_tracker,
+            )
+
         builder = StateGraph(PipelineState)
 
-        # Resolve stage classes and create runners
+        # Resolve stage classes and create runners with the shared context
         runners: dict[str, StageRunner] = {}
         for stage_name in stage_sequence:
             stage_cls = self.registry.resolve(PluginType.STAGE, stage_name)
             stage_instance = stage_cls()
-            runners[stage_name] = StageRunner(stage_instance)
+            runners[stage_name] = StageRunner(stage_instance, context=stage_context)
 
         # Add stage nodes
         for stage_name, runner in runners.items():
