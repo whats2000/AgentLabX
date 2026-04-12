@@ -7,6 +7,10 @@ from typing import Any
 
 
 class BaseStorageBackend(ABC):
+    # Plugin metadata — subclasses override. Surfaced by /api/plugins.
+    name: str = "storage_backend"
+    description: str = ""
+
     @abstractmethod
     async def save_state(self, session_id: str, stage: str, state: dict[str, Any]) -> None: ...
 

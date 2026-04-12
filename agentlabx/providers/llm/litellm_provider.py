@@ -22,6 +22,13 @@ class LiteLLMProvider(BaseLLMProvider):
     API keys read from environment (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.).
     """
 
+    name = "litellm"
+    description = (
+        "Multi-provider LLM gateway via LiteLLM. "
+        "Routes to OpenAI, Anthropic, Gemini, DeepSeek, Ollama and more "
+        "using provider/model identifiers. Reads API keys from environment."
+    )
+
     def __init__(
         self,
         *,

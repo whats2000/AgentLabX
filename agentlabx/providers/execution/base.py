@@ -17,6 +17,10 @@ class ExecutionResult(BaseModel):
 
 
 class BaseExecutionBackend(ABC):
+    # Plugin metadata — subclasses override. Surfaced by /api/plugins.
+    name: str = "execution_backend"
+    description: str = ""
+
     @abstractmethod
     async def execute(
         self, *, code: str, workspace: Path, timeout: int = 120

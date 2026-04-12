@@ -16,6 +16,10 @@ class LLMResponse(BaseModel):
 
 
 class BaseLLMProvider(ABC):
+    # Plugin metadata — subclasses override. Surfaced by /api/plugins.
+    name: str = "llm_provider"
+    description: str = ""
+
     @abstractmethod
     async def query(
         self, *, model: str, prompt: str, system_prompt: str = "", temperature: float = 0.0

@@ -26,6 +26,12 @@ class SQLiteBackend(BaseStorageBackend):
     Paths are namespaced by session_id.
     """
 
+    name = "sqlite"
+    description = (
+        "Async SQLite via SQLAlchemy + aiosqlite. Checkpoints in the DB, "
+        "artifacts on disk under session-namespaced directories."
+    )
+
     def __init__(self, *, database_url: str, artifacts_path: Path) -> None:
         self.database_url = database_url
         self.artifacts_path = Path(artifacts_path)

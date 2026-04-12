@@ -22,8 +22,10 @@ class CodeResult(BaseModel):
 
 
 class BaseCodeAgent(ABC):
-    name: str
-    supports_streaming: bool
+    # Plugin metadata — subclasses override. Surfaced by /api/plugins.
+    name: str = "code_agent"
+    description: str = ""
+    supports_streaming: bool = False
 
     @abstractmethod
     async def generate(self, task: str, context: CodeContext, workspace: Path) -> CodeResult: ...

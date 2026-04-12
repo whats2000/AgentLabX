@@ -118,9 +118,12 @@ class TestPlugins:
         assert "agent" in data
         assert "stage" in data
         assert "tool" in data
-        assert "phd_student" in data["agent"]
-        assert "literature_review" in data["stage"]
-        assert "arxiv_search" in data["tool"]
+        agent_names = [e["name"] for e in data["agent"]]
+        stage_names = [e["name"] for e in data["stage"]]
+        tool_names = [e["name"] for e in data["tool"]]
+        assert "phd_student" in agent_names
+        assert "literature_review" in stage_names
+        assert "arxiv_search" in tool_names
 
 
 class TestWebSocketLifecycle:

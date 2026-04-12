@@ -17,6 +17,7 @@ from agentlabx.agents.config_loader import AgentConfigLoader
 from agentlabx.core.config import Settings
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.session import SessionManager
+from agentlabx.providers.code_agent.builtin_agent import BuiltinCodeAgent
 from agentlabx.providers.execution.subprocess_backend import SubprocessBackend
 from agentlabx.providers.llm.base import BaseLLMProvider
 from agentlabx.providers.llm.litellm_provider import LiteLLMProvider
@@ -101,18 +102,28 @@ async def build_app_context(
         artifacts_path=Path(settings.storage.artifacts_path),
     )
     await storage.initialize()
+    registry.register(PluginType.STORAGE_BACKEND, storage.name, storage)
 
     # SessionManager wired to storage (persistence methods land in Task 10)
     session_manager = SessionManager(storage=storage)
 
     # Backend-dependent tools — construct now that execution backend exists
     execution_backend = SubprocessBackend()
+    registry.register(
+        PluginType.EXECUTION_BACKEND, execution_backend.name, execution_backend
+    )
     code_executor = CodeExecutor(backend=execution_backend)
     # Register as instance (resolve_tool handles both class and instance)
     registry.register(PluginType.TOOL, "code_executor", code_executor)
 
     # LLM provider: mock for CI/local dev, LiteLLM for production
     llm_provider: BaseLLMProvider = MockLLMProvider() if use_mock_llm else LiteLLMProvider()
+    registry.register(PluginType.LLM_PROVIDER, llm_provider.name, llm_provider)
+
+    # Code agent — registered as a class so consumers can instantiate with
+    # their own llm_provider. BuiltinCodeAgent is the fallback; future
+    # adapters (claude-code, codex) register themselves here too.
+    registry.register(PluginType.CODE_AGENT, BuiltinCodeAgent.name, BuiltinCodeAgent)
 
     context = AppContext(
         settings=settings,

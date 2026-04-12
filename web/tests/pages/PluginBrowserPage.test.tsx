@@ -28,34 +28,44 @@ describe("PluginBrowserPage", () => {
     mocked.listPlugins.mockReset();
   });
 
-  it("renders tabs for each plugin kind", async () => {
+  it("renders tabs for each plugin kind using singular backend keys", async () => {
+    // Backend returns singular PluginType.value keys (agent, stage, tool,
+    // llm_provider, execution_backend, storage_backend, code_agent).
     mocked.listPlugins.mockResolvedValue({
-      agents: [{ name: "phd_student", description: "PhD student agent" }],
-      stages: [{ name: "literature_review" }],
-      tools: [{ name: "arxiv_search" }],
-      llm_providers: [{ name: "litellm" }],
-      execution_backends: [],
-      storage_backends: [{ name: "sqlite" }],
-      code_agents: [],
+      agent: [{ name: "phd_student", description: "PhD student agent" }],
+      stage: [{ name: "literature_review", description: "" }],
+      tool: [{ name: "arxiv_search", description: "" }],
+      llm_provider: [{ name: "litellm", description: "" }],
+      execution_backend: [],
+      storage_backend: [{ name: "sqlite", description: "" }],
+      code_agent: [],
     });
     render_();
     await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /Agents \(1\)/ })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("tab", { name: /Agents \(1\)/ }),
+      ).toBeInTheDocument(),
     );
     expect(screen.getByRole("tab", { name: /Stages \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Tools \(1\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Execution Backends \(0\)/ })).toBeInTheDocument();
+    // Fix 2: acronym survives the label map instead of becoming "Llm Providers"
+    expect(
+      screen.getByRole("tab", { name: /LLM Providers \(1\)/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /Execution Backends \(0\)/ }),
+    ).toBeInTheDocument();
   });
 
-  it("renders rows for plugins of the active tab", async () => {
+  it("renders rows with name and description in the active tab", async () => {
     mocked.listPlugins.mockResolvedValue({
-      agents: [{ name: "phd_student", description: "PhD student agent" }],
-      stages: [],
-      tools: [],
-      llm_providers: [],
-      execution_backends: [],
-      storage_backends: [],
-      code_agents: [],
+      agent: [{ name: "phd_student", description: "PhD student agent" }],
+      stage: [],
+      tool: [],
+      llm_provider: [],
+      execution_backend: [],
+      storage_backend: [],
+      code_agent: [],
     });
     render_();
     expect(await screen.findByText("phd_student")).toBeInTheDocument();

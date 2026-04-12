@@ -21,6 +21,13 @@ class SubprocessBackend(BaseExecutionBackend):
     reproducibility metadata (seed, environment hash, run command).
     """
 
+    name = "subprocess"
+    description = (
+        "Runs Python code in a subprocess with timeout + working-dir isolation. "
+        "Captures stdout, stderr, exit code, and a reproducibility record "
+        "(seed, env hash, run command)."
+    )
+
     async def execute(
         self,
         *,

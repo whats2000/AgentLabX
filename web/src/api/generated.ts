@@ -226,6 +226,12 @@ export interface paths {
         /**
          * List Plugins
          * @description List all registered plugins grouped by type.
+         *
+         *     Keys use the singular PluginType.value form (`agent`, `stage`, `tool`,
+         *     `llm_provider`, `execution_backend`, `storage_backend`, `code_agent`).
+         *     Entries are {name, description}; description falls back to the
+         *     registered class's docstring's first line when an explicit
+         *     description isn't set.
          */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
@@ -310,6 +316,16 @@ export interface components {
             }[];
             /** Total Records */
             total_records: number;
+        };
+        /** PluginEntry */
+        PluginEntry: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /** PreferencesUpdateRequest */
         PreferencesUpdateRequest: {
@@ -844,7 +860,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": {
+                        [key: string]: components["schemas"]["PluginEntry"][];
+                    };
                 };
             };
         };

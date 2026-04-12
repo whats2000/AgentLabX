@@ -1,12 +1,9 @@
 import { Empty, Table, Typography } from "antd";
+import type { components } from "../../api/generated";
 
 const { Text } = Typography;
 
-export interface PluginEntry {
-  name: string;
-  description?: string;
-  [k: string]: unknown;
-}
+export type PluginEntry = components["schemas"]["PluginEntry"];
 
 interface Props {
   plugins: PluginEntry[];

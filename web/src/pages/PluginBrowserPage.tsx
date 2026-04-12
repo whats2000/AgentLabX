@@ -4,14 +4,18 @@ import { PluginList, type PluginEntry } from "../components/plugins/PluginList";
 
 const { Title, Text } = Typography;
 
+// Keys match the backend's singular PluginType.value form
+// (agentlabx/core/registry.py::PluginType). Each entry is an explicit label
+// so acronyms like "LLM" survive — the title-case fallback would otherwise
+// produce "Llm Provider".
 const KIND_LABELS: Record<string, string> = {
-  agents: "Agents",
-  stages: "Stages",
-  tools: "Tools",
-  llm_providers: "LLM Providers",
-  execution_backends: "Execution Backends",
-  storage_backends: "Storage Backends",
-  code_agents: "Code Agents",
+  agent: "Agents",
+  stage: "Stages",
+  tool: "Tools",
+  llm_provider: "LLM Providers",
+  execution_backend: "Execution Backends",
+  storage_backend: "Storage Backends",
+  code_agent: "Code Agents",
 };
 
 function labelFor(kind: string): string {
@@ -22,6 +26,24 @@ function labelFor(kind: string): string {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ")
   );
+}
+
+// Preferred display order for the tabs. Unknown keys (e.g. future plugin
+// types added to the backend before the frontend knows about them) sort to
+// the end in their natural order.
+const KIND_ORDER = [
+  "agent",
+  "stage",
+  "tool",
+  "llm_provider",
+  "execution_backend",
+  "storage_backend",
+  "code_agent",
+];
+
+function kindOrder(kind: string): number {
+  const idx = KIND_ORDER.indexOf(kind);
+  return idx === -1 ? KIND_ORDER.length : idx;
 }
 
 export default function PluginBrowserPage() {
@@ -48,9 +70,9 @@ export default function PluginBrowserPage() {
 
   // The response is typed unknown; cast to a Record<string, PluginEntry[]>
   const payload = data as unknown as Record<string, PluginEntry[]>;
-  const entries = Object.entries(payload).filter(
-    ([, v]) => Array.isArray(v),
-  );
+  const entries = Object.entries(payload)
+    .filter(([, v]) => Array.isArray(v))
+    .sort(([a], [b]) => kindOrder(a) - kindOrder(b));
 
   return (
     <div>

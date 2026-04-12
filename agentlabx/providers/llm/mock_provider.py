@@ -11,6 +11,12 @@ from agentlabx.providers.llm.base import BaseLLMProvider, LLMResponse
 class MockLLMProvider(BaseLLMProvider):
     """Returns scripted responses in order. Tracks call history for assertions."""
 
+    name = "mock"
+    description = (
+        "Scripted responses for tests and --mock-llm local dev. "
+        "Zero cost, zero network — returns canned strings in call order."
+    )
+
     def __init__(self, responses: list[str] | None = None) -> None:
         self._responses: deque[str] = deque(responses or [])
         self.calls: list[dict[str, Any]] = []

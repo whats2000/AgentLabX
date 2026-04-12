@@ -13,6 +13,10 @@ class BuiltinCodeAgent(BaseCodeAgent):
     """Fallback code agent using direct LLM calls. No external tool required."""
 
     name = "builtin"
+    description = (
+        "Fallback code agent: prompts the active LLM directly to generate, "
+        "edit, and debug code. No external SDK required."
+    )
     supports_streaming = False
 
     def __init__(
