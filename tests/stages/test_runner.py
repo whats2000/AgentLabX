@@ -107,6 +107,91 @@ class TestStageRunner:
         update = await runner.run(initial_state)
         assert update["next_stage"] is None
 
+    async def test_stage_output_merged_into_update(self, initial_state):
+        """Stage output keys are merged into the update dict so LangGraph reducers apply."""
+        from agentlabx.core.state import LitReviewResult
+
+        class LitReviewProducer(BaseStage):
+            name = "lit_producer"
+            description = "Produces literature review output"
+            required_agents = []
+            required_tools = []
+
+            async def run(self, state, context):
+                result = LitReviewResult(
+                    papers=[{"title": "Test paper"}],
+                    summary="Test summary",
+                )
+                return StageResult(
+                    output={"literature_review": [result]},
+                    status="done",
+                    reason="Lit review produced",
+                )
+
+        runner = StageRunner(LitReviewProducer())
+        update = await runner.run(initial_state)
+        # Output key should be present in update so LangGraph reducer can append
+        assert "literature_review" in update
+        assert len(update["literature_review"]) == 1
+        assert update["literature_review"][0].summary == "Test summary"
+
+    async def test_runner_tracking_overrides_stage_output(self, initial_state):
+        """Runner-owned fields (current_stage) always win over stage output."""
+
+        class MaliciousStage(BaseStage):
+            name = "correct_name"
+            description = "Tries to set current_stage to wrong value"
+            required_agents = []
+            required_tools = []
+
+            async def run(self, state, context):
+                return StageResult(
+                    output={"current_stage": "WRONG", "total_iterations": 999},
+                    status="done",
+                    reason="test",
+                )
+
+        runner = StageRunner(MaliciousStage())
+        update = await runner.run(initial_state)
+        assert update["current_stage"] == "correct_name"
+        assert update["total_iterations"] == 1
+
+    async def test_multiple_output_keys_all_merged(self, initial_state):
+        """A stage can write to multiple state keys at once."""
+        from agentlabx.core.state import Hypothesis, ResearchPlan
+
+        class PlanProducer(BaseStage):
+            name = "plan_producer"
+            description = "Produces plan and hypotheses"
+            required_agents = []
+            required_tools = []
+
+            async def run(self, state, context):
+                plan = ResearchPlan(
+                    goals=["Goal 1"],
+                    methodology="Method",
+                    hypotheses=["H1"],
+                    full_text="text",
+                )
+                hyp = Hypothesis(
+                    id="H1",
+                    statement="test hypothesis",
+                    status="active",
+                    created_at_stage="plan_producer",
+                )
+                return StageResult(
+                    output={"plan": [plan], "hypotheses": [hyp]},
+                    status="done",
+                    reason="done",
+                )
+
+        runner = StageRunner(PlanProducer())
+        update = await runner.run(initial_state)
+        assert "plan" in update
+        assert "hypotheses" in update
+        assert len(update["plan"]) == 1
+        assert len(update["hypotheses"]) == 1
+
     async def test_custom_context_passed_through(self, initial_state):
         """Custom StageContext is forwarded to stage.run()."""
         received_context: list[StageContext] = []

@@ -10,7 +10,14 @@ from agentlabx.agents.config_loader import AgentConfig
 
 
 class ConfigAgent(BaseAgent):
-    """Generic agent created from an AgentConfig. Supports mock responses for testing."""
+    """Generic agent created from an AgentConfig.
+
+    Supports two inference modes:
+    - Mock mode: scripted responses via mock_responses deque (for tests)
+    - Real mode: llm_provider is set → Plan 3 Task 10 wires real inference
+
+    When both are None, returns a stub string (Plan 2 behavior).
+    """
 
     def __init__(
         self,
@@ -22,6 +29,8 @@ class ConfigAgent(BaseAgent):
         memory_scope: MemoryScope,
         max_history_length: int = 10,
         mock_responses: deque[str] | None = None,
+        llm_provider: Any = None,
+        model: str = "claude-sonnet-4-6",
     ) -> None:
         super().__init__(
             name=name,
@@ -32,14 +41,23 @@ class ConfigAgent(BaseAgent):
         )
         self.max_history_length = max_history_length
         self._mock_responses: deque[str] | None = mock_responses
+        self.llm_provider = llm_provider
+        self.model = model
 
     @classmethod
     def from_config(
         cls,
         config: AgentConfig,
         mock_responses: deque[str] | None = None,
+        *,
+        llm_provider: Any = None,
+        model: str = "claude-sonnet-4-6",
     ) -> ConfigAgent:
-        """Instantiate a ConfigAgent from an AgentConfig."""
+        """Instantiate a ConfigAgent from an AgentConfig.
+
+        Pass llm_provider to enable real LLM inference (requires Plan 3 Task 10
+        to fully wire the inference path). Without it, the agent returns stubs.
+        """
         return cls(
             name=config.name,
             role=config.role,
@@ -48,10 +66,17 @@ class ConfigAgent(BaseAgent):
             memory_scope=config.memory_scope,
             max_history_length=config.conversation_history_length,
             mock_responses=mock_responses,
+            llm_provider=llm_provider,
+            model=model,
         )
 
     async def inference(self, prompt: str, context: AgentContext) -> str:
-        """Run inference. Uses mock_responses deque if available, else returns a stub."""
+        """Run inference. Precedence: mock_responses > stub.
+
+        Plan 3 Task 10 extends this to call llm_provider.query() between the
+        mock_responses and stub branches so real LLM inference engages when a
+        provider is injected and no scripted responses remain.
+        """
         if self._mock_responses:
             response = self._mock_responses.popleft()
         else:
