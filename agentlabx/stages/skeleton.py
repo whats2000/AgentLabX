@@ -14,83 +14,26 @@ also fail because PipelineState keys are typed. The correct stub is `{}`.
 from __future__ import annotations
 
 from agentlabx.core.registry import PluginRegistry, PluginType
-from agentlabx.core.state import PipelineState
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage
+from agentlabx.stages.data_exploration import DataExplorationStage
+from agentlabx.stages.data_preparation import DataPreparationStage
+from agentlabx.stages.experimentation import ExperimentationStage
 from agentlabx.stages.literature_review import LiteratureReviewStage
 from agentlabx.stages.peer_review import PeerReviewStage
 from agentlabx.stages.plan_formulation import PlanFormulationStage
 from agentlabx.stages.report_writing import ReportWritingStage
+from agentlabx.stages.results_interpretation import ResultsInterpretationStage
 
 __all__ = [
     "LiteratureReviewStage",
     "PlanFormulationStage",
+    "DataExplorationStage",
+    "DataPreparationStage",
+    "ExperimentationStage",
+    "ResultsInterpretationStage",
     "ReportWritingStage",
     "PeerReviewStage",
 ]
-
-
-class DataExplorationStage(BaseStage):
-    """Placeholder — real implementation in Plan 4+."""
-
-    name = "data_exploration"
-    description = "Explore dataset structure, distributions, and quality"
-    required_agents = ["phd_student"]
-    required_tools = ["code_executor", "dataset_loader"]
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Data exploration stage completed (skeleton)",
-        )
-
-
-class DataPreparationStage(BaseStage):
-    """Placeholder — real implementation in Plan 4+."""
-
-    name = "data_preparation"
-    description = "Clean, normalise, and prepare dataset for modelling"
-    required_agents = ["phd_student"]
-    required_tools = ["code_executor"]
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Data preparation stage completed (skeleton)",
-        )
-
-
-class ExperimentationStage(BaseStage):
-    """Placeholder — real implementation in Plan 4+."""
-
-    name = "experimentation"
-    description = "Design and execute experiments to test hypotheses"
-    required_agents = ["phd_student"]
-    required_tools = ["code_executor", "experiment_tracker"]
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Experimentation stage completed (skeleton)",
-        )
-
-
-class ResultsInterpretationStage(BaseStage):
-    """Placeholder — real implementation in Plan 4+."""
-
-    name = "results_interpretation"
-    description = "Interpret results, update hypotheses, and identify next steps"
-    required_agents = ["pi_agent", "phd_student"]
-    required_tools = []
-
-    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
-        return StageResult(
-            output={},
-            status="done",
-            reason="Results interpretation stage completed (skeleton)",
-        )
 
 
 # Ordered list matching PipelineConfig.default_sequence

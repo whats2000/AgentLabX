@@ -1,8 +1,17 @@
 """Tests for the research pipeline stages registered via skeleton.py.
 
-The four Plan 3 real stages (LiteratureReviewStage, PlanFormulationStage,
-ReportWritingStage, PeerReviewStage) have dedicated test modules. This file
-covers the remaining skeleton stages and cross-stage invariants.
+All 8 stages now have real implementations with dedicated test modules. This
+file covers cross-stage invariants and registry registration tests.
+
+Real stage test modules:
+  tests/stages/test_literature_review_real.py
+  tests/stages/test_plan_formulation_real.py
+  tests/stages/test_report_writing_real.py
+  tests/stages/test_peer_review_real.py
+  tests/stages/test_data_exploration_real.py
+  tests/stages/test_data_preparation_real.py
+  tests/stages/test_experimentation_real.py
+  tests/stages/test_results_interpretation_real.py
 """
 
 from __future__ import annotations
@@ -37,52 +46,6 @@ def context():
 
 
 # ---------------------------------------------------------------------------
-# Individual stage tests — skeleton stages only
-# Real Plan 3 stages have dedicated test modules:
-#   tests/stages/test_literature_review_real.py
-#   tests/stages/test_plan_formulation_real.py
-#   tests/stages/test_report_writing_real.py
-#   tests/stages/test_peer_review_real.py
-# ---------------------------------------------------------------------------
-
-
-class TestDataExplorationStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await DataExplorationStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert DataExplorationStage.name == "data_exploration"
-
-
-class TestDataPreparationStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await DataPreparationStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert DataPreparationStage.name == "data_preparation"
-
-
-class TestExperimentationStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await ExperimentationStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert ExperimentationStage.name == "experimentation"
-
-
-class TestResultsInterpretationStage:
-    async def test_runs_and_returns_done(self, state, context):
-        result = await ResultsInterpretationStage().run(state, context)
-        assert result.status == "done"
-
-    def test_name(self):
-        assert ResultsInterpretationStage.name == "results_interpretation"
-
-
-# ---------------------------------------------------------------------------
 # Cross-stage invariant tests
 # ---------------------------------------------------------------------------
 
@@ -107,18 +70,19 @@ class TestSkeletonStageInvariants:
         for cls in ALL_STAGES:
             assert isinstance(cls.required_tools, list), f"{cls.name}.required_tools not a list"
 
-    async def test_skeleton_stages_run_successfully(self, state, context):
-        # Only skeleton stages (no registry required) should return status="done"
-        # Real Plan 3 stages return "backtrack" without a registry — tested separately.
-        skeleton_only = [
+    async def test_real_stages_backtrack_without_registry(self, state, context):
+        # All 8 stages are now real implementations and return "backtrack" without registry.
+        real_stages = [
             DataExplorationStage,
             DataPreparationStage,
             ExperimentationStage,
             ResultsInterpretationStage,
         ]
-        for cls in skeleton_only:
+        for cls in real_stages:
             result = await cls().run(state, context)
-            assert result.status == "done", f"{cls.name} did not return status='done'"
+            assert result.status == "backtrack", (
+                f"{cls.name} did not return status='backtrack' without registry"
+            )
 
     def test_names_match_default_sequence(self):
         from agentlabx.core.config import PipelineConfig
