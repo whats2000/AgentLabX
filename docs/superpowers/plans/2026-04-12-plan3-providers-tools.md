@@ -2131,3 +2131,346 @@ After completing all 15 tasks, you will have:
 - React + Ant Design + Vite UI
 - Session management dashboard
 - Live pipeline visualization
+
+---
+
+## Addendum: Review Fixes (apply during execution)
+
+The following corrections resolve issues found during Plan 3 review. Some are
+already landed in commit `ffde47e` before Plan 3 execution; others must be
+applied as tasks are implemented.
+
+### Already Landed (as of commit ffde47e)
+
+These were blocking issues that could not wait for Plan 3 execution:
+
+**A. StageRunner merges `result.output` into state update** — Plan 2's runner
+never applied stage outputs. Every real stage's data (literature_review, plan,
+hypotheses, review) would have been silently dropped. Fixed: runner now merges
+output keys first, then overlays runner-owned tracking fields (current_stage,
+stage_iterations, total_iterations) which always win over same-named output
+keys. See `agentlabx/stages/runner.py`.
+
+**B. StageContext carries `llm_provider` and `cost_tracker`** — Resolves the
+"where does LLM get injected?" gap. `StageContext` now has both fields
+(both optional, default None for Plan 2 compatibility). `PipelineBuilder` must
+populate these when building the graph (see Fix C below). See
+`agentlabx/stages/base.py`.
+
+**C. Stage helpers extracted to `agentlabx/stages/_helpers.py`** — Real stages
+use `resolve_agent`, `resolve_tool`, `build_agent_context`, and
+`resolve_agents_for_stage` from this module instead of instantiating sibling
+stages to call their private methods.
+
+**D. ConfigAgent accepts `llm_provider` and `model` params** — Stored on the
+instance. Task 10 below wires them into `inference()`. `from_config` now
+accepts both kwargs so the helpers can inject the provider at stage-run time.
+
+**E. Skeleton stages return `output={}`** — Previous placeholder outputs had
+wrong types (e.g., `dataset_code: str` vs state's `list[str]`) that crashed
+the reducer once the runner started merging. Skeletons now return empty
+output; real stages (Tasks 12-14) replace them with type-correct data.
+
+### Updates to Existing Tasks
+
+**Task 9 (Code Agent Adapters):** Drop `ClaudeCodeAgent`. Task 9 as written is
+a vestigial delegator that just forwards to `BuiltinCodeAgent` with TODO
+stubs. Ship only `BuiltinCodeAgent` in Plan 3 — the real Claude Code SDK
+adapter belongs in Plan 4 or later when the SDK integration can be properly
+designed and tested against real workflows.
+
+Update the task title to "Task 9: Builtin Code Agent" and remove the
+ClaudeCodeAgent file from the file structure. Remove references to it
+elsewhere in the plan.
+
+**Task 10 (ConfigAgent real inference):** The parameter plumbing already
+exists (ConfigAgent accepts `llm_provider` and `model`). This task now
+reduces to wiring `inference()` to use them:
+
+```python
+async def inference(self, prompt: str, context: AgentContext) -> str:
+    self.conversation_history.append({"role": "user", "content": prompt})
+
+    if self._mock_responses:
+        response_text = self._mock_responses.popleft()
+    elif self.llm_provider is not None:
+        response = await self.llm_provider.query(
+            model=self.model,
+            prompt=prompt,
+            system_prompt=self.system_prompt,
+            temperature=0.0,
+        )
+        response_text = response.content
+        # Cost tracking — if the agent was given a cost_tracker, accumulate
+        if hasattr(self, "_cost_tracker") and self._cost_tracker is not None:
+            self._cost_tracker.add_usage(
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
+                cost=response.cost,
+            )
+    else:
+        response_text = f"[{self.name}] stub (no provider and no mock): {prompt[:50]}"
+
+    self.conversation_history.append({"role": "assistant", "content": response_text})
+    self._truncate_history()
+    return response_text
+```
+
+Add `cost_tracker` parameter to `__init__` and `from_config` (same
+pass-through pattern as `llm_provider`). `resolve_agent` / `resolve_agents_for_stage`
+in `_helpers.py` should also forward `cost_tracker` from the StageContext.
+
+Update `agentlabx/stages/_helpers.py::resolve_agent` signature:
+
+```python
+def resolve_agent(
+    registry: PluginRegistry,
+    name: str,
+    *,
+    llm_provider: Any = None,
+    model: str = "claude-sonnet-4-6",
+    cost_tracker: Any = None,
+) -> BaseAgent:
+    ...
+    return ConfigAgent.from_config(
+        entry,
+        llm_provider=llm_provider,
+        model=model,
+        cost_tracker=cost_tracker,
+    )
+```
+
+**Task 11 (PIAgent with LLM):** Load the memory scope from the existing
+`pi_agent.yaml` instead of hardcoding it in the class. This avoids drift
+between YAML and code:
+
+```python
+class PIAgent:
+    def __init__(
+        self,
+        transition_handler: TransitionHandler,
+        pi_agent_config: AgentConfig,  # Load from configs/pi_agent.yaml
+        llm_provider: BaseLLMProvider | None = None,
+        confidence_threshold: float | None = None,
+    ) -> None:
+        self.transition_handler = transition_handler
+        self.llm_provider = llm_provider
+        self.model = "claude-sonnet-4-6"  # or from config
+        # Use confidence_threshold from YAML if not overridden
+        self.confidence_threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else (pi_agent_config.confidence_threshold or 0.6)
+        )
+        self._memory_scope = pi_agent_config.memory_scope  # From YAML
+        self._context_assembler = ContextAssembler()
+        self.decision_history: list[PIDecision] = []
+```
+
+Remove the hardcoded `MemoryScope(read=[...], summarize={...})` block — all
+that data already lives in `pi_agent.yaml` from Plan 2.
+
+**Task 11 (continued): Use JSON mode for robustness.** The decision prompt
+currently parses LLM output with a regex. Use structured output instead:
+
+```python
+DECISION_SYSTEM_PROMPT = (
+    "You are a research director. Respond ONLY with a JSON object of the form: "
+    '{"agree_with_rule": true|false, "next_stage": "<stage name or null>", '
+    '"confidence": <float between 0.0 and 1.0>, "reasoning": "<1-3 sentences>"}. '
+    "No prose, no markdown, no explanation outside the JSON."
+)
+```
+
+Keep the regex as a defensive fallback for when the LLM violates the format —
+but the primary path is strict JSON. If using LiteLLM with a provider that
+supports JSON mode, also pass `response_format={"type": "json_object"}` to
+`acompletion()`.
+
+**Task 13 (Real Plan Formulation):** Same treatment — postdoc returns JSON
+with fields `{"goals": [...], "methodology": "...", "hypotheses": [...]}`.
+Drop the `_parse_plan` regex in favor of `json.loads()` with a regex-based
+JSON extractor as defensive fallback.
+
+**Task 14 (Real Peer Review):** Same JSON treatment. Reviewer returns
+`{"decision": "accept|revise|reject", "scores": {...}, "overall": int, "feedback": "..."}`.
+
+### New Task — Task 12A: Upgrade Report Writing Stage
+
+Insert between Tasks 12 and 13 (keep original Task 12 lit review, shift
+later tasks by one). Blind peer review (Task 14) evaluates the report, so
+the report must be a real LLM-generated document, not a stub.
+
+**Files:**
+- Create: `agentlabx/stages/report_writing.py` (replaces skeleton import)
+- Create: `tests/stages/test_report_writing_real.py`
+
+**Implementation:** Professor + PhD student collaborate to write the paper
+in LaTeX from the available state (plan, experiment_results, interpretation,
+literature_review). Outline-first: professor drafts the outline, PhD fills
+sections, professor polishes.
+
+```python
+# agentlabx/stages/report_writing.py
+from __future__ import annotations
+from agentlabx.core.state import PipelineState, ReportResult
+from agentlabx.stages._helpers import build_agent_context, resolve_agent
+from agentlabx.stages.base import BaseStage, StageContext, StageResult
+
+
+class ReportWritingStage(BaseStage):
+    name = "report_writing"
+    description = "Professor and PhD student write the research paper in LaTeX."
+    required_agents = ["professor", "phd_student"]
+    required_tools = ["latex_compiler"]
+
+    async def run(self, state: PipelineState, context: StageContext) -> StageResult:
+        registry = context.registry
+        professor = resolve_agent(registry, "professor", llm_provider=context.llm_provider,
+                                   cost_tracker=context.cost_tracker)
+        phd = resolve_agent(registry, "phd_student", llm_provider=context.llm_provider,
+                            cost_tracker=context.cost_tracker)
+
+        # 1. Professor drafts outline
+        outline_prompt = (
+            f"Topic: {state['research_topic']}\n\n"
+            f"Available materials:\n"
+            f"- Literature review: {len(state.get('literature_review', []))} reviews\n"
+            f"- Plan: {len(state.get('plan', []))} plans\n"
+            f"- Experiment results: {len(state.get('experiment_results', []))} runs\n"
+            f"- Interpretation: {len(state.get('interpretation', []))} entries\n\n"
+            f"Draft a LaTeX paper outline with these sections: Abstract, Introduction, "
+            f"Related Work, Methodology, Experiments, Results, Discussion, Conclusion. "
+            f"Return only the LaTeX section headers and a one-line description under each."
+        )
+        outline = await professor.inference(
+            outline_prompt,
+            build_agent_context(state, professor, phase="report_writing"),
+        )
+
+        # 2. PhD fills sections (for brevity, ask for a complete draft)
+        draft_prompt = (
+            f"Outline:\n{outline}\n\n"
+            f"Write a complete LaTeX paper (\\documentclass{{article}} ... \\end{{document}}) "
+            f"based on this outline and the project's materials. Use \\section{{}} for each "
+            f"section. Keep it concise (~1000 words body). Include an \\begin{{abstract}} ... "
+            f"\\end{{abstract}} environment."
+        )
+        draft_latex = await phd.inference(
+            draft_prompt,
+            build_agent_context(state, phd, phase="report_writing"),
+        )
+
+        # 3. Professor polishes
+        polish_prompt = (
+            f"Draft LaTeX:\n{draft_latex}\n\n"
+            f"Improve academic tone, fix structure issues, ensure all sections flow. "
+            f"Return the complete revised LaTeX document only."
+        )
+        final_latex = await professor.inference(
+            polish_prompt,
+            build_agent_context(state, professor, phase="report_writing"),
+        )
+
+        # Extract sections (minimal parsing — section names → content)
+        sections = self._extract_sections(final_latex)
+
+        report = ReportResult(
+            latex_source=final_latex,
+            sections=sections,
+            compiled_pdf_path=None,  # Optional: invoke latex_compiler tool here
+        )
+
+        return StageResult(
+            output={"report": [report]},
+            status="done",
+            reason="Report written by professor-PhD collaboration (outline → draft → polish)",
+        )
+
+    def _extract_sections(self, latex: str) -> dict[str, str]:
+        import re
+        sections = {}
+        for match in re.finditer(
+            r"\\section\{([^}]+)\}(.*?)(?=\\section\{|\\end\{document\})",
+            latex,
+            re.DOTALL,
+        ):
+            title = match.group(1).strip()
+            body = match.group(2).strip()
+            sections[title] = body
+        return sections
+```
+
+Tests use MockLLMProvider with 3 scripted responses (outline, draft, polish).
+Verify `ReportResult` is appended to state.
+
+Commit: `feat(stages): add real report writing stage with outline-draft-polish workflow`
+
+### Test File Migration — `test_skeleton_stages.py`
+
+When Tasks 12-14 replace `LiteratureReviewStage`, `PlanFormulationStage`,
+`PeerReviewStage`, and (now also) `ReportWritingStage`, the Plan 2 test file
+`tests/stages/test_skeleton_stages.py` imports these by name and verifies
+skeleton behavior. Two options:
+
+1. **Keep skeletons as fallback**: Rename classes (e.g., `SkeletonLiteratureReviewStage`)
+   and register under a different name (`"literature_review_skeleton"`). Skeletons
+   remain as a no-LLM testing mode. `test_skeleton_stages.py` imports the renamed
+   classes.
+
+2. **Remove the skeleton tests**: Real stages have their own comprehensive tests
+   with MockLLMProvider. Drop the 3-4 now-stale skeleton tests from
+   `test_skeleton_stages.py` and keep only the tests for stages not yet upgraded
+   (data_exploration, data_preparation, experimentation, results_interpretation).
+
+Option 2 is simpler. Apply as part of each stage-upgrade task: when Task 12
+lands real `LiteratureReviewStage`, delete the matching skeleton test in the
+same commit.
+
+### Wiring Summary — Where Cost and LLM Provider Flow
+
+Final wiring (implemented progressively across Tasks 10-14):
+
+1. Application startup constructs `LiteLLMProvider` (or `MockLLMProvider` in tests).
+2. Session creation: `PipelineBuilder.build()` receives the provider and the
+   session's `CostTracker`. It constructs a `StageContext(llm_provider=..., cost_tracker=...)`
+   and passes this to every `StageRunner`.
+3. Stage run: real stages call `resolve_agent(registry, name, llm_provider=context.llm_provider, cost_tracker=context.cost_tracker)`.
+4. Agent inference: `ConfigAgent.inference()` uses the provider and updates the
+   shared `CostTracker` after each call.
+5. PI agent transition: reads `state["cost_tracker"]` to detect budget warnings.
+
+Update `PipelineBuilder.build()` to accept and wire these:
+
+```python
+def build(
+    self,
+    stage_sequence: list[str],
+    *,
+    llm_provider: Any = None,
+    cost_tracker: Any = None,
+    checkpointer: Any = None,
+) -> Any:
+    ...
+    # When creating StageRunner, pass a context with the provider and tracker
+    stage_context = StageContext(
+        settings={}, event_bus=None, registry=self.registry,
+        llm_provider=llm_provider, cost_tracker=cost_tracker,
+    )
+    runner = StageRunner(stage_instance, context=stage_context)
+    ...
+```
+
+The session's `CostTracker` is also written back to `state["cost_tracker"]`
+at transition time so downstream consumers (PIAgent, future UI) see live
+cost. Simplest approach: the `CostTracker` mutated in-place by agents IS the
+same object referenced by `state["cost_tracker"]` — no explicit sync needed
+because Pydantic models passed by reference share mutations.
+
+### Scope Note
+
+This plan remains 15 tasks + 1 inserted (Task 12A). Optional split into
+Plan 3a (Tasks 1-9: providers and tools, no agent/stage upgrades) and
+Plan 3b (Tasks 10-15: LLM wiring and real stages) is sensible if execution
+stalls, but not required. 3a ends with all infrastructure testable in
+isolation; 3b consumes stable 3a APIs.
