@@ -1557,6 +1557,15 @@ Plan 5 `PipelineEvent` type gains `timestamp?: string` (ISO-8601).
 AgentActivityFeed uses this for consistent ordering — WS reconnect + buffered
 events replay in the right order.
 
+**Emit-site audit (verified):** All three `Event(...)` emit calls in
+`agentlabx/stages/runner.py` use the constructor (not hand-built dicts), so
+the `default_factory` fires automatically. The only place the timestamp gets
+stripped is the WS forwarder in `agentlabx/server/executor.py::start_session`
+(around lines 159–167), which rebuilds the broadcast payload as a plain dict.
+The snippet above patches that site — no other emit sites need changes. When
+adding future emit sites, always use `Event(type=..., data=...)` — never
+hand-construct dicts bypassing the Pydantic model.
+
 **Fix D (Task 3 + new WS provider): WebSocket singleton with refcount**
 
 Plan 5 Task 3's `useWebSocket(sessionId)` opens a fresh connection per hook
@@ -1569,9 +1578,14 @@ Replace the hook with a provider-based singleton:
 // web/src/api/wsRegistry.ts
 import { SessionWebSocket } from "./ws";
 
+// ~50ms absorbs React 19 StrictMode's dev-only mount → cleanup → mount
+// cycle without affecting production teardown behaviour.
+const TEARDOWN_DEBOUNCE_MS = 50;
+
 interface Entry {
   socket: SessionWebSocket;
   refcount: number;
+  teardownTimer: ReturnType<typeof setTimeout> | null;
 }
 
 class WebSocketRegistry {
@@ -1582,8 +1596,13 @@ class WebSocketRegistry {
     if (!entry) {
       const socket = new SessionWebSocket(sessionId);
       socket.connect();
-      entry = { socket, refcount: 0 };
+      entry = { socket, refcount: 0, teardownTimer: null };
       this.entries.set(sessionId, entry);
+    }
+    // Re-acquire inside the debounce window cancels pending teardown.
+    if (entry.teardownTimer !== null) {
+      clearTimeout(entry.teardownTimer);
+      entry.teardownTimer = null;
     }
     entry.refcount += 1;
     return entry.socket;
@@ -1594,8 +1613,15 @@ class WebSocketRegistry {
     if (!entry) return;
     entry.refcount -= 1;
     if (entry.refcount <= 0) {
-      entry.socket.disconnect();
-      this.entries.delete(sessionId);
+      // Debounced teardown — if another acquire arrives within the window
+      // (StrictMode double-invocation), the cancel above keeps the socket
+      // alive. Real unmounts proceed after the timer fires.
+      entry.teardownTimer = setTimeout(() => {
+        const current = this.entries.get(sessionId);
+        if (!current || current.refcount > 0) return;
+        current.socket.disconnect();
+        this.entries.delete(sessionId);
+      }, TEARDOWN_DEBOUNCE_MS);
     }
   }
 }
@@ -1633,10 +1659,24 @@ export function useWebSocket(sessionId: string) {
 ```
 
 Multiple components calling `useWebSocket("sess-1")` now share one socket.
-On last unmount, refcount hits zero and the socket closes. StrictMode's
-double-invocation is safe because refcount handles it correctly (connect in
-first render, second render bumps to 2, then first cleanup drops to 1, second
-cleanup drops to 0 → disconnect).
+On last unmount, refcount hits zero and the debounced teardown fires after
+~50ms, closing the socket.
+
+**StrictMode sequencing:** React 19 StrictMode double-invokes effects as
+`mount → effect → cleanup → effect` for a *single* component mount — so the
+refcount for one mounted component goes `1 → 0 → 1`, not `2 → 1 → 0`. Without
+the debounce, the `refcount === 0` step triggers an actual socket disconnect,
+and the second effect immediately reconnects — one network churn per mount
+in dev. The 50ms debounce absorbs this: the second `acquire` cancels the
+pending teardown timer before it fires, so the socket stays connected. In
+production (no double-invocation) the debounce is a harmless 50ms delay on
+genuine unmounts.
+
+**Test coverage:** vitest tests for the registry should cover: (1) two
+acquires share one socket, (2) acquire + release + acquire within 50ms keeps
+the socket alive (StrictMode simulation with fake timers), (3) acquire +
+release + no re-acquire disconnects after the timeout, (4) refcount
+never goes negative on double-release.
 
 ### IMPORTANT
 
