@@ -111,7 +111,7 @@ class SessionManager:
 
     def __init__(self, *, storage: Any = None) -> None:
         self._sessions: dict[str, Session] = {}
-        self._storage = storage  # Task 10 will wire persistence methods
+        self._storage = storage
 
     def create_session(
         self,
@@ -146,3 +146,107 @@ class SessionManager:
         if user_id is not None:
             sessions = [s for s in sessions if s.user_id == user_id]
         return sessions
+
+    async def persist_session(self, session: Session) -> None:
+        """Save session metadata to storage.
+
+        No-op when storage is None (tests/in-memory mode). Errors propagate
+        to the caller — persistence failures are not silently swallowed.
+        """
+        if self._storage is None:
+            return
+        await self._storage.save_state(
+            session.session_id,
+            "session_metadata",
+            {
+                "session_id": session.session_id,
+                "user_id": session.user_id,
+                "research_topic": session.research_topic,
+                "status": session.status.value,
+                "preferences": session.preferences.model_dump(),
+                "config_overrides": session.config_overrides,
+            },
+        )
+
+    async def restore_session(self, session_id: str) -> Session | None:
+        """Load a session from storage if not already in memory.
+
+        Returns the restored Session, or None if no metadata exists.
+        """
+        if session_id in self._sessions:
+            return self._sessions[session_id]
+        if self._storage is None:
+            return None
+        data = await self._storage.load_state(session_id, "session_metadata")
+        if not data:
+            return None
+        session = Session(
+            session_id=data["session_id"],
+            user_id=data["user_id"],
+            research_topic=data["research_topic"],
+            config_overrides=data.get("config_overrides", {}),
+        )
+        session.status = SessionStatus(data["status"])
+        session.preferences = SessionPreferences(**data.get("preferences", {}))
+        self._sessions[session_id] = session
+        return session
+
+    async def restore_all(self, user_id: str | None = None) -> list[Session]:
+        """Restore all sessions for a user from storage into memory.
+
+        Best-effort — requires storage to expose list_sessions (Plan 5+ may add).
+        For now, callers explicitly call restore_session(session_id) when they
+        know the ID.
+        """
+        if self._storage is None:
+            return []
+        if not hasattr(self._storage, "list_sessions"):
+            return []
+        ids = await self._storage.list_sessions(user_id=user_id)
+        restored: list[Session] = []
+        for sid in ids:
+            session = await self.restore_session(sid)
+            if session is not None:
+                restored.append(session)
+        return restored
+
+    # Async transition wrappers — transition the session AND persist.
+    # Callers (REST routes, executor) go through these instead of calling
+    # session.start()/pause()/etc. directly when persistence is desired.
+    # Raw session.start()/pause()/... remain available on Session itself
+    # for unit tests that don't want to touch storage.
+
+    async def start_session(self, session_id: str) -> Session:
+        """Transition CREATED -> RUNNING and persist."""
+        session = self.get_session(session_id)
+        session.start()
+        await self.persist_session(session)
+        return session
+
+    async def pause_session(self, session_id: str) -> Session:
+        """Transition RUNNING -> PAUSED and persist."""
+        session = self.get_session(session_id)
+        session.pause()
+        await self.persist_session(session)
+        return session
+
+    async def resume_session(self, session_id: str) -> Session:
+        """Transition PAUSED -> RUNNING and persist."""
+        session = self.get_session(session_id)
+        session.resume()
+        await self.persist_session(session)
+        return session
+
+    async def complete_session(self, session_id: str) -> Session:
+        """Transition RUNNING -> COMPLETED and persist."""
+        session = self.get_session(session_id)
+        session.complete()
+        await self.persist_session(session)
+        return session
+
+    async def fail_session(self, session_id: str) -> Session:
+        """Transition to FAILED and persist."""
+        session = self.get_session(session_id)
+        session.fail()
+        await self.persist_session(session)
+        return session
