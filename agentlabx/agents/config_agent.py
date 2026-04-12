@@ -31,6 +31,7 @@ class ConfigAgent(BaseAgent):
         mock_responses: list[str] | deque[str] | None = None,
         llm_provider: Any = None,
         model: str = "claude-sonnet-4-6",
+        cost_tracker: Any = None,
     ) -> None:
         super().__init__(
             name=name,
@@ -46,6 +47,7 @@ class ConfigAgent(BaseAgent):
         )
         self.llm_provider = llm_provider
         self.model = model
+        self.cost_tracker = cost_tracker
 
     @classmethod
     def from_config(
@@ -55,11 +57,12 @@ class ConfigAgent(BaseAgent):
         *,
         llm_provider: Any = None,
         model: str = "claude-sonnet-4-6",
+        cost_tracker: Any = None,
     ) -> ConfigAgent:
         """Instantiate a ConfigAgent from an AgentConfig.
 
-        Pass llm_provider to enable real LLM inference (requires Plan 3 Task 10
-        to fully wire the inference path). Without it, the agent returns stubs.
+        Pass llm_provider to enable real LLM inference. Without it, the agent
+        returns stubs (Plan 2 behavior). Pass cost_tracker to accumulate usage.
         """
         return cls(
             name=config.name,
@@ -71,27 +74,38 @@ class ConfigAgent(BaseAgent):
             mock_responses=mock_responses,
             llm_provider=llm_provider,
             model=model,
+            cost_tracker=cost_tracker,
         )
 
     async def inference(self, prompt: str, context: AgentContext) -> str:
-        """Run inference. Precedence: mock_responses > stub.
-
-        Plan 3 Task 10 extends this to call llm_provider.query() between the
-        mock_responses and stub branches so real LLM inference engages when a
-        provider is injected and no scripted responses remain.
-        """
+        """Run inference. Precedence: mock_responses > llm_provider > stub."""
         if self._mock_responses:
-            response = self._mock_responses.popleft()
+            response_text = self._mock_responses.popleft()
+        elif self.llm_provider is not None:
+            response = await self.llm_provider.query(
+                model=self.model,
+                prompt=prompt,
+                system_prompt=self.system_prompt,
+                temperature=0.0,
+            )
+            response_text = response.content
+            # Cost tracking — update shared tracker if present
+            if self.cost_tracker is not None:
+                self.cost_tracker.add_usage(
+                    tokens_in=response.tokens_in,
+                    tokens_out=response.tokens_out,
+                    cost=response.cost,
+                )
         else:
-            response = f"[{self.name}] stub response to: {prompt[:50]}"
+            response_text = f"[{self.name}] stub response to: {prompt[:50]}"
 
         # Append user + assistant turn to conversation history
         self.conversation_history.append({"role": "user", "content": prompt})
-        self.conversation_history.append({"role": "assistant", "content": response})
+        self.conversation_history.append({"role": "assistant", "content": response_text})
 
         # Truncate: keep last max_history_length pairs (each pair = 2 entries)
         max_entries = self.max_history_length * 2
         if len(self.conversation_history) > max_entries:
             self.conversation_history = self.conversation_history[-max_entries:]
 
-        return response
+        return response_text

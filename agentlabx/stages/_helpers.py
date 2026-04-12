@@ -25,6 +25,7 @@ def resolve_agent(
     *,
     llm_provider: Any = None,
     model: str = "claude-sonnet-4-6",
+    cost_tracker: Any = None,
 ) -> BaseAgent:
     """Resolve an agent from the registry and instantiate it.
 
@@ -33,7 +34,8 @@ def resolve_agent(
     concrete BaseAgent subclass, instantiate that class directly.
 
     When llm_provider is passed, it's injected into the ConfigAgent so the
-    agent uses real LLM inference instead of mock stubs.
+    agent uses real LLM inference instead of mock stubs. cost_tracker is
+    forwarded so agents accumulate usage into the session's shared tracker.
     """
     entry = registry.resolve(PluginType.AGENT, name)
 
@@ -42,6 +44,7 @@ def resolve_agent(
             entry,
             llm_provider=llm_provider,
             model=model,
+            cost_tracker=cost_tracker,
         )
 
     if isinstance(entry, type) and issubclass(entry, BaseAgent):
@@ -104,6 +107,11 @@ def resolve_agents_for_stage(
         raise ValueError(msg)
 
     return {
-        name: resolve_agent(registry, name, llm_provider=context.llm_provider)
+        name: resolve_agent(
+            registry,
+            name,
+            llm_provider=context.llm_provider,
+            cost_tracker=context.cost_tracker,
+        )
         for name in agent_names
     }
