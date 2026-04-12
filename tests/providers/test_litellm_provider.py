@@ -50,9 +50,7 @@ class TestLiteLLMProvider:
         mock_response.model = "test"
 
         acompletion_mock = AsyncMock(return_value=mock_response)
-        with patch(
-            "agentlabx.providers.llm.litellm_provider.acompletion", acompletion_mock
-        ):
+        with patch("agentlabx.providers.llm.litellm_provider.acompletion", acompletion_mock):
             with patch(
                 "agentlabx.providers.llm.litellm_provider.completion_cost",
                 return_value=0.0,
@@ -85,9 +83,7 @@ class TestLiteLLMProvider:
                 raise RateLimitError("rate limited", llm_provider="test", model="test")
             return mock_response
 
-        with patch(
-            "agentlabx.providers.llm.litellm_provider.acompletion", flaky_acompletion
-        ):
+        with patch("agentlabx.providers.llm.litellm_provider.acompletion", flaky_acompletion):
             with patch(
                 "agentlabx.providers.llm.litellm_provider.completion_cost",
                 return_value=0.0,

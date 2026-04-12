@@ -23,12 +23,14 @@ class MockLLMProvider(BaseLLMProvider):
         system_prompt: str = "",
         temperature: float = 0.0,
     ) -> LLMResponse:
-        self.calls.append({
-            "model": model,
-            "prompt": prompt,
-            "system_prompt": system_prompt,
-            "temperature": temperature,
-        })
+        self.calls.append(
+            {
+                "model": model,
+                "prompt": prompt,
+                "system_prompt": system_prompt,
+                "temperature": temperature,
+            }
+        )
 
         if self._responses:
             content = self._responses.popleft()

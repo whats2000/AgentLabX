@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -20,12 +20,8 @@ class SessionRecord(Base):
     topic: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String)
     pipeline_config: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class CheckpointRecord(Base):
@@ -35,9 +31,7 @@ class CheckpointRecord(Base):
     session_id: Mapped[str] = mapped_column(String, index=True)
     stage: Mapped[str] = mapped_column(String)
     state_blob: Mapped[dict] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class ArtifactRecord(Base):
@@ -49,6 +43,4 @@ class ArtifactRecord(Base):
     name: Mapped[str] = mapped_column(String)
     path: Mapped[str] = mapped_column(String, unique=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

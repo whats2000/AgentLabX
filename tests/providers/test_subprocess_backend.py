@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agentlabx.core.state import ReproducibilityRecord
 from agentlabx.providers.execution.subprocess_backend import SubprocessBackend
 
@@ -21,9 +19,7 @@ class TestSubprocessBackend:
 
     async def test_exit_code_captured(self, tmp_path: Path):
         backend = SubprocessBackend()
-        result = await backend.execute(
-            code="import sys; sys.exit(1)", workspace=tmp_path
-        )
+        result = await backend.execute(code="import sys; sys.exit(1)", workspace=tmp_path)
         assert result.success is False
         assert result.exit_code == 1
 

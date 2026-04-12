@@ -44,9 +44,7 @@ class SQLiteBackend(BaseStorageBackend):
         if self._engine:
             await self._engine.dispose()
 
-    async def save_state(
-        self, session_id: str, stage: str, state: dict[str, Any]
-    ) -> None:
+    async def save_state(self, session_id: str, stage: str, state: dict[str, Any]) -> None:
         if self._session_factory is None:
             msg = "Backend not initialized — call initialize() first"
             raise RuntimeError(msg)
@@ -61,9 +59,7 @@ class SQLiteBackend(BaseStorageBackend):
             sess.add(CheckpointRecord(session_id=session_id, stage=stage, state_blob=state))
             await sess.commit()
 
-    async def load_state(
-        self, session_id: str, stage: str
-    ) -> dict[str, Any] | None:
+    async def load_state(self, session_id: str, stage: str) -> dict[str, Any] | None:
         if self._session_factory is None:
             return None
         async with self._session_factory() as sess:

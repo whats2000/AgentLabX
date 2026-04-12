@@ -7,7 +7,7 @@ import hashlib
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agentlabx.core.state import ReproducibilityRecord
@@ -51,7 +51,7 @@ class SubprocessBackend(BaseExecutionBackend):
                 stdout = stdout_bytes.decode("utf-8", errors="replace")
                 stderr = stderr_bytes.decode("utf-8", errors="replace")
                 exit_code = proc.returncode or 0
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
                 return ExecutionResult(
@@ -112,7 +112,7 @@ class SubprocessBackend(BaseExecutionBackend):
                 if "==" in line:
                     name, version = line.split("==", 1)
                     deps_snapshot[name.strip()] = version.strip()
-        except (asyncio.TimeoutError, OSError):
+        except (TimeoutError, OSError):
             pass
 
         return ReproducibilityRecord(
@@ -122,7 +122,7 @@ class SubprocessBackend(BaseExecutionBackend):
             container_image=None,
             git_ref=None,
             dependencies_snapshot=deps_snapshot,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def _hash_environment(self) -> str:

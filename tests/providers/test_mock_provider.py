@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agentlabx.providers.llm.mock_provider import MockLLMProvider
 
 
