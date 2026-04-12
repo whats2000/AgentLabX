@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from agentlabx.core.config import Settings
 from agentlabx.server.deps import AppContext, build_app_context
+from agentlabx.server.routes import preferences, sessions
 
 
 def create_app(
@@ -50,6 +51,8 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(sessions.router)
+    app.include_router(preferences.router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

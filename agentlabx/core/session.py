@@ -57,6 +57,7 @@ class Session(BaseModel):
     research_topic: str
     status: SessionStatus = SessionStatus.CREATED
     preferences: SessionPreferences = Field(default_factory=SessionPreferences)
+    config_overrides: dict[str, Any] = Field(default_factory=dict)
     event_bus: EventBus = Field(default_factory=EventBus)  # Fix B: own bus at creation
 
     model_config = {"arbitrary_types_allowed": True}
@@ -91,9 +92,18 @@ class Session(BaseModel):
         """Transition to FAILED from any non-terminal state."""
         self._transition(SessionStatus.FAILED)
 
-    def update_preferences(self, preferences: SessionPreferences) -> None:
-        """Replace session preferences."""
-        self.preferences = preferences
+    def update_preferences(
+        self, preferences: SessionPreferences | None = None, **kwargs: Any
+    ) -> None:
+        """Update session preferences.
+
+        Accepts either a full SessionPreferences object (legacy) or keyword
+        arguments for partial updates (e.g. mode="hitl", stage_controls={...}).
+        """
+        if preferences is not None:
+            self.preferences = preferences
+        elif kwargs:
+            self.preferences = self.preferences.update(**kwargs)
 
 
 class SessionManager:
@@ -109,14 +119,16 @@ class SessionManager:
         user_id: str,
         research_topic: str,
         preferences: SessionPreferences | None = None,
+        config_overrides: dict[str, Any] | None = None,
     ) -> Session:
         """Create a new session with a unique UUID-based ID."""
-        session_id = str(uuid.uuid4())
+        session_id = f"sess-{uuid.uuid4()}"
         session = Session(
             session_id=session_id,
             user_id=user_id,
             research_topic=research_topic,
             preferences=preferences or SessionPreferences(),
+            config_overrides=config_overrides or {},
         )
         self._sessions[session_id] = session
         return session
