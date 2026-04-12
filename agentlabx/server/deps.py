@@ -22,6 +22,7 @@ from agentlabx.providers.llm.base import BaseLLMProvider
 from agentlabx.providers.llm.litellm_provider import LiteLLMProvider
 from agentlabx.providers.llm.mock_provider import MockLLMProvider
 from agentlabx.providers.storage.sqlite_backend import SQLiteBackend
+from agentlabx.server.ws.handlers import manager as ws_manager
 from agentlabx.stages.skeleton import register_default_stages
 from agentlabx.tools.arxiv_search import ArxivSearch
 from agentlabx.tools.code_executor import CodeExecutor
@@ -130,6 +131,7 @@ async def build_app_context(
         session_manager=session_manager,
         llm_provider=llm_provider,
         checkpoint_db_path=str(checkpoint_db_path),
+        event_forwarder=ws_manager.broadcast,  # Fix G: single subscription per session
     )
     await executor.initialize()
     context.executor = executor
