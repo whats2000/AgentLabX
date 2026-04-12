@@ -35,6 +35,15 @@ class WebSocketRegistry {
     return entry.socket;
   }
 
+  /**
+   * Borrow the current socket for a session without affecting refcount.
+   * Used by one-off senders (e.g. FeedbackInput) where the page-level
+   * useWebSocket already holds a refcount keeping the socket alive.
+   */
+  getSocket(sessionId: string): SessionWebSocket | null {
+    return this.entries.get(sessionId)?.socket ?? null;
+  }
+
   release(sessionId: string): void {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
