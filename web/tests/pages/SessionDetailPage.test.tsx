@@ -5,7 +5,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SessionDetailPage from "../../src/pages/SessionDetailPage";
 
 vi.mock("../../src/api/client", () => ({
-  api: { getSession: vi.fn() },
+  api: {
+    getSession: vi.fn(),
+    getCost: vi.fn().mockResolvedValue({
+      total_tokens_in: 0,
+      total_tokens_out: 0,
+      total_cost: 0,
+    }),
+    getArtifacts: vi.fn().mockResolvedValue([]),
+    getTransitions: vi.fn().mockResolvedValue([]),
+    getHypotheses: vi.fn().mockResolvedValue([]),
+  },
   APIError: class extends Error {},
   isValidationError: () => false,
 }));
@@ -13,7 +23,14 @@ vi.mock("../../src/api/wsRegistry", () => ({
   wsRegistry: {
     acquire: vi.fn(() => ({ onEvent: vi.fn(() => () => undefined) })),
     release: vi.fn(),
+    getSocket: vi.fn(() => null),
   },
+}));
+vi.mock("../../src/components/session/CostGauge", () => ({
+  CostGauge: () => <div data-testid="cost-gauge" />,
+}));
+vi.mock("../../src/components/session/CostLine", () => ({
+  CostLine: () => <div data-testid="cost-line" />,
 }));
 
 import { api } from "../../src/api/client";
@@ -53,8 +70,9 @@ describe("SessionDetailPage", () => {
     expect(screen.getAllByText(/sess-x/).length).toBeGreaterThan(0);
     // Status appears both in topbar (Running) — we only assert its presence
     expect(screen.getAllByText(/Running/i).length).toBeGreaterThan(0);
-    // At least one stub marker should render
-    expect(screen.getAllByText(/stub/i).length).toBeGreaterThan(0);
+    // Cost sider renders "Total cost" label — sanity check that the panels
+    // mount (Task 13 replaced the stub with real content).
+    expect(screen.getAllByText(/Total cost/i).length).toBeGreaterThan(0);
   });
 
   it("shows the activity tab by default", async () => {

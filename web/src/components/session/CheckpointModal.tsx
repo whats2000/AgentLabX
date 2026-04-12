@@ -1,13 +1,217 @@
-// TODO(Task 13): Replace this stub with the checkpoint approval modal
-// (rendered when a checkpoint_reached event arrives; shows artifact
-// preview + approve/edit/redirect controls).
+import { useEffect, useMemo, useState } from "react";
+import { Button, Input, Modal, Space, Typography, message } from "antd";
+import {
+  CheckOutlined,
+  EditOutlined,
+  ForwardOutlined,
+} from "@ant-design/icons";
+import { useWSStore } from "../../stores/wsStore";
+import { wsRegistry } from "../../api/wsRegistry";
+import { RedirectModal } from "./RedirectModal";
+import type { ClientAction, PipelineEvent } from "../../types/events";
+
+const { Text, Paragraph } = Typography;
+
+/**
+ * Fix B — "observable" checkpoint modal. Backend does not actually
+ * pause on checkpoints yet (real HITL interrupt is future work), so
+ * the UI sends the action, backend logs it, UI shows a toast
+ * explaining the limitation.
+ */
+const OBSERVABLE_NOTE =
+  "Action recorded. Full HITL execution ships in a later release.";
+
+interface CheckpointPayload {
+  stage?: string;
+  pi_recommendation?: string;
+  output?: string;
+  [k: string]: unknown;
+}
+
+const EMPTY: PipelineEvent[] = [];
 
 interface Props {
   sessionId: string;
-  open: boolean;
-  onClose: () => void;
 }
 
-export function CheckpointModal(_props: Props) {
-  return null;
+export function CheckpointModal({ sessionId }: Props) {
+  const events = useWSStore((s) => s.events[sessionId] ?? EMPTY);
+
+  // Pull the most recent checkpoint_reached event. We key the modal by the
+  // event's (timestamp, stage) so when a new one arrives it re-opens.
+  const latestCheckpoint = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      if (events[i].type === "checkpoint_reached") {
+        return events[i] as PipelineEvent<CheckpointPayload>;
+      }
+    }
+    return null;
+  }, [events]);
+
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [redirectOpen, setRedirectOpen] = useState(false);
+
+  const currentKey = latestCheckpoint
+    ? `${latestCheckpoint.timestamp ?? ""}-${latestCheckpoint.data?.stage ?? ""}`
+    : null;
+  const open =
+    latestCheckpoint !== null &&
+    currentKey !== null &&
+    dismissedKey !== currentKey;
+
+  useEffect(() => {
+    // Prefill edit textarea each time a new checkpoint opens.
+    if (open) {
+      setEditing(false);
+      setEditValue(latestCheckpoint?.data?.output ?? "");
+    }
+  }, [open, currentKey, latestCheckpoint]);
+
+  const close = () => {
+    if (currentKey) setDismissedKey(currentKey);
+  };
+
+  const sendAction = (action: ClientAction) => {
+    const socket = wsRegistry.getSocket(sessionId);
+    if (!socket) {
+      message.warning("Not connected.");
+      return;
+    }
+    socket.send(action);
+    message.info(OBSERVABLE_NOTE);
+    close();
+  };
+
+  const stage = latestCheckpoint?.data?.stage ?? "unknown";
+  const piRec = latestCheckpoint?.data?.pi_recommendation;
+  const output = latestCheckpoint?.data?.output;
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onCancel={close}
+        title={`Checkpoint: ${stage}`}
+        footer={null}
+        destroyOnHidden
+        width={640}
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {piRec ? (
+            <div>
+              <Text
+                type="secondary"
+                style={{
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.05,
+                }}
+              >
+                PI recommendation
+              </Text>
+              <Paragraph style={{ margin: 0 }}>{piRec}</Paragraph>
+            </div>
+          ) : (
+            <Text type="secondary">Waiting for PI assessment...</Text>
+          )}
+
+          {editing ? (
+            <div>
+              <Text
+                type="secondary"
+                style={{
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.05,
+                }}
+              >
+                Edit stage output
+              </Text>
+              <Input.TextArea
+                rows={8}
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                style={{ marginTop: 4 }}
+              />
+              <Space style={{ marginTop: 8 }}>
+                <Button size="small" onClick={() => setEditing(false)}>
+                  Cancel edit
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() =>
+                    sendAction({ action: "edit", content: editValue })
+                  }
+                >
+                  Save
+                </Button>
+              </Space>
+            </div>
+          ) : output ? (
+            <div>
+              <Text
+                type="secondary"
+                style={{
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.05,
+                }}
+              >
+                Stage output
+              </Text>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontSize: 12,
+                  background: "#fafafa",
+                  padding: 12,
+                  borderRadius: 8,
+                  maxHeight: 240,
+                  overflow: "auto",
+                  margin: 0,
+                }}
+              >
+                {output}
+              </pre>
+            </div>
+          ) : null}
+
+          <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+            <Button
+              icon={<ForwardOutlined />}
+              onClick={() => setRedirectOpen(true)}
+            >
+              Redirect
+            </Button>
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => setEditing(true)}
+              disabled={editing}
+            >
+              Edit
+            </Button>
+            <Button
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={() => sendAction({ action: "approve" })}
+            >
+              Approve
+            </Button>
+          </Space>
+        </Space>
+      </Modal>
+      <RedirectModal
+        sessionId={sessionId}
+        open={redirectOpen}
+        onClose={() => {
+          setRedirectOpen(false);
+          // Redirect was chosen; also dismiss the checkpoint modal.
+          close();
+        }}
+      />
+    </>
+  );
 }

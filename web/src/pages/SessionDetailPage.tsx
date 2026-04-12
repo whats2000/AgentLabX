@@ -11,6 +11,7 @@ import { AgentActivityFeed } from "../components/session/AgentActivityFeed";
 import { StageOutputPanel } from "../components/session/StageOutputPanel";
 import { HypothesisTracker } from "../components/session/HypothesisTracker";
 import { CostTracker } from "../components/session/CostTracker";
+import { CheckpointModal } from "../components/session/CheckpointModal";
 import { FeedbackInput } from "../components/session/FeedbackInput";
 
 const { Sider, Content } = Layout;
@@ -187,6 +188,9 @@ export default function SessionDetailPage() {
       >
         <FeedbackInput sessionId={sessionId} />
       </div>
+
+      {/* Checkpoint modal — self-manages open state from WS events (Task 13). */}
+      <CheckpointModal sessionId={sessionId} />
     </div>
   );
 }
