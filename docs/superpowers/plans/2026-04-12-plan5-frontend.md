@@ -1457,9 +1457,418 @@ After completing all 16 tasks:
 **What's deferred (post-Plan 5):**
 - OAuth/JWT login flow (no login screen — single-user mode)
 - Real-time LLM token streaming in AgentActivityFeed (requires backend agent_thinking events)
-- Full HITL interrupt flow (approve/edit modal UI ships but backend execution lands later)
+- Full HITL interrupt flow (approve/edit modal UI ships as observable — records action but backend execution lands later; see Fix B)
 - PostgreSQL + MinIO migration (architecture supports it, no UI changes needed)
 - Session sharing / export / archive UI
 - Dark mode toggle (theme config exists; add UI switch)
 - i18n
 - Mobile-responsive layouts (desktop-only in Plan 5)
+
+---
+
+## Addendum: Review Fixes (apply during execution)
+
+Fourteen issues surfaced during review. Fixes are grouped by severity; apply
+to the specific tasks noted.
+
+### CRITICAL
+
+**Fix A (Task 0 — new, apply before Task 6): DELETE /api/sessions/{id} endpoint**
+
+Plan 4 didn't ship a delete endpoint and Plan 5 Task 6 assumed one. Backport
+a simple DELETE to Plan 4 as a prerequisite task for Plan 5 execution.
+
+Add to `agentlabx/server/routes/sessions.py`:
+
+```python
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(request: Request, session_id: str):
+    """Remove a session from memory and storage. Cancels running task if active."""
+    context = request.app.state.context
+    manager = context.session_manager
+    try:
+        session = manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Cancel running task if any
+    if context.executor is not None:
+        running = context.executor.get_running(session_id)
+        if running is not None:
+            await context.executor.cancel_session(session_id)
+
+    # Remove from in-memory registry
+    manager._sessions.pop(session_id, None)
+
+    # Remove persisted metadata (best-effort)
+    if manager._storage is not None and hasattr(manager._storage, "delete_state"):
+        try:
+            await manager._storage.delete_state(session_id, "session_metadata")
+        except Exception:
+            pass
+
+    return None  # 204 No Content
+```
+
+Add a `delete_state` method to `BaseStorageBackend` and `SQLiteBackend` — one
+row DELETE matching session_id + stage. Write a basic test that creates a
+session, DELETEs it, and verifies `/api/sessions/{id}` returns 404.
+
+Plan 5 Task 6: add a Delete button with Ant Design `Popconfirm` — confirms
+before firing `api.deleteSession(id)`, then invalidates the sessions list
+query on success.
+
+**Fix B (Task 13): CheckpointModal ships as "observable"**
+
+The modal will ship with working UI but the backend won't execute the
+approve/edit actions yet. Chosen strategy from the review's three options:
+**observable — send WS action, backend logs, UI shows toast.**
+
+Concrete behavior:
+- Approve button → sends `{"action": "approve"}` via WS. On success, UI
+  shows a subtle Ant Design `message.info("Action recorded. Full HITL
+  execution ships in a later release.")` and dismisses the modal.
+- Edit button → opens nested form with stage output. On save, sends
+  `{"action": "edit", "content": "..."}` and shows same toast.
+- Redirect button inside CheckpointModal → reuses the working redirect
+  flow (POST /redirect is already functional).
+
+The WS handler in Plan 4 already logs these actions via `logger.info`. The
+user sees immediate feedback and doesn't experience a broken button. The
+future HITL interrupt plan swaps the log line for real LangGraph interrupt
+resume; the frontend doesn't change.
+
+**Fix C (Plan 1 + Plan 4 backport): Event timestamp**
+
+Add `timestamp: datetime` to `Event` model in `agentlabx/core/events.py`.
+Default via `Field(default_factory=lambda: datetime.now(timezone.utc))` so
+existing callers don't break. Update Plan 4's WS forwarder to include it:
+
+```python
+await self.event_forwarder(session.session_id, {
+    "type": event.type,
+    "data": event.data,
+    "source": event.source,
+    "timestamp": event.timestamp.isoformat(),
+})
+```
+
+Plan 5 `PipelineEvent` type gains `timestamp?: string` (ISO-8601).
+AgentActivityFeed uses this for consistent ordering — WS reconnect + buffered
+events replay in the right order.
+
+**Fix D (Task 3 + new WS provider): WebSocket singleton with refcount**
+
+Plan 5 Task 3's `useWebSocket(sessionId)` opens a fresh connection per hook
+call. Under React 19 StrictMode double-invocation this triples WS traffic;
+with multiple components observing the same session, it explodes.
+
+Replace the hook with a provider-based singleton:
+
+```typescript
+// web/src/api/wsRegistry.ts
+import { SessionWebSocket } from "./ws";
+
+interface Entry {
+  socket: SessionWebSocket;
+  refcount: number;
+}
+
+class WebSocketRegistry {
+  private entries = new Map<string, Entry>();
+
+  acquire(sessionId: string): SessionWebSocket {
+    let entry = this.entries.get(sessionId);
+    if (!entry) {
+      const socket = new SessionWebSocket(sessionId);
+      socket.connect();
+      entry = { socket, refcount: 0 };
+      this.entries.set(sessionId, entry);
+    }
+    entry.refcount += 1;
+    return entry.socket;
+  }
+
+  release(sessionId: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    entry.refcount -= 1;
+    if (entry.refcount <= 0) {
+      entry.socket.disconnect();
+      this.entries.delete(sessionId);
+    }
+  }
+}
+
+export const wsRegistry = new WebSocketRegistry();
+```
+
+`useWebSocket`:
+```typescript
+export function useWebSocket(sessionId: string) {
+  const appendEvent = useWSStore((s) => s.appendEvent);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const socket = wsRegistry.acquire(sessionId);
+    const unsubscribe = socket.onEvent((event) => {
+      appendEvent(sessionId, event);
+      // Fix H: invalidate relevant cache entries on state-changing events
+      if (event.type === "stage_completed" || event.type === "stage_failed" || event.type === "transition") {
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["artifacts", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["transitions", sessionId] });
+      }
+      if (event.type === "cost_update") {
+        queryClient.invalidateQueries({ queryKey: ["cost", sessionId] });
+      }
+    });
+    return () => {
+      unsubscribe();
+      wsRegistry.release(sessionId);
+    };
+  }, [sessionId, appendEvent, queryClient]);
+}
+```
+
+Multiple components calling `useWebSocket("sess-1")` now share one socket.
+On last unmount, refcount hits zero and the socket closes. StrictMode's
+double-invocation is safe because refcount handles it correctly (connect in
+first render, second render bumps to 2, then first cleanup drops to 1, second
+cleanup drops to 0 → disconnect).
+
+### IMPORTANT
+
+**Fix E (Task 4): Drop `activeSessionStore`**
+
+TanStack Query already handles optimistic preference updates via `onMutate`
++ `onError` rollback. Keeping a parallel Zustand copy causes sync drift.
+
+Revised store inventory:
+- **Keep**: `wsStore` (event ring buffer — pure client state, not server data)
+- **Keep**: `uiStore` (client-only UI state — active tab, sidebar collapsed,
+  local filter text inputs, edit-mode toggles)
+- **Drop**: `sessionsStore` — the list IS server data; use
+  `useSessions(userId)` TanStack Query hook
+- **Drop**: `activeSessionStore` — the active session id comes from URL
+  params (`useParams<{sessionId: string}>()`) via React Router
+
+Optimistic preference updates — example:
+```typescript
+const mutation = useMutation({
+  mutationFn: (update: PreferencesUpdate) =>
+    api.updatePreferences(sessionId, update),
+  onMutate: async (update) => {
+    await queryClient.cancelQueries({ queryKey: ["session", sessionId] });
+    const previous = queryClient.getQueryData(["session", sessionId]);
+    queryClient.setQueryData(["session", sessionId], (old: SessionDetail) => ({
+      ...old,
+      preferences: { ...old.preferences, ...update },
+    }));
+    return { previous };
+  },
+  onError: (_err, _update, ctx) => {
+    if (ctx?.previous) {
+      queryClient.setQueryData(["session", sessionId], ctx.previous);
+    }
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+  },
+});
+```
+
+**Fix F (Task 2): Switch to openapi-fetch**
+
+Hand-rolled `Get<P>`/`Post<P>` types only handle 200 responses; Plan 4's
+`/start`, `/pause`, `/resume`, `/redirect` all return 202. Also `/preferences`
+is typed as `Promise<unknown>` due to a missed generic.
+
+Replace the hand-rolled client with [openapi-fetch](https://openapi-ts.dev/openapi-fetch/)
+(~3 KB runtime, same `openapi-typescript` ecosystem):
+
+```bash
+npm install openapi-fetch
+```
+
+```typescript
+// web/src/api/client.ts
+import createClient from "openapi-fetch";
+import type { paths } from "./generated";
+
+const client = createClient<paths>({ baseUrl: "" });
+
+export const api = {
+  async listSessions(userId?: string) {
+    const { data, error } = await client.GET("/api/sessions", {
+      params: { query: userId ? { user_id: userId } : {} },
+    });
+    if (error) throw error;
+    return data;
+  },
+  async createSession(body: Body<"/api/sessions", "post">) {
+    const { data, error } = await client.POST("/api/sessions", { body });
+    if (error) throw error;
+    return data;
+  },
+  // ... etc — openapi-fetch correctly infers 200/201/202 responses
+};
+```
+
+Drop ~50 lines of type-helper boilerplate. Every endpoint's return type flows
+from the generated schema automatically, including multi-status responses.
+
+**Fix G (Task 1): Commit generated.ts, not ignore it**
+
+Contradiction between Task 1 Step 5 (gitignore includes `src/api/generated.ts`)
+and Task 2 Step 1 (commented "commit it"). Pick committing. Remove
+`src/api/generated.ts` from `web/.gitignore`. Diffs of the generated file
+are reviewable signals of backend API changes — useful in PRs.
+
+**Fix H (Task 8): WS invalidates TanStack cache**
+
+Implemented as part of Fix D above. Drop polling intervals from 2s to 15-30s
+as backstop only — WS invalidation is the primary refresh channel.
+
+Revised `useSession`:
+```typescript
+export function useSession(sessionId: string) {
+  return useQuery({
+    queryKey: ["session", sessionId],
+    queryFn: () => api.getSession(sessionId),
+    refetchInterval: 30_000, // Backstop — primary refresh via WS invalidation
+    enabled: !!sessionId,
+  });
+}
+```
+
+### MEDIUM
+
+**Fix I (Task 15): Simplify SPA catchall**
+
+`startswith("docs")` matches `/documents` too. Rely on FastAPI route
+precedence (real routes are registered first, so they take priority over the
+catchall). Drop the defensive check:
+
+```python
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_catchall(request: Request, full_path: str) -> FileResponse:
+    # No startswith filter — real API/WS/docs routes are registered earlier
+    # and take precedence. Only unmatched paths reach here.
+    return FileResponse(web_dist / "index.html")
+```
+
+If a real route raises 404 (e.g., `/api/sessions/nonexistent`), FastAPI's
+handler runs before the catchall — the catchall never sees it.
+
+### MINOR
+
+**Fix J (Task 9): Limit backtrack edge rendering**
+
+Render only the 3 most recent backtracks. Older ones fade to 20% opacity.
+Add a toggle "Show all backtracks (N)" in the graph toolbar. Prevents
+spaghetti graphs after many iterations.
+
+**Fix K (Task 8): Document layout DOM structure**
+
+Add to Task 8's implementation note:
+
+```
+Layout structure (outer → inner):
+  <div flex-column 100vh>
+    <Layout>  (AntD — has Sider + Content + Sider)
+      <Sider left>  ControlBar, pipeline tracker
+      <Content>     Tabs (Activity | Artifacts | Graph | Cost)
+      <Sider right> Stage output summary, PI assessment, CostTracker gauge
+    </Layout>
+    <div sticky-bottom>  FeedbackInput  (spans full width)
+  </div>
+```
+
+The AntD Layout doesn't trivially span a bottom bar across Sider + Content
+columns. The outer flex column wrapping gives the sticky bottom its own row.
+
+**Fix L (Task 5): Add error boundaries**
+
+In `App.tsx`, wrap each route with an error boundary:
+
+```typescript
+import { Component, ErrorInfo, ReactNode } from "react";
+import { Result, Button } from "antd";
+
+class ErrorBoundary extends Component<
+  { children: ReactNode; fallbackLabel?: string },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Route error:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <Result
+          status="error"
+          title={this.props.fallbackLabel || "Something went wrong"}
+          subTitle={this.state.error.message}
+          extra={
+            <Button type="primary" onClick={() => this.setState({ error: null })}>
+              Retry
+            </Button>
+          }
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
+Wrap each `<Route element={...}>` children in `<ErrorBoundary>`. A single
+component crash now scopes to its route instead of blanking the entire app.
+
+**Fix M (Plan 5 prerequisites): React 19 + AntD 5 risk**
+
+React 19 + AntD 5.22+ compatibility is stated but new. If Form components,
+Select portals, or other features break during Task 5-8, pin to React 18.3:
+
+```json
+"react": "^18.3.0",
+"react-dom": "^18.3.0",
+"@types/react": "^18.3.0",
+"@types/react-dom": "^18.3.0"
+```
+
+This is a ~5-minute downgrade. No code changes needed in the plan —
+React 19's new features aren't used anywhere. Document the pin decision in
+`web/README.md` if it triggers.
+
+---
+
+## Updated Summary
+
+Plan 5 remains 16 numbered tasks. Addendum applies to specific tasks:
+
+- **Task 0 (new, before Task 6)**: Backport DELETE endpoint to Plan 4 (Fix A).
+- **Task 1**: Commit `generated.ts` (Fix G), React 19 risk note (Fix M).
+- **Task 2**: Use `openapi-fetch` (Fix F).
+- **Task 3**: Include `timestamp` in `PipelineEvent` (Fix C — requires Plan 1/4 backport too).
+- **Task 4**: Drop `sessionsStore` + `activeSessionStore`; keep only `wsStore` + `uiStore` (Fix E).
+- **Task 5**: Wrap routes in `ErrorBoundary` (Fix L).
+- **Task 8**: Document layout DOM structure (Fix K), wire WS → TanStack invalidation via Fix D's singleton (Fix H).
+- **Task 9**: Fade backtrack edges beyond N=3 (Fix J).
+- **Task 13**: CheckpointModal as "observable" with toast (Fix B).
+- **Task 15**: Drop catchall startswith guard (Fix I).
+- **New**: `web/src/api/wsRegistry.ts` singleton with refcount (Fix D).
+
+Backports required before Plan 5 execution:
+- Add `timestamp` to `agentlabx/core/events.py::Event` (Plan 1 file, 1 line).
+- Update Plan 4's WS forwarder to include timestamp in the broadcast payload
+  (Plan 4 file, ~3 lines in `executor.py::start_session`).
+- Add `DELETE /api/sessions/{id}` route + `delete_state` on storage backend
+  (Plan 4 files).
+
+These backports are small and can be applied as a single prep commit before
+Plan 5 Task 1. Total effort: ~30 minutes.
