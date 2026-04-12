@@ -18,14 +18,14 @@ export class SessionWebSocket {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private manuallyClosed = false;
+  public readonly url: string;
 
   constructor(
-    sessionId: string,
-    private readonly url: string = `${wsScheme()}://${window.location.host}/ws/sessions/${sessionId}`,
+    public readonly sessionId: string,
+    url?: string,
   ) {
-    // sessionId is only used to derive the default URL above; we do not need
-    // to retain it as a class property.
-    void sessionId;
+    this.url =
+      url ?? `${wsScheme()}://${window.location.host}/ws/sessions/${sessionId}`;
   }
 
   connect(): void {
@@ -35,14 +35,29 @@ export class SessionWebSocket {
       this.reconnectAttempts = 0;
     });
     this.socket.addEventListener("message", (ev) => {
-      try {
-        const payload = JSON.parse(
-          (ev as MessageEvent).data as string,
-        ) as PipelineEvent;
-        this.handlers.forEach((h) => h(payload));
-      } catch (err) {
-        console.warn("Failed to parse WS message:", err);
+      const raw = (ev as MessageEvent).data;
+      if (typeof raw !== "string") {
+        console.warn(
+          `WS[${this.sessionId}] dropping non-string frame (${typeof raw})`,
+        );
+        return;
       }
+      let payload: PipelineEvent;
+      try {
+        payload = JSON.parse(raw) as PipelineEvent;
+      } catch (err) {
+        console.warn(`WS[${this.sessionId}] failed to parse message:`, err);
+        return;
+      }
+      // One buggy subscriber must not silence its peers (cache invalidation,
+      // UI updates, cost ticker may each subscribe independently).
+      this.handlers.forEach((handler) => {
+        try {
+          handler(payload);
+        } catch (err) {
+          console.error(`WS[${this.sessionId}] handler threw:`, err);
+        }
+      });
     });
     this.socket.addEventListener("close", () => {
       if (this.manuallyClosed) return;
@@ -58,6 +73,9 @@ export class SessionWebSocket {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    // Reset backoff so a later reuse (not currently a registry path, but
+    // the class contract says "reusable") starts fresh.
+    this.reconnectAttempts = 0;
     this.socket?.close();
     this.socket = null;
   }
@@ -66,7 +84,7 @@ export class SessionWebSocket {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(action));
     } else {
-      console.warn("WS not open, dropping action:", action);
+      console.warn(`WS[${this.sessionId}] not open, dropping action:`, action);
     }
   }
 

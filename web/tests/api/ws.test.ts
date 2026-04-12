@@ -110,4 +110,43 @@ describe("SessionWebSocket", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("drops non-string frames with a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const handler = vi.fn();
+    const ws = new SessionWebSocket("sess-1");
+    ws.onEvent(handler);
+    ws.connect();
+    instances[0].trigger("message", { data: new ArrayBuffer(4) });
+    expect(handler).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("isolates throwing subscribers so peers still run", () => {
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const throwing = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const peer = vi.fn();
+    const ws = new SessionWebSocket("sess-1");
+    ws.onEvent(throwing);
+    ws.onEvent(peer);
+    ws.connect();
+    instances[0].trigger("message", {
+      data: JSON.stringify({ type: "stage_started", data: {} }),
+    });
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(peer).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("exposes sessionId and url for debugging", () => {
+    const ws = new SessionWebSocket("sess-42");
+    expect(ws.sessionId).toBe("sess-42");
+    expect(ws.url).toContain("/ws/sessions/sess-42");
+  });
 });

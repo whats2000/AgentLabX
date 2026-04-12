@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { PipelineEvent } from "../types/events";
 import { wsRegistry } from "../api/wsRegistry";
 
@@ -7,28 +7,31 @@ export interface UseWebSocketOptions {
 }
 
 /**
- * Acquires a shared SessionWebSocket from the registry, subscribes the
- * given handler, and releases on unmount. Task 8 will extend this to also
- * invalidate TanStack Query caches on state-changing events (Fix H).
+ * Acquires a shared SessionWebSocket from the registry, subscribes a
+ * stable dispatcher that reads from a ref, and releases on unmount.
+ * The ref pattern means callers do not need to memoize `onEvent` — the
+ * effect only depends on `sessionId`, so an inline arrow handler on every
+ * render will not churn acquire/release or refcount arithmetic.
  *
- * Note: this hook currently returns `undefined` intentionally — Tasks 11/12
- * may change this to expose `socket.send` if needed. Do not import Zustand
- * or TanStack Query here yet; that wiring belongs in Task 4/8 once the
- * queryClient provider is mounted.
+ * Task 8 will extend this to also invalidate TanStack Query caches on
+ * state-changing events (Fix H).
  */
 export function useWebSocket(
   sessionId: string,
   options: UseWebSocketOptions = {},
 ): void {
-  const { onEvent } = options;
+  const onEventRef = useRef(options.onEvent);
+  onEventRef.current = options.onEvent;
 
   useEffect(() => {
     if (!sessionId) return undefined;
     const socket = wsRegistry.acquire(sessionId);
-    const unsubscribe = onEvent ? socket.onEvent(onEvent) : () => undefined;
+    const unsubscribe = socket.onEvent((event) => {
+      onEventRef.current?.(event);
+    });
     return () => {
       unsubscribe();
       wsRegistry.release(sessionId);
     };
-  }, [sessionId, onEvent]);
+  }, [sessionId]);
 }
