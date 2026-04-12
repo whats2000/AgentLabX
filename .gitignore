@@ -32,3 +32,7 @@ Thumbs.db
 .superpowers/
 data/
 *.db
+
+# Code Agents
+.claude
+.cursor
