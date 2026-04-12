@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from agentlabx.agents.base import AgentContext
 from agentlabx.agents.config_agent import ConfigAgent
 from agentlabx.agents.config_loader import AgentConfig, AgentConfigLoader
-from agentlabx.agents.base import AgentContext, MemoryScope
 
 CONFIGS_DIR = Path(__file__).parent.parent.parent / "agentlabx" / "agents" / "configs"
 

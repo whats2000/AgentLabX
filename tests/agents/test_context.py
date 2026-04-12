@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 
 from agentlabx.agents.base import MemoryScope
@@ -118,7 +116,9 @@ class TestContextAssembler:
         # Summarized field should be present and marked
         assert "literature_review" in context
         assert context["literature_review"].get("_summarized") is True
-        assert context["literature_review"].get("summary_instruction") == "abstracts and key findings"
+        assert (
+            context["literature_review"].get("summary_instruction") == "abstracts and key findings"
+        )
 
     def test_format_for_prompt(self, populated_state):
         scope = MemoryScope(read=["literature_review.*", "plan.*"], write=[])

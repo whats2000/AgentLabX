@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -27,7 +27,7 @@ class SessionPreferences(BaseModel):
         return SessionPreferences(**data)
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     """Lifecycle statuses for a research session."""
 
     CREATED = "created"

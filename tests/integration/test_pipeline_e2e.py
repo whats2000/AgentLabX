@@ -1,11 +1,12 @@
 """End-to-end pipeline test — verifies the full orchestration works."""
+
 from __future__ import annotations
 
 import pytest
 
 from agentlabx.core.pipeline import PipelineBuilder
 from agentlabx.core.registry import PluginRegistry
-from agentlabx.core.session import Session, SessionManager, SessionPreferences
+from agentlabx.core.session import SessionManager
 from agentlabx.core.state import create_initial_state
 from agentlabx.stages.skeleton import register_default_stages
 
@@ -16,9 +17,14 @@ def full_pipeline():
     register_default_stages(registry)
     builder = PipelineBuilder(registry=registry)
     sequence = [
-        "literature_review", "plan_formulation", "data_exploration",
-        "data_preparation", "experimentation", "results_interpretation",
-        "report_writing", "peer_review",
+        "literature_review",
+        "plan_formulation",
+        "data_exploration",
+        "data_preparation",
+        "experimentation",
+        "results_interpretation",
+        "report_writing",
+        "peer_review",
     ]
     graph = builder.build(stage_sequence=sequence)
     return graph, sequence

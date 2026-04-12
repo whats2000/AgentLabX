@@ -15,11 +15,10 @@ from agentlabx.stages.skeleton import (
     LiteratureReviewStage,
     PeerReviewStage,
     PlanFormulationStage,
-    register_default_stages,
-    ResultsInterpretationStage,
     ReportWritingStage,
+    ResultsInterpretationStage,
+    register_default_stages,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

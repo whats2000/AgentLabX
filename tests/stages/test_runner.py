@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentlabx.core.state import PipelineState, create_initial_state
+from agentlabx.core.state import create_initial_state
 from agentlabx.stages.base import BaseStage, StageContext, StageResult
 from agentlabx.stages.runner import StageRunner
 

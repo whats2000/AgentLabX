@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agentlabx.core.state import PipelineState, StageError
@@ -48,7 +48,7 @@ class StageRunner:
                 stage=self.stage.name,
                 error_type=type(e).__name__,
                 message=str(e),
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 recovered=False,
             )
             # errors is a reducer field — return only the NEW error

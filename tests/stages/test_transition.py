@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import create_initial_state
-from agentlabx.stages.transition import TransitionDecision, TransitionHandler
-
+from agentlabx.stages.transition import TransitionHandler
 
 # ---------------------------------------------------------------------------
 # Helpers

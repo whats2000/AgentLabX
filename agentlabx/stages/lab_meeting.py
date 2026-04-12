@@ -12,7 +12,7 @@ class LabMeetingTrigger:
     def should_trigger(self, state: PipelineState) -> bool:
         errors = state.get("errors", [])
         if len(errors) >= self.consecutive_failures:
-            recent = errors[-self.consecutive_failures:]
+            recent = errors[-self.consecutive_failures :]
             if all(e.stage == recent[0].stage for e in recent):
                 return True
         return False

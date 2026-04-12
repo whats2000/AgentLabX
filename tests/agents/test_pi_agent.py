@@ -7,7 +7,13 @@ from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import create_initial_state
 from agentlabx.stages.transition import TransitionHandler
 
-SEQUENCE = ["literature_review", "plan_formulation", "experimentation", "report_writing", "peer_review"]
+SEQUENCE = [
+    "literature_review",
+    "plan_formulation",
+    "experimentation",
+    "report_writing",
+    "peer_review",
+]
 
 
 @pytest.fixture()
@@ -19,7 +25,9 @@ def pi_agent():
 @pytest.fixture()
 def base_state():
     return create_initial_state(
-        session_id="s1", user_id="u1", research_topic="test",
+        session_id="s1",
+        user_id="u1",
+        research_topic="test",
         default_sequence=SEQUENCE,
     )
 
@@ -48,7 +56,11 @@ class TestPIAgent:
 
     async def test_budget_warning(self, pi_agent, base_state):
         base_state["current_stage"] = "experimentation"
-        base_state["completed_stages"] = ["literature_review", "plan_formulation", "experimentation"]
+        base_state["completed_stages"] = [
+            "literature_review",
+            "plan_formulation",
+            "experimentation",
+        ]
         decision = await pi_agent.decide(base_state, SessionPreferences(), budget_warning=True)
         assert decision.budget_note is not None
 
@@ -56,8 +68,10 @@ class TestPIAgent:
 class TestPIDecision:
     def test_create_decision(self):
         d = PIDecision(
-            next_stage="experimentation", action="advance",
-            reason="Research progressing well", confidence=0.85,
+            next_stage="experimentation",
+            action="advance",
+            reason="Research progressing well",
+            confidence=0.85,
         )
         assert d.confidence == 0.85
         assert d.budget_note is None

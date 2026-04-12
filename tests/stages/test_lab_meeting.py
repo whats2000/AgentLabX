@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -28,23 +28,27 @@ class TestLabMeetingTrigger:
         trigger = LabMeetingTrigger(consecutive_failures=3, score_plateau_rounds=2)
         errors = []
         for i in range(3):
-            errors.append(StageError(
-                stage="experimentation",
-                error_type="RuntimeError",
-                message=f"Failure {i}",
-                timestamp=datetime.now(timezone.utc),
-            ))
+            errors.append(
+                StageError(
+                    stage="experimentation",
+                    error_type="RuntimeError",
+                    message=f"Failure {i}",
+                    timestamp=datetime.now(UTC),
+                )
+            )
         state["errors"] = errors
         assert trigger.should_trigger(state) is True
 
     def test_does_not_trigger_below_threshold(self, state):
         trigger = LabMeetingTrigger(consecutive_failures=3, score_plateau_rounds=2)
-        state["errors"] = [StageError(
-            stage="experimentation",
-            error_type="RuntimeError",
-            message="Failure",
-            timestamp=datetime.now(timezone.utc),
-        )]
+        state["errors"] = [
+            StageError(
+                stage="experimentation",
+                error_type="RuntimeError",
+                message="Failure",
+                timestamp=datetime.now(UTC),
+            )
+        ]
         assert trigger.should_trigger(state) is False
 
 

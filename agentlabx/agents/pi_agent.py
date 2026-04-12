@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel
 
 from agentlabx.core.session import SessionPreferences
@@ -19,7 +17,9 @@ class PIDecision(BaseModel):
 
 
 class PIAgent:
-    def __init__(self, transition_handler: TransitionHandler, confidence_threshold: float = 0.6) -> None:
+    def __init__(
+        self, transition_handler: TransitionHandler, confidence_threshold: float = 0.6
+    ) -> None:
         self.transition_handler = transition_handler
         self.confidence_threshold = confidence_threshold
         self.decision_history: list[PIDecision] = []
