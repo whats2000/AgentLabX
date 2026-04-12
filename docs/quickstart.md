@@ -11,7 +11,7 @@ Get from a fresh clone to a running research session in about five minutes. No A
 ## 1. Install
 
 ```bash
-git clone https://github.com/<you>/AgentLabX.git
+git clone https://github.com/whats2000/AgentLabX.git
 cd AgentLabX
 uv sync --extra dev
 ```
