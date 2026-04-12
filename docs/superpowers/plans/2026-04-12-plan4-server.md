@@ -2278,5 +2278,456 @@ After completing all 16 tasks:
 - PostgreSQL + MinIO migration (architecture supports it, opt-in)
 - Kubernetes execution backend
 - Claude Code SDK integration (BaseCodeAgent adapter)
-- SQLite-backed LangGraph checkpointer (currently MemorySaver)
-- HITL interrupt flow full implementation (approve/edit client actions)
+- HITL interrupt flow full implementation via LangGraph `interrupt()` (approve/edit client actions resume interrupted graph; current pause is cooperative via event)
+
+---
+
+## Addendum: Review Fixes (apply during execution)
+
+The following corrections resolve blocking issues identified during Plan 4
+review. Apply them as each relevant task is implemented.
+
+### Fix A (CRITICAL): Cooperative pause via event on StageContext
+
+Original Task 6 had `running.paused.clear()` but the runner never checked it.
+Pause was a silent no-op.
+
+**Solution: Option A — cooperative pause in StageRunner.**
+
+**Changes:**
+
+1. Add `paused_event` to `StageContext` (`agentlabx/stages/base.py`):
+   ```python
+   class StageContext(BaseModel):
+       settings: Any = None
+       event_bus: Any = None
+       registry: Any = None
+       llm_provider: Any = None
+       cost_tracker: Any = None
+       paused_event: Any = None  # asyncio.Event; set=running, clear=paused
+       model_config = {"arbitrary_types_allowed": True}
+   ```
+
+2. In `StageRunner.run()`, await the event between `on_enter` and `stage.run`:
+   ```python
+   # After on_enter, before stage.run:
+   paused_event = getattr(self.context, "paused_event", None)
+   if paused_event is not None:
+       await paused_event.wait()  # Blocks if cleared (paused)
+   ```
+
+3. In `PipelineExecutor.start_session`, create the event and attach:
+   ```python
+   paused_event = asyncio.Event()
+   paused_event.set()  # Not paused initially
+   stage_context = StageContext(
+       ..., paused_event=paused_event,
+   )
+   # PipelineBuilder needs to accept this or the executor must inject it
+   # differently. Simplest: PipelineBuilder accepts a pre-built StageContext
+   # via an optional override parameter.
+   ```
+
+4. `PipelineBuilder.build()` gains `stage_context: StageContext | None = None` —
+   when provided, use it instead of constructing one. This keeps other tasks
+   unchanged.
+
+5. `pause_session` → `running.paused_event.clear()`; `resume_session` →
+   `running.paused_event.set()`. Remove the existing `running.paused` Event
+   (was dead code).
+
+**Tests:** Add to `test_executor.py`:
+```python
+async def test_pause_blocks_between_stages():
+    # Start a session, pause immediately, verify stage_iterations stops
+    # incrementing after the in-flight stage completes (doesn't start next).
+    # Resume, verify iterations continue.
+```
+
+### Fix B (CRITICAL): EventBus at session creation, not start
+
+Original Task 9 subscribed to the bus only if `executor.get_running(session_id)`
+returned a session. If the UI opened a WS before `/start`, zero events were
+forwarded.
+
+**Solution: Promote EventBus to a session-level resource.**
+
+**Changes:**
+
+1. Add `event_bus: EventBus` to `Session` in `agentlabx/core/session.py`:
+   ```python
+   from agentlabx.core.events import EventBus
+
+   class Session:
+       def __init__(self, ...) -> None:
+           ...
+           self.event_bus = EventBus()  # Created with the session
+   ```
+
+2. In Task 6 `PipelineExecutor.start_session`, reuse `session.event_bus` instead
+   of constructing a new one:
+   ```python
+   running = RunningSession(
+       session=session,
+       event_bus=session.event_bus,  # Use the pre-existing bus
+       ...,
+   )
+   ```
+
+3. In Task 9 WS handler, subscribe to `session.event_bus` directly — no
+   dependency on executor or running state:
+   ```python
+   @router.websocket("/ws/sessions/{session_id}")
+   async def session_websocket(websocket: WebSocket, session_id: str):
+       session = context.session_manager.get_session(session_id)
+       # subscribe to session.event_bus — works whether running or not
+       session.event_bus.subscribe("*", forward_event)
+       ...
+   ```
+
+4. Update Plan 2 `test_session.py`: the `SessionPreferences` comparison tests
+   should not inspect `event_bus` — the existing tests compare sessions by
+   field, which will now have a non-serializable bus. Use `session.model_dump()`
+   or the existing attribute tests only.
+
+   **If `Session` is a plain Python class (not Pydantic)** (check Plan 2's
+   implementation), no change needed. Verify before editing.
+
+### Fix C (CRITICAL): Use AsyncSqliteSaver for LangGraph checkpoints
+
+Original Task 6 used `MemorySaver()`. Two consequences:
+- Sessions lost on restart
+- `/artifacts` returned empty for completed sessions (state removed from memory
+  when task cleaned up from `_running`)
+
+**Solution: Use `langgraph-checkpoint-sqlite.AsyncSqliteSaver`.** The
+dependency is already installed (Plan 2 added it).
+
+**Changes in Task 6 `PipelineExecutor`:**
+
+```python
+# agentlabx/server/executor.py
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import aiosqlite
+
+
+class PipelineExecutor:
+    def __init__(
+        self,
+        *,
+        registry: PluginRegistry,
+        session_manager: SessionManager,
+        llm_provider: BaseLLMProvider,
+        checkpoint_db_path: str = "data/checkpoints.db",
+    ) -> None:
+        ...
+        self._checkpoint_db_path = checkpoint_db_path
+        self._checkpointer: AsyncSqliteSaver | None = None
+        self._checkpointer_conn: Any | None = None
+
+    async def initialize(self) -> None:
+        """Open the checkpoint DB. Call once at app startup."""
+        Path(self._checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._checkpointer_conn = await aiosqlite.connect(self._checkpoint_db_path)
+        self._checkpointer = AsyncSqliteSaver(self._checkpointer_conn)
+
+    async def close(self) -> None:
+        if self._checkpointer_conn is not None:
+            await self._checkpointer_conn.close()
+
+    async def start_session(self, session: Session) -> RunningSession:
+        ...
+        graph = builder.build(
+            stage_sequence=default_sequence,
+            checkpointer=self._checkpointer,  # <-- persistent
+            llm_provider=self.llm_provider,
+            cost_tracker=cost_tracker,
+            event_bus=session.event_bus,
+        )
+        ...
+```
+
+Update `deps.py::build_app_context` to call `executor.initialize()` and
+`create_app`'s lifespan to call `executor.close()` on shutdown.
+
+**Also fixes Fix D below automatically**: because state is checkpointed to
+SQLite, `/artifacts` for completed sessions reads directly from the graph
+(`graph.aget_state(config)` works after the session task exits).
+
+### Fix D: Save final state on completion + keep running entry briefly
+
+Independently of the checkpointer change (defense in depth), explicitly save
+final state in the pipeline task cleanup:
+
+```python
+async def run_pipeline():
+    try:
+        final_result = await graph.ainvoke(initial_state, config=config)
+        session.complete()
+        await self.session_manager.persist_session(session)
+    except asyncio.CancelledError:
+        session.fail()  # <-- Fix E: mark as failed on cancel
+        await self.session_manager.persist_session(session)
+        raise
+    except Exception as e:
+        logger.exception("Pipeline error for %s: %s", session.session_id, e)
+        session.fail()
+        await self.session_manager.persist_session(session)
+    finally:
+        # Keep the running entry for artifact/state queries.
+        # The graph handle is still valid; checkpoint is persisted.
+        # Cleanup happens via an explicit endpoint or a TTL sweep.
+        pass  # Do NOT pop from self._running here
+```
+
+With `AsyncSqliteSaver`, the checkpoint persists regardless of `_running`
+membership, so the precise cleanup policy is less load-bearing. For memory
+management, implement a later sweep task that removes completed entries older
+than N minutes. Not in Plan 4 scope; noted as future work.
+
+### Fix E: Session.fail() on cancel path
+
+See Fix D — the `except asyncio.CancelledError` branch now calls
+`session.fail()` before re-raising. Document this transition is valid in
+`_VALID_TRANSITIONS` (Plan 2 code): RUNNING → FAILED and PAUSED → FAILED.
+
+Verify `agentlabx/core/session.py` `_VALID_TRANSITIONS` allows these. If not,
+update:
+
+```python
+_VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
+    SessionStatus.CREATED: {SessionStatus.RUNNING, SessionStatus.FAILED},
+    SessionStatus.RUNNING: {SessionStatus.PAUSED, SessionStatus.COMPLETED, SessionStatus.FAILED},
+    SessionStatus.PAUSED: {SessionStatus.RUNNING, SessionStatus.FAILED},
+    # ...
+}
+```
+
+### Fix F: Centralize session persistence
+
+Rather than remembering to call `persist_session` on every transition,
+instrument `Session._transition` to fire a callback:
+
+```python
+class Session:
+    def __init__(self, ...) -> None:
+        ...
+        self._transition_hooks: list = []
+
+    def add_transition_hook(self, hook) -> None:
+        """Hook signature: async def(session) -> None. Called after every transition."""
+        self._transition_hooks.append(hook)
+
+    def _transition(self, target: SessionStatus) -> None:
+        valid = _VALID_TRANSITIONS.get(self.status, set())
+        if target not in valid:
+            raise ValueError(f"Cannot {target.value} from {self.status.value}")
+        self.status = target
+        # Fire hooks — schedule on the running loop if we're in one
+        for hook in self._transition_hooks:
+            try:
+                asyncio.get_running_loop().create_task(hook(self))
+            except RuntimeError:
+                # Not in an async context — hook must handle sync call
+                pass
+```
+
+When `PipelineExecutor` creates a session (or when SessionManager creates one
+with storage), register a hook that calls `persist_session`. This removes the
+per-call responsibility from every transition site.
+
+Simpler alternative if the hook pattern feels heavy: make `SessionManager`
+wrap `session.start()/pause()/resume()/complete()/fail()` in methods that do
+both the transition AND persistence. Either approach is fine; pick one.
+
+### Fix G: Single event subscription per session (WS amplification)
+
+Original Task 9 subscribed each WS client to `event_bus` independently. Three
+clients = three forwardings through the bus × three broadcasts = 9 sends.
+
+**Solution: Subscribe once per session (at executor start time), forward to
+ConnectionManager.broadcast.**
+
+In `PipelineExecutor.start_session`, after creating the event bus:
+
+```python
+async def forward_event_to_ws(event: Event) -> None:
+    from agentlabx.server.ws.handlers import manager
+    await manager.broadcast(session.session_id, {
+        "type": event.type,
+        "data": event.data,
+        "source": event.source,
+    })
+
+session.event_bus.subscribe("*", forward_event_to_ws)
+```
+
+WS handler no longer subscribes — it only accepts connections and receives
+client messages. Events flow: `stage → EventBus → single subscriber →
+manager.broadcast → all connected clients`.
+
+For Fix B's "subscribe at session creation" to work with this pattern, the
+session creation step (not just start) should register the forwarder. Move the
+`subscribe` call from `start_session` to `SessionManager.create_session` (or
+wherever Session is constructed).
+
+### Fix H: Hypothesis list — "latest by ID" helper
+
+Task 14 appends updated hypotheses via `operator.add` reducer, so state ends
+with `[H1, H2, H1_updated, H2_updated]`. Add a helper on the state module so
+UI/tools don't repeat the "latest by ID" computation:
+
+```python
+# agentlabx/core/state.py
+def active_hypotheses(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
+    """Return the latest hypothesis record per ID (last-write-wins by position)."""
+    latest: dict[str, Hypothesis] = {}
+    for h in hypotheses:
+        latest[h.id] = h
+    return list(latest.values())
+```
+
+Use this helper in Task 8's `/hypotheses` endpoint.
+
+### Fix I: Redirect before start
+
+Original Task 5's `/redirect` returned 202 even when the session wasn't
+running. Clients got success but nothing happened.
+
+**Solution: Return 409 when not RUNNING.**
+
+```python
+@router.post("/{session_id}/redirect", status_code=202)
+async def redirect_session(...):
+    session = manager.get_session(session_id)
+    if session.status != SessionStatus.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot redirect from status '{session.status.value}'. "
+                   f"Session must be RUNNING.",
+        )
+    ...
+```
+
+Update Task 16's `test_redirect_via_api` to expect 409, or call start before
+redirect.
+
+### Fix J: E2E test polling
+
+Replace `time.sleep(2.0)` in Task 16 with polling:
+
+```python
+import time
+def wait_for_status(client, session_id, target_statuses, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        r = client.get(f"/api/sessions/{session_id}")
+        if r.json()["status"] in target_statuses:
+            return r.json()
+        time.sleep(0.1)
+    raise TimeoutError(f"Session never reached {target_statuses}")
+
+def test_create_start_complete_session(client):
+    r = client.post("/api/sessions", json={"topic": "Test", "user_id": "u1"})
+    sid = r.json()["session_id"]
+    client.post(f"/api/sessions/{sid}/start")
+    final = wait_for_status(client, sid, {"completed", "failed"}, timeout=30.0)
+    assert final["status"] == "completed"
+```
+
+### Fix K: Event emission ordering on failure
+
+Task 3 emits `stage_failed` in the `except` block. Clarify that `stage_completed`
+is NOT emitted on failure. Move the `stage_completed` emission inside the `try`
+block, after `result` is set:
+
+```python
+try:
+    result = await self.stage.run(entered_state, self.context)
+    # ... apply update ...
+    if self.context.event_bus is not None:
+        await self.context.event_bus.emit(Event(
+            type="stage_completed",
+            data={...},
+        ))
+except Exception as e:
+    # ... error handling ...
+    if self.context.event_bus is not None:
+        await self.context.event_bus.emit(Event(
+            type="stage_failed",
+            data={...},
+        ))
+```
+
+On success: `stage_started` → `stage_completed`.
+On failure: `stage_started` → `stage_failed`.
+Never both.
+
+### Fix L: Thread ID reuse semantics — document
+
+Add to the Plan 4 docstring of `PipelineExecutor.start_session`:
+
+```python
+"""Begin running a session's pipeline.
+
+The session_id is used as the LangGraph thread_id. With AsyncSqliteSaver
+this means restarting a session continues from its last checkpoint — the
+graph does NOT start fresh. This is intentional: it gives pause/resume
+durability across server restarts. To re-run from scratch, create a new
+session with a fresh session_id.
+"""
+```
+
+### Fix M: CLI factory coupling
+
+Task 15's `build_app` reads env var. Cleaner — use a module-level variable set
+by the `serve` command:
+
+```python
+# agentlabx/cli/main.py
+_USE_MOCK_LLM = False
+
+
+def _build_app_with_config():
+    """Factory called by uvicorn.run(factory=True)."""
+    from agentlabx.server.app import create_app
+    return create_app(use_mock_llm=_USE_MOCK_LLM)
+
+
+@cli.command()
+@click.option("--mock-llm", is_flag=True)
+def serve(host, port, reload, mock_llm):
+    global _USE_MOCK_LLM
+    _USE_MOCK_LLM = mock_llm
+    uvicorn.run(
+        "agentlabx.cli.main:_build_app_with_config",
+        host=host, port=port, reload=reload, factory=True,
+    )
+```
+
+Globals are ugly but the CLI-to-uvicorn-factory handoff is inherently
+stateful. Env var approach in original Task 15 is a wash vs. this — pick
+whichever the implementer prefers. Document in the task either way.
+
+---
+
+### Updated Summary (post-addendum)
+
+Plan 4 still has 16 numbered tasks. The above fixes attach to specific tasks:
+
+- **Task 2**: accept optional pre-built `StageContext` in `build()` (Fix A)
+- **Task 3**: emit `stage_completed` and `stage_failed` mutually exclusively (Fix K)
+- **Task 5**: `/redirect` returns 409 when not RUNNING (Fix I)
+- **Task 6**: use `AsyncSqliteSaver` + cooperative pause + save final state + fail on cancel + subscribe-once WS forwarder (Fixes A, C, D, E, G, L)
+- **Task 8**: use `active_hypotheses` helper (Fix H)
+- **Task 9**: remove per-WS subscription, subscribe at session creation (Fix B, G)
+- **Task 10**: centralize persistence via transition hook or manager wrapper (Fix F)
+- **Task 14**: add `active_hypotheses` helper to state module (Fix H)
+- **Task 15**: document CLI factory coupling approach (Fix M)
+- **Task 16**: poll instead of `time.sleep` (Fix J)
+
+After applying all fixes, the platform's restart-recovery story becomes
+honest: sessions survive server restart (SQLite checkpoint), artifacts remain
+queryable after completion (checkpoint persists), pause actually pauses
+(cooperative event), and WS clients get events regardless of connection
+timing (session-level bus).
