@@ -12,6 +12,15 @@ vi.mock("../../src/api/client", () => ({
   api: {
     listSessions: vi.fn().mockResolvedValue([]),
     deleteSession: vi.fn(),
+    listPlugins: vi.fn().mockResolvedValue({
+      agents: [],
+      stages: [],
+      tools: [],
+      llm_providers: [],
+      execution_backends: [],
+      storage_backends: [],
+      code_agents: [],
+    }),
   },
   APIError: class extends Error {},
   isValidationError: () => false,
@@ -44,9 +53,11 @@ describe("AppShell", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the plugins stub under /plugins", () => {
+  it("renders the plugins page under /plugins", async () => {
     renderAt("/plugins");
-    expect(screen.getByText(/Plugins \(stub\)/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Browse registered agents, stages, tools/i),
+    ).toBeInTheDocument();
   });
 
   it("renders the AgentLabX header", () => {
