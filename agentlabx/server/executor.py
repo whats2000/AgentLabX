@@ -163,6 +163,7 @@ class PipelineExecutor:
                         "type": event.type,
                         "data": event.data,
                         "source": event.source,
+                        "timestamp": event.timestamp.isoformat(),
                     },
                 )
 

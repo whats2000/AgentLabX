@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -114,3 +115,25 @@ class SQLiteBackend(BaseStorageBackend):
         if not file_path.exists():
             return None
         return file_path.read_bytes()
+
+    async def delete_session(self, session_id: str) -> None:
+        """Delete all checkpoints, artifacts rows, and on-disk artifact files.
+
+        Idempotent — if the session does not exist this is a no-op.
+        """
+        if self._session_factory is None:
+            msg = "Backend not initialized — call initialize() first"
+            raise RuntimeError(msg)
+
+        async with self._session_factory() as sess:
+            await sess.execute(
+                delete(CheckpointRecord).where(CheckpointRecord.session_id == session_id)
+            )
+            await sess.execute(
+                delete(ArtifactRecord).where(ArtifactRecord.session_id == session_id)
+            )
+            await sess.commit()
+
+        session_dir = self.artifacts_path / session_id
+        if session_dir.exists():
+            shutil.rmtree(session_dir, ignore_errors=True)

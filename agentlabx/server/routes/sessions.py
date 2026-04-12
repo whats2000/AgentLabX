@@ -153,6 +153,24 @@ async def resume_session(request: Request, session_id: str):
     return {"session_id": session_id, "status": session.status.value}
 
 
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(request: Request, session_id: str):
+    """Delete a session and all its persisted state.
+
+    If the session is running, cancel it first so the background task doesn't
+    keep writing to the row we're about to delete. Idempotent — deleting an
+    unknown session returns 204 rather than 404 so the frontend can retry
+    safely.
+    """
+    context = request.app.state.context
+
+    if context.executor is not None and context.executor.get_running(session_id) is not None:
+        await context.executor.cancel_session(session_id)
+
+    await context.session_manager.delete_session(session_id)
+    return None
+
+
 @router.post("/{session_id}/redirect", status_code=202)
 async def redirect_session(request: Request, session_id: str, body: RedirectRequest):
     """Redirect the pipeline to a target stage. Session must be RUNNING (Fix I)."""

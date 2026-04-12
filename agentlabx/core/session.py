@@ -250,3 +250,14 @@ class SessionManager:
         session.fail()
         await self.persist_session(session)
         return session
+
+    async def delete_session(self, session_id: str) -> None:
+        """Remove a session from memory and storage.
+
+        Idempotent — unknown session IDs are tolerated so callers don't need
+        to distinguish between "already gone" and "never existed". Storage
+        deletion failures propagate so callers can surface them (e.g., as 500).
+        """
+        self._sessions.pop(session_id, None)
+        if self._storage is not None and hasattr(self._storage, "delete_session"):
+            await self._storage.delete_session(session_id)

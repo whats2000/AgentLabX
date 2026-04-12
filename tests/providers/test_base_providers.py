@@ -70,6 +70,11 @@ class DummyStorageBackend(BaseStorageBackend):
     async def load_artifact(self, path: str) -> bytes | None:
         return self._store.get(path)
 
+    async def delete_session(self, session_id: str) -> None:
+        prefix = f"{session_id}/"
+        for key in [k for k in self._store if k.startswith(prefix)]:
+            del self._store[key]
+
 
 class TestBaseStorageBackend:
     async def test_save_and_load_state(self):

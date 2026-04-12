@@ -159,3 +159,37 @@ class TestSessionRedirect:
             json={"target_stage": "plan_formulation"},
         )
         assert r.status_code == 404
+
+
+class TestSessionDelete:
+    def test_delete_existing_returns_204(self, client):
+        sid = client.post("/api/sessions", json={"topic": "t"}).json()["session_id"]
+        r = client.delete(f"/api/sessions/{sid}")
+        assert r.status_code == 204
+
+    def test_delete_removes_from_list(self, client):
+        sid = client.post("/api/sessions", json={"topic": "t"}).json()["session_id"]
+        client.delete(f"/api/sessions/{sid}")
+        r = client.get("/api/sessions")
+        assert all(s["session_id"] != sid for s in r.json())
+
+    def test_get_after_delete_returns_404(self, client):
+        sid = client.post("/api/sessions", json={"topic": "t"}).json()["session_id"]
+        client.delete(f"/api/sessions/{sid}")
+        r = client.get(f"/api/sessions/{sid}")
+        assert r.status_code == 404
+
+    def test_delete_unknown_is_idempotent(self, client):
+        """DELETE on a non-existent session returns 204, not 404 — lets the
+        frontend retry safely without special-casing 'already gone'."""
+        r = client.delete("/api/sessions/sess-nonexistent")
+        assert r.status_code == 204
+
+    def test_delete_running_session_cancels_first(self, client):
+        """Fix A: deleting a running session cancels the executor run first."""
+        sid = client.post("/api/sessions", json={"topic": "t"}).json()["session_id"]
+        client.post(f"/api/sessions/{sid}/start")
+        r = client.delete(f"/api/sessions/{sid}")
+        assert r.status_code == 204
+        # Re-create shouldn't clash — the old session is gone
+        assert client.get(f"/api/sessions/{sid}").status_code == 404

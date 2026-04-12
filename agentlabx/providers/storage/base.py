@@ -20,3 +20,11 @@ class BaseStorageBackend(ABC):
 
     @abstractmethod
     async def load_artifact(self, path: str) -> bytes | None: ...
+
+    @abstractmethod
+    async def delete_session(self, session_id: str) -> None:
+        """Remove all persisted state and artifacts for a session.
+
+        Idempotent — deleting a non-existent session is not an error.
+        """
+        ...
