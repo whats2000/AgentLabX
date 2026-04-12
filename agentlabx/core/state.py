@@ -177,6 +177,20 @@ class PipelineState(TypedDict):
     cost_tracker: CostTracker
 
 
+def active_hypotheses(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
+    """Return the latest hypothesis record per ID (last-write-wins by position).
+
+    The hypotheses field uses `Annotated[list, operator.add]` so the
+    results_interpretation stage's updates append rather than overwrite.
+    Callers that want the current state of each hypothesis should use this
+    helper instead of walking the raw list.
+    """
+    latest: dict[str, Hypothesis] = {}
+    for h in hypotheses:
+        latest[h.id] = h
+    return list(latest.values())
+
+
 def create_initial_state(
     *,
     session_id: str,

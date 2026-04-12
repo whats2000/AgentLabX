@@ -156,3 +156,50 @@ class TestCreateInitialState:
         ]:
             assert key in state, f"Missing state key: {key}"
             assert state[key] == []
+
+
+class TestActiveHypotheses:
+    def test_returns_latest_by_id(self):
+        from agentlabx.core.state import Hypothesis, active_hypotheses
+
+        h1_old = Hypothesis(
+            id="H1",
+            statement="old statement",
+            status="active",
+            created_at_stage="plan_formulation",
+        )
+        h1_new = Hypothesis(
+            id="H1",
+            statement="old statement",
+            status="supported",
+            created_at_stage="plan_formulation",
+            resolved_at_stage="results_interpretation",
+        )
+        h2 = Hypothesis(
+            id="H2",
+            statement="second",
+            status="active",
+            created_at_stage="plan_formulation",
+        )
+        result = active_hypotheses([h1_old, h2, h1_new])
+        # H1 should appear once with the updated status
+        by_id = {h.id: h for h in result}
+        assert by_id["H1"].status == "supported"
+        assert by_id["H2"].status == "active"
+        assert len(result) == 2
+
+    def test_empty_list(self):
+        from agentlabx.core.state import active_hypotheses
+
+        assert active_hypotheses([]) == []
+
+    def test_preserves_order_of_first_occurrence(self):
+        """Order in output follows first-occurrence order of IDs."""
+        from agentlabx.core.state import Hypothesis, active_hypotheses
+
+        ha = Hypothesis(id="A", statement="a", status="active", created_at_stage="s")
+        hb = Hypothesis(id="B", statement="b", status="active", created_at_stage="s")
+        ha2 = Hypothesis(id="A", statement="a", status="supported", created_at_stage="s")
+        result = active_hypotheses([ha, hb, ha2])
+        assert [h.id for h in result] == ["A", "B"]
+        assert result[0].status == "supported"
