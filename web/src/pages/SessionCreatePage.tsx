@@ -20,7 +20,7 @@ import {
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { useCreateSession } from "../hooks/useCreateSession";
-import type { Mode, ControlLevel, BacktrackControl } from "../types/domain";
+import type { ControlLevel, BacktrackControl } from "../types/domain";
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -43,7 +43,6 @@ const BACKTRACK_LEVELS: BacktrackControl[] = ["auto", "notify", "approve"];
 interface WizardState {
   topic: string;
   user_id: string;
-  mode: Mode;
   skip_stages: Stage[];
   max_total_iterations: number;
   stage_controls: Record<Stage, ControlLevel>;
@@ -53,7 +52,6 @@ interface WizardState {
 const initialState: WizardState = {
   topic: "",
   user_id: "default",
-  mode: "auto",
   skip_stages: [],
   max_total_iterations: 50,
   stage_controls: Object.fromEntries(
@@ -67,6 +65,10 @@ const initialState: WizardState = {
  *
  * We intentionally omit keys whose values match the backend defaults so the
  * persisted config stays small and won't shadow future default changes.
+ *
+ * Mode (auto / hitl) is *not* part of the wizard — it's derived from the
+ * per-stage controls at runtime, and users can flip it at any time from the
+ * session detail ControlBar. Sending mode=hitl here would be redundant.
  */
 export function buildCreateBody(s: WizardState) {
   const config: Record<string, unknown> = {};
@@ -78,16 +80,19 @@ export function buildCreateBody(s: WizardState) {
   if (Object.keys(pipeline).length) config.pipeline = pipeline;
 
   const prefs: Record<string, unknown> = {};
-  if (s.mode !== "auto") prefs.mode = s.mode;
-  if (s.mode === "hitl") {
-    const nonAuto = Object.entries(s.stage_controls).filter(
-      ([, v]) => v !== "auto",
-    );
-    if (nonAuto.length) prefs.stage_controls = Object.fromEntries(nonAuto);
-    if (s.backtrack_control !== "auto")
-      prefs.backtrack_control = s.backtrack_control;
+  const nonAuto = Object.entries(s.stage_controls).filter(
+    ([, v]) => v !== "auto",
+  );
+  if (nonAuto.length) prefs.stage_controls = Object.fromEntries(nonAuto);
+  if (s.backtrack_control !== "auto")
+    prefs.backtrack_control = s.backtrack_control;
+  // If any oversight override is present, mark mode=hitl so the backend
+  // respects the per-stage controls. Otherwise omit mode entirely and let
+  // the backend default ("auto") apply.
+  if (Object.keys(prefs).length) {
+    prefs.mode = "hitl";
+    config.preferences = prefs;
   }
-  if (Object.keys(prefs).length) config.preferences = prefs;
 
   return {
     topic: s.topic.trim(),
@@ -135,7 +140,7 @@ export default function SessionCreatePage() {
   const [state, setState] = useState<WizardState>(initialState);
   const createMutation = useCreateSession();
 
-  const steps = ["Topic", "Pipeline", "HITL controls", "Review"];
+  const steps = ["Topic", "Pipeline", "Oversight", "Review"];
 
   const isStepValid = (s: number): boolean => {
     if (s === 0) return state.topic.trim().length >= 10;
@@ -187,24 +192,9 @@ export default function SessionCreatePage() {
         return (
           <Form layout="vertical" size="large">
             <Paragraph type="secondary" style={{ marginTop: 0 }}>
-              Choose how much you want to be involved and which stages to run.
+              Pick which stages to run and an iteration ceiling. You can still
+              adjust pacing and oversight after the session starts.
             </Paragraph>
-            <Form.Item
-              label="Mode"
-              help={
-                state.mode === "auto"
-                  ? "Runs end-to-end without prompts."
-                  : "Pauses at configurable checkpoints for your input."
-              }
-            >
-              <Radio.Group
-                value={state.mode}
-                onChange={(e) => update("mode", e.target.value as Mode)}
-              >
-                <Radio.Button value="auto">Auto</Radio.Button>
-                <Radio.Button value="hitl">Human-in-the-loop</Radio.Button>
-              </Radio.Group>
-            </Form.Item>
             <Form.Item
               label="Skip stages"
               help="Leave empty to run the full 8-stage pipeline."
@@ -239,19 +229,12 @@ export default function SessionCreatePage() {
         );
 
       case 2:
-        if (state.mode === "auto") {
-          return (
-            <div style={{ padding: "40px 0" }}>
-              <Text type="secondary">
-                HITL controls skipped (auto mode). Continue to review.
-              </Text>
-            </div>
-          );
-        }
         return (
           <Form layout="vertical" size="large">
             <Paragraph type="secondary" style={{ marginTop: 0 }}>
-              Choose the level of oversight per stage.
+              Optional. Stages left on <Text code>auto</Text> run without
+              prompts; anything else pauses for your input at that stage. You
+              can flip any stage live from the session detail sidebar.
             </Paragraph>
             <div style={{ marginBottom: 24 }}>
               <Text strong>Per-stage controls</Text>
@@ -338,11 +321,6 @@ export default function SessionCreatePage() {
               <SummaryRow label="User ID">
                 <Text>{state.user_id.trim() || "default"}</Text>
               </SummaryRow>
-              <SummaryRow label="Mode">
-                <Text>
-                  {state.mode === "auto" ? "Auto" : "Human-in-the-loop"}
-                </Text>
-              </SummaryRow>
               <SummaryRow label="Skip stages">
                 <Text>
                   {state.skip_stages.length
@@ -353,21 +331,19 @@ export default function SessionCreatePage() {
               <SummaryRow label="Max iterations">
                 <Text>{state.max_total_iterations}</Text>
               </SummaryRow>
-              {state.mode === "hitl" && (
-                <>
-                  <SummaryRow label="Stage overrides">
-                    <Text>
-                      {hitlOverrides.length
-                        ? hitlOverrides
-                            .map(([s, v]) => `${prettyStage(s)}: ${v}`)
-                            .join(", ")
-                        : "(all auto)"}
-                    </Text>
-                  </SummaryRow>
-                  <SummaryRow label="Backtrack control">
-                    <Text>{state.backtrack_control}</Text>
-                  </SummaryRow>
-                </>
+              <SummaryRow label="Stage overrides">
+                <Text>
+                  {hitlOverrides.length
+                    ? hitlOverrides
+                        .map(([s, v]) => `${prettyStage(s)}: ${v}`)
+                        .join(", ")
+                    : "(all auto)"}
+                </Text>
+              </SummaryRow>
+              {state.backtrack_control !== "auto" && (
+                <SummaryRow label="Backtrack control">
+                  <Text>{state.backtrack_control}</Text>
+                </SummaryRow>
               )}
             </div>
             <Collapse

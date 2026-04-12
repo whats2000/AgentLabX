@@ -67,7 +67,7 @@ describe("SessionCreatePage", () => {
     expect(nextBtn).toBeEnabled();
   });
 
-  it("auto-mode skips HITL step with a note, then submits a minimal body", async () => {
+  it("defaults submit a minimal body (all stages auto, no config)", async () => {
     mockedApi.createSession.mockResolvedValue({
       session_id: "sess-new",
       user_id: "default",
@@ -90,10 +90,8 @@ describe("SessionCreatePage", () => {
     expect(await screen.findByText(/Skip stages/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Next/i }));
 
-    // Step 2: HITL (auto mode → shows note)
-    expect(
-      await screen.findByText(/HITL controls skipped \(auto mode\)/i),
-    ).toBeInTheDocument();
+    // Step 2: Oversight — per-stage controls always visible (no mode gate)
+    expect(await screen.findByText("Literature Review")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Next/i }));
 
     // Step 3: Review — topic should be visible
@@ -107,7 +105,7 @@ describe("SessionCreatePage", () => {
     const body = mockedApi.createSession.mock.calls[0][0];
     expect(body.topic).toBe(LONG_TOPIC);
     expect(body.user_id).toBe("default");
-    // Auto mode + default pipeline → empty config
+    // Every stage still on auto + default pipeline → empty config (no mode key).
     expect(body.config).toEqual({});
 
     await waitFor(() => {
@@ -115,7 +113,7 @@ describe("SessionCreatePage", () => {
     });
   });
 
-  it("hitl mode shows per-stage controls and encodes overrides in the body", async () => {
+  it("non-auto stage control encodes mode=hitl + stage_controls in the body", async () => {
     mockedApi.createSession.mockResolvedValue({
       session_id: "sess-hitl",
       user_id: "default",
@@ -134,17 +132,13 @@ describe("SessionCreatePage", () => {
     );
     await user.click(screen.getByRole("button", { name: /Next/i }));
 
-    // Step 1: switch to HITL. Radio.Button inputs are hidden (pointer-events: none),
-    // so click the visible label.
-    await user.click(screen.getByText(/Human-in-the-loop/i));
+    // Step 1: Pipeline defaults
     await user.click(screen.getByRole("button", { name: /Next/i }));
 
-    // Step 2: HITL controls present (per-stage rows)
+    // Step 2: Oversight — per-stage controls always visible. Flip the first
+    // stage's control to "approve". Radio.Button inputs have pointer-events:none,
+    // so click the visible label.
     expect(await screen.findByText("Literature Review")).toBeInTheDocument();
-    expect(screen.getByText("Peer Review")).toBeInTheDocument();
-
-    // Pick the first "approve" Radio.Button — belongs to literature_review row.
-    // Click the visible label since AntD Radio.Button inputs have pointer-events:none.
     const approveLabels = screen.getAllByText(/^approve$/i);
     await user.click(approveLabels[0]);
 
@@ -157,6 +151,7 @@ describe("SessionCreatePage", () => {
       expect(mockedApi.createSession).toHaveBeenCalledTimes(1);
     });
     const body = mockedApi.createSession.mock.calls[0][0];
+    // Any non-auto stage override triggers mode=hitl so the backend honours the overrides.
     expect(body.config.preferences.mode).toBe("hitl");
     expect(body.config.preferences.stage_controls).toEqual({
       literature_review: "approve",

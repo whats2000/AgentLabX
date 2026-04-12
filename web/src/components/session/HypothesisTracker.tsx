@@ -17,7 +17,8 @@ interface Props {
 
 export function HypothesisTracker({ sessionId }: Props) {
   const { data } = useHypotheses(sessionId);
-  const hypotheses = (data ?? []) as Hypothesis[];
+  // useHypotheses flattens the backend's {hypotheses, total_records} envelope.
+  const hypotheses = data ?? [];
 
   if (hypotheses.length === 0) {
     return (

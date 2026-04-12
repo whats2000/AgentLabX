@@ -30,36 +30,44 @@ describe("HypothesisTracker", () => {
     mocked.getHypotheses.mockReset();
   });
 
-  it("renders empty state when no hypotheses", async () => {
-    mocked.getHypotheses.mockResolvedValue([]);
+  // Backend wraps the list in {hypotheses, total_records}; the hook flattens
+  // it. Tests mock the raw envelope shape.
+  it("renders empty state when the envelope has no hypotheses", async () => {
+    mocked.getHypotheses.mockResolvedValue({
+      hypotheses: [],
+      total_records: 0,
+    });
     renderTracker();
     expect(await screen.findByText(/No hypotheses yet/)).toBeInTheDocument();
   });
 
   it("renders hypothesis cards with status tag and statement", async () => {
-    mocked.getHypotheses.mockResolvedValue([
-      {
-        id: "H1",
-        statement: "Pretraining scales with compute",
-        status: "active",
-        created_at_stage: "plan_formulation",
-        evidence_for: [
-          {
-            experiment_result_index: 0,
-            metric: "acc",
-            value: 0.9,
-            interpretation: "yes",
-          },
-        ],
-        evidence_against: [],
-      },
-      {
-        id: "H2",
-        statement: "Dropout helps convergence",
-        status: "refuted",
-        created_at_stage: "plan_formulation",
-      },
-    ]);
+    mocked.getHypotheses.mockResolvedValue({
+      hypotheses: [
+        {
+          id: "H1",
+          statement: "Pretraining scales with compute",
+          status: "active",
+          created_at_stage: "plan_formulation",
+          evidence_for: [
+            {
+              experiment_result_index: 0,
+              metric: "acc",
+              value: 0.9,
+              interpretation: "yes",
+            },
+          ],
+          evidence_against: [],
+        },
+        {
+          id: "H2",
+          statement: "Dropout helps convergence",
+          status: "refuted",
+          created_at_stage: "plan_formulation",
+        },
+      ],
+      total_records: 2,
+    });
     renderTracker();
     expect(
       await screen.findByText("Pretraining scales with compute"),
