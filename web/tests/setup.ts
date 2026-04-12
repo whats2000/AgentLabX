@@ -1,3 +1,4 @@
+import "@ant-design/v5-patch-for-react-19";
 import "@testing-library/jest-dom/vitest";
 
 // jsdom doesn't implement matchMedia; AntD's responsive grid/table observers
