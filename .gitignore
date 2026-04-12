@@ -32,6 +32,8 @@ Thumbs.db
 .superpowers/
 data/
 *.db
+.env
+.env.local
 
 # Code Agents
 .claude
