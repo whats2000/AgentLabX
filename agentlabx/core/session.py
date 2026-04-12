@@ -99,8 +99,9 @@ class Session(BaseModel):
 class SessionManager:
     """Manages multiple sessions across users."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, storage: Any = None) -> None:
         self._sessions: dict[str, Session] = {}
+        self._storage = storage  # Task 10 will wire persistence methods
 
     def create_session(
         self,
