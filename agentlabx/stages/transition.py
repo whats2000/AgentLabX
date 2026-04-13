@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from agentlabx.core.session import SessionPreferences
@@ -12,7 +14,14 @@ class TransitionDecision(BaseModel):
     """Result of TransitionHandler.decide()."""
 
     next_stage: str | None
-    action: str  # "advance", "backtrack", "forced_advance", "complete", "human_override"
+    action: Literal[
+        "advance",
+        "backtrack",
+        "forced_advance",
+        "complete",
+        "human_override",
+        "backtrack_limit_exceeded",
+    ]
     reason: str
     needs_approval: bool = False
 
@@ -23,10 +32,12 @@ class TransitionHandler:
     Priority:
     1. human_override (explicit user routing instruction)
     2. total_iterations >= max_total_iterations → complete
-    3. stage iteration limit reached + next_stage hint → forced_advance
-    4. next_stage hint within stage limit → follow hint (backtrack or advance)
-    5. no hint → advance to next uncompleted stage in default_sequence
-    6. all stages complete → complete
+    3. backtrack requested + (per-edge attempts OR cost fraction exceeded)
+       → backtrack_limit_exceeded (handler owns fallback, returns concrete next_stage)
+    4. stage iteration limit reached + next_stage hint → forced_advance
+    5. next_stage hint within stage limit → follow hint (backtrack or advance)
+    6. no hint → advance to next uncompleted stage in default_sequence
+    7. all stages complete → complete
     """
 
     def __init__(
@@ -70,7 +81,47 @@ class TransitionHandler:
         current_iters = stage_iterations.get(current_stage, 0)
         at_stage_limit = stage_limit > 0 and current_iters >= stage_limit
 
-        # ── Priority 3 & 4: next_stage hint exists ────────────────────────────
+        # ── Priority 3: backtrack retry/cost gate (Plan 7A) ──────────────────
+        if next_hint is not None and self._is_backtrack(
+            next_hint, current_stage, default_sequence
+        ):
+            edge_key = f"{current_stage}->{next_hint}"
+            attempts = state.get("backtrack_attempts", {}).get(edge_key, 0)
+            per_edge_limit = self.preferences.max_backtrack_attempts_per_edge
+
+            escalate_reason: str | None = None
+            if attempts >= per_edge_limit:
+                escalate_reason = (
+                    f"Per-edge backtrack limit reached for "
+                    f"'{edge_key}' ({attempts}/{per_edge_limit})"
+                )
+
+            cost_tracker = state.get("cost_tracker")
+            total_cost = float(cost_tracker.total_cost) if cost_tracker else 0.0
+            cost_spent = float(state.get("backtrack_cost_spent", 0.0))
+            if total_cost > 0.0 and escalate_reason is None:
+                fraction = cost_spent / total_cost
+                if fraction >= self.preferences.max_backtrack_cost_fraction:
+                    escalate_reason = (
+                        f"Cumulative backtrack cost fraction "
+                        f"{fraction:.2f} >= limit "
+                        f"{self.preferences.max_backtrack_cost_fraction:.2f}"
+                    )
+
+            if escalate_reason is not None:
+                # Handler owns the fallback — compute next_in_sequence here
+                # so transition_node just applies the decision.
+                fallback = self._next_in_sequence(
+                    current_stage, default_sequence, completed_stages
+                )
+                return TransitionDecision(
+                    next_stage=fallback,
+                    action="backtrack_limit_exceeded",
+                    reason=escalate_reason,
+                    needs_approval=True,
+                )
+
+        # ── Priority 4 & 5: next_stage hint exists ────────────────────────────
         if next_hint is not None:
             if at_stage_limit:
                 # Stage is exhausted — skip the hint, advance in sequence instead
@@ -103,7 +154,7 @@ class TransitionHandler:
                 needs_approval=needs_approval,
             )
 
-        # ── Priority 5: no hint — advance to next uncompleted stage ──────────
+        # ── Priority 6: no hint — advance to next uncompleted stage ──────────
         next_in_seq = self._next_in_sequence(current_stage, default_sequence, completed_stages)
         if next_in_seq is not None:
             needs_approval = self._check_approval(
@@ -118,7 +169,7 @@ class TransitionHandler:
                 needs_approval=needs_approval,
             )
 
-        # ── Priority 6: all done ──────────────────────────────────────────────
+        # ── Priority 7: all done ──────────────────────────────────────────────
         return TransitionDecision(
             next_stage=None,
             action="complete",
