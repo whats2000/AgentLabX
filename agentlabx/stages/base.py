@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from pydantic import BaseModel
 
 from agentlabx.core.state import CrossStageRequest, PipelineState
+from agentlabx.core.zones import ZoneName
 
 if TYPE_CHECKING:
     from agentlabx.agents.base import BaseAgent
@@ -77,9 +78,6 @@ class StageResult(BaseModel):
     reason: str
     feedback: str | None = None
     requests: list[CrossStageRequest] | None = None
-
-
-ZoneName = Literal["discovery", "implementation", "synthesis"]
 
 
 class BaseStage(ABC):

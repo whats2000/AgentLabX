@@ -35,7 +35,7 @@ def zone_for(stage_name: str, registry: PluginRegistry | None = None) -> ZoneNam
 
             cls = registry.resolve(PluginType.STAGE, stage_name)
             return getattr(cls, "zone", None)
-        except Exception:
+        except KeyError:
             pass
     return _FALLBACK_ZONES.get(stage_name)
 

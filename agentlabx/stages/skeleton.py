@@ -1,14 +1,9 @@
-"""Default research pipeline stages.
+"""Default pipeline sequence constant.
 
-Skeleton stages exist for pipeline orchestration testing (Plan 2). Real stage
-implementations arrive progressively starting in Plan 3. The four Plan 3 stages
-(literature_review, plan_formulation, report_writing, peer_review) are now real
-implementations imported from their own modules.
-
-Skeleton output is intentionally empty. Returning typed placeholder data
-(e.g., a string for dataset_code which requires list[str]) would crash the
-LangGraph reducer; returning a dict with unknown keys (e.g., "papers") would
-also fail because PipelineState keys are typed. The correct stub is `{}`.
+Exposes `ALL_STAGES` — the ordered list of stage classes used as the default
+pipeline sequence. Registration happens in `agentlabx.plugins._builtin`;
+this module now exists solely to centralise the default sequence order and
+to re-export stage classes for convenience imports in test code.
 """
 
 from __future__ import annotations

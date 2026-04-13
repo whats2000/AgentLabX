@@ -124,4 +124,6 @@ class TestRegisterBuiltinPlugins:
         # Should succeed when using override=True
         for cls in ALL_STAGES:
             registry.register(PluginType.STAGE, cls.name, cls, override=True)
+        # Count is 9 because ALL_STAGES has 8 entries; LabMeeting (the 9th) was
+        # registered by register_builtin_plugins and remains untouched here.
         assert len(registry.list_plugins(PluginType.STAGE)) == 9

@@ -1,7 +1,7 @@
 """Every registered stage must declare a valid zone."""
 import pytest
 from agentlabx.core.registry import PluginRegistry, PluginType
-from agentlabx.plugins import _builtin
+from agentlabx.plugins._builtin import register_builtin_plugins
 
 STAGE_ZONE_EXPECTATIONS = {
     "literature_review": "discovery",
@@ -19,7 +19,7 @@ STAGE_ZONE_EXPECTATIONS = {
 @pytest.fixture
 def registry() -> PluginRegistry:
     r = PluginRegistry()
-    _builtin.register_builtin_plugins(r)
+    register_builtin_plugins(r)
     return r
 
 
