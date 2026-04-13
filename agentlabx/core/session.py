@@ -17,6 +17,8 @@ class SessionPreferences(BaseModel):
     mode: str = "auto"  # "auto" or "hitl"
     stage_controls: dict[str, str] = Field(default_factory=dict)
     backtrack_control: str = "auto"
+    max_backtrack_attempts_per_edge: int = 2
+    max_backtrack_cost_fraction: float = 0.4
 
     def get_stage_control(self, stage: str) -> str:
         """Return the control mode for a given stage (defaults to 'auto')."""
