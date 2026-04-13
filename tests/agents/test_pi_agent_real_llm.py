@@ -1,4 +1,4 @@
-"""Tests for PIAgent LLM wiring — Task 11."""
+"""Tests for PIAgent LLM wiring — updated for Plan 7C advisor API."""
 
 from __future__ import annotations
 
@@ -8,11 +8,9 @@ from pathlib import Path
 import pytest
 
 from agentlabx.agents.config_loader import AgentConfigLoader
-from agentlabx.agents.pi_agent import PIAgent
-from agentlabx.core.session import SessionPreferences
+from agentlabx.agents.pi_agent import ConsultKind, PIAdvice, PIAgent
 from agentlabx.core.state import create_initial_state
 from agentlabx.providers.llm.mock_provider import MockLLMProvider
-from agentlabx.stages.transition import TransitionHandler
 
 CONFIGS_DIR = Path(__file__).parent.parent.parent / "agentlabx" / "agents" / "configs"
 
@@ -23,6 +21,14 @@ SEQUENCE = [
     "report_writing",
     "peer_review",
 ]
+
+_CONTEXT = {
+    "origin": "literature_review",
+    "target": "plan_formulation",
+    "attempts": 1,
+    "max_attempts": 2,
+    "rule_fallback": "plan_formulation",
+}
 
 
 @pytest.fixture
@@ -39,170 +45,138 @@ def base_state():
 
 
 @pytest.fixture
-def handler() -> TransitionHandler:
-    return TransitionHandler()
-
-
-@pytest.fixture
 def pi_config():
     return AgentConfigLoader().load_config(CONFIGS_DIR / "pi_agent.yaml")
 
 
-def make_agree_response(confidence: float = 0.9) -> str:
+def make_high_confidence_response(next_stage: str = "plan_formulation") -> str:
     return json.dumps(
         {
-            "agree_with_rule": True,
-            "next_stage": "plan_formulation",
-            "confidence": confidence,
-            "reasoning": "The rule decision is appropriate.",
+            "next_stage": next_stage,
+            "confidence": 0.9,
+            "reasoning": "Strong evidence supports this direction.",
         }
     )
 
 
-def make_override_response(next_stage: str = "different_stage", confidence: float = 0.9) -> str:
+def make_low_confidence_response() -> str:
     return json.dumps(
         {
-            "agree_with_rule": False,
-            "next_stage": next_stage,
-            "confidence": confidence,
-            "reasoning": "PI disagrees: we should skip ahead.",
+            "next_stage": "plan_formulation",
+            "confidence": 0.3,
+            "reasoning": "Uncertain about direction.",
         }
     )
 
 
 class TestPIAgentLLMPath:
     @pytest.mark.asyncio
-    async def test_llm_agrees_with_rule(self, handler, base_state):
-        mock = MockLLMProvider(responses=[make_agree_response(confidence=0.9)])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
+    async def test_high_confidence_accepts_llm_suggestion(self, base_state):
+        mock = MockLLMProvider(responses=[make_high_confidence_response("plan_formulation")])
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        assert decision.confidence == 0.9
-        assert decision.used_fallback is False
-        # When agree_with_rule=True, action comes from rule handler
-        assert decision.action != "pi_override"
+        assert advice.confidence == 0.9
+        assert advice.used_fallback is False
+        assert advice.next_stage == "plan_formulation"
 
     @pytest.mark.asyncio
-    async def test_llm_overrides_rule(self, handler, base_state):
-        mock = MockLLMProvider(
-            responses=[make_override_response(next_stage="different_stage", confidence=0.9)]
+    async def test_llm_overrides_rule_fallback(self, base_state):
+        mock = MockLLMProvider(responses=[make_high_confidence_response("experimentation")])
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
+
+        advice = await agent.consult_escalation(
+            ConsultKind.BACKTRACK_LIMIT,
+            base_state,
+            {**_CONTEXT, "rule_fallback": "plan_formulation"},
         )
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
 
-        decision = await agent.decide(base_state, SessionPreferences())
-
-        assert decision.action == "pi_override"
-        assert decision.next_stage == "different_stage"
-        assert decision.used_fallback is False
+        assert advice.next_stage == "experimentation"
+        assert advice.used_fallback is False
 
     @pytest.mark.asyncio
-    async def test_low_confidence_falls_back(self, handler, base_state):
-        # confidence=0.3 < default threshold 0.6 → fallback to rule
-        mock = MockLLMProvider(responses=[make_agree_response(confidence=0.3)])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
+    async def test_low_confidence_falls_back(self, base_state):
+        mock = MockLLMProvider(responses=[make_low_confidence_response()])
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        assert decision.used_fallback is True
-        # Falls back to rule decision, not pi_override
-        assert decision.action != "pi_override"
+        assert advice.used_fallback is True
+        assert advice.next_stage == _CONTEXT["rule_fallback"]
 
     @pytest.mark.asyncio
-    async def test_llm_error_falls_back(self, handler, base_state):
+    async def test_llm_error_falls_back(self, base_state):
         class ErrorProvider(MockLLMProvider):
             async def query(self, **kwargs):  # type: ignore[override]
                 msg = "network error"
                 raise RuntimeError(msg)
 
-        agent = PIAgent(transition_handler=handler, llm_provider=ErrorProvider())
+        agent = PIAgent(llm_provider=ErrorProvider())
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        assert decision.used_fallback is True
-        assert decision.confidence == 0.0
-        assert "LLM error" in decision.reason
+        assert advice.used_fallback is True
+        assert advice.confidence == 0.0
+        assert "LLM error" in advice.reasoning
 
     @pytest.mark.asyncio
-    async def test_markdown_wrapped_json_still_parses(self, handler, base_state):
-        raw_json = json.dumps(
-            {
-                "agree_with_rule": True,
-                "next_stage": "plan_formulation",
-                "confidence": 0.85,
-                "reasoning": "Looks good.",
-            }
-        )
+    async def test_markdown_wrapped_json_still_parses(self, base_state):
+        raw_json = make_high_confidence_response()
         wrapped = f"```json\n{raw_json}\n```"
         mock = MockLLMProvider(responses=[wrapped])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        assert decision.confidence == 0.85
-        assert decision.used_fallback is False
+        assert advice.confidence == 0.9
+        assert advice.used_fallback is False
 
     @pytest.mark.asyncio
-    async def test_malformed_json_falls_back(self, handler, base_state):
+    async def test_malformed_json_falls_back(self, base_state):
         mock = MockLLMProvider(responses=["not json at all"])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
         # Malformed JSON → parsed returns {} → confidence defaults to 0.5 < 0.6 → fallback
-        assert decision.used_fallback is True
+        assert advice.used_fallback is True
 
     @pytest.mark.asyncio
-    async def test_confidence_threshold_from_config(self, handler, pi_config):
-        agent = PIAgent(transition_handler=handler, pi_agent_config=pi_config)
+    async def test_confidence_threshold_from_config(self, pi_config):
+        agent = PIAgent(pi_agent_config=pi_config)
 
         assert agent.confidence_threshold == 0.6
 
     @pytest.mark.asyncio
-    async def test_explicit_threshold_overrides_config(self, handler, pi_config):
-        agent = PIAgent(
-            transition_handler=handler,
-            pi_agent_config=pi_config,
-            confidence_threshold=0.8,
-        )
+    async def test_explicit_threshold_overrides_config(self, pi_config):
+        agent = PIAgent(pi_agent_config=pi_config, confidence_threshold=0.8)
 
         assert agent.confidence_threshold == 0.8
 
     @pytest.mark.asyncio
-    async def test_decision_history_tracked_llm_path(self, handler, base_state):
-        mock = MockLLMProvider(responses=[make_agree_response()])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
+    async def test_multiple_calls_accumulate_in_state(self, base_state):
+        mock = MockLLMProvider(responses=[make_high_confidence_response()] * 2)
+        agent = PIAgent(llm_provider=mock, confidence_threshold=0.6)
 
-        await agent.decide(base_state, SessionPreferences())
-        await agent.decide(base_state, SessionPreferences())
+        await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
+        await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        # Second call — queue is empty, mock returns default
-        assert len(agent.decision_history) == 2
-
-    @pytest.mark.asyncio
-    async def test_budget_warning_included_in_prompt(self, handler, base_state):
-        mock = MockLLMProvider(responses=[make_agree_response()])
-        agent = PIAgent(transition_handler=handler, llm_provider=mock)
-
-        decision = await agent.decide(base_state, SessionPreferences(), budget_warning=True)
-
-        assert decision.budget_note == "Budget warning active"
-        prompt = mock.calls[0]["prompt"]
-        assert "Budget" in prompt or "budget" in prompt
+        assert len(base_state["pi_decisions"]) == 2
 
     @pytest.mark.asyncio
-    async def test_memory_scope_loaded_from_yaml(self, handler, pi_config):
-        agent = PIAgent(transition_handler=handler, pi_agent_config=pi_config)
+    async def test_memory_scope_loaded_from_yaml(self, pi_config):
+        agent = PIAgent(pi_agent_config=pi_config)
 
         # pi_agent.yaml has summarize entries
         assert "literature_review" in agent._memory_scope.summarize
 
     @pytest.mark.asyncio
-    async def test_no_llm_uses_rule_fallback(self, handler, base_state):
-        """Plan 2 behavior preserved: no llm_provider → rule-based at 0.85 confidence."""
-        agent = PIAgent(transition_handler=handler)
+    async def test_no_llm_uses_rule_fallback(self, base_state):
+        """No llm_provider → rule-based fallback with used_fallback=True."""
+        agent = PIAgent(llm_provider=None)
 
-        decision = await agent.decide(base_state, SessionPreferences())
+        advice = await agent.consult_escalation(ConsultKind.BACKTRACK_LIMIT, base_state, _CONTEXT)
 
-        assert decision.confidence == 0.85
-        assert decision.used_fallback is False
+        assert advice.used_fallback is True
+        assert advice.next_stage == _CONTEXT["rule_fallback"]

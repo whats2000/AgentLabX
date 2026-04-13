@@ -1,81 +1,64 @@
-"""Tests for PIAgent.decide() event emission and state persistence (Plan 6B Task B7)."""
+"""Tests for PIAgent event emission and state persistence (Plan 7C rewrite of Plan 6B Task B7)."""
 from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from agentlabx.agents.pi_agent import PIAgent, PIDecision
-from agentlabx.core.session import SessionPreferences
-from agentlabx.stages.transition import TransitionHandler
+from agentlabx.agents.pi_agent import ConsultKind, PIAdvice, PIAgent
+from agentlabx.core.state import create_initial_state
 
 SEQUENCE = ["plan_formulation", "experimentation"]
 
-
-def _make_handler() -> TransitionHandler:
-    return TransitionHandler()
-
-
-def _base_state() -> dict:
-    return {
-        "pi_decisions": [],
-        "current_stage": "plan_formulation",
-        "default_sequence": SEQUENCE,
-        "completed_stages": ["plan_formulation"],
-        "stage_iterations": {},
-        "total_iterations": 0,
-        "cost_tracker": MagicMock(total_cost=0.0),
-        "max_stage_iterations": {},
-        "max_total_iterations": 50,
-        "stage_config": {},
-        "human_override": None,
-        "next_stage": None,
-    }
+_CONTEXT = {
+    "origin": "plan_formulation",
+    "target": "experimentation",
+    "attempts": 1,
+    "max_attempts": 2,
+    "rule_fallback": "experimentation",
+}
 
 
 @pytest.mark.asyncio
-async def test_decide_emits_pi_decision_and_appends_to_state():
-    """decide() emits pi_decision event AND persists to state["pi_decisions"]."""
+async def test_consult_emits_pi_decision_and_appends_to_state():
+    """consult_escalation() emits pi_decision event AND persists to state['pi_decisions']."""
     bus = MagicMock()
     bus.emit = AsyncMock()
 
-    pi = PIAgent(transition_handler=_make_handler(), llm_provider=None, event_bus=bus)
-    state = _base_state()
-    prefs = SessionPreferences()
+    pi = PIAgent(llm_provider=None, event_bus=bus)
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="test",
+                                 default_sequence=SEQUENCE)
 
-    decision = await pi.decide(state, prefs, budget_warning=False)
-    assert isinstance(decision, PIDecision)
+    advice = await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
+    assert isinstance(advice, PIAdvice)
 
-    # Event was emitted exactly once
     bus.emit.assert_awaited_once()
     emitted_event = bus.emit.await_args_list[0].args[0]
     assert emitted_event.type == "pi_decision"
 
-    # State was updated
     assert len(state["pi_decisions"]) == 1
     persisted = state["pi_decisions"][0]
-    assert persisted["action"] == decision.action
+    assert persisted["next_stage"] == advice.next_stage
     assert "decision_id" in persisted
     assert "ts" in persisted
 
 
 @pytest.mark.asyncio
-async def test_decide_without_event_bus_still_persists_to_state():
-    """If no event_bus is provided, skip emit but still append to state (backward compat)."""
-    pi = PIAgent(transition_handler=_make_handler(), llm_provider=None)  # no event_bus
-    state = _base_state()
-    prefs = SessionPreferences()
+async def test_consult_without_event_bus_still_persists_to_state():
+    """If no event_bus is provided, skip emit but still append to state."""
+    pi = PIAgent(llm_provider=None)
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="test")
 
-    await pi.decide(state, prefs, budget_warning=False)
+    await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
     assert len(state["pi_decisions"]) == 1
 
 
 @pytest.mark.asyncio
-async def test_decide_persists_decision_id_and_ts_fields():
+async def test_consult_persists_decision_id_and_ts_fields():
     """Persisted dict includes decision_id (hex) and ts (ISO datetime string)."""
-    pi = PIAgent(transition_handler=_make_handler(), llm_provider=None)
-    state = _base_state()
+    pi = PIAgent(llm_provider=None)
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="test")
 
-    await pi.decide(state, SessionPreferences())
+    await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
     persisted = state["pi_decisions"][0]
 
     assert isinstance(persisted["decision_id"], str)
@@ -85,32 +68,29 @@ async def test_decide_persists_decision_id_and_ts_fields():
 
 
 @pytest.mark.asyncio
-async def test_decide_multiple_calls_accumulate_in_state():
+async def test_consult_multiple_calls_accumulate_in_state():
     """Each call appends a new entry; state list grows with each decision."""
-    pi = PIAgent(transition_handler=_make_handler(), llm_provider=None)
-    state = _base_state()
-    # Ensure completed_stages lets us advance multiple times
-    state["completed_stages"] = ["plan_formulation"]
+    pi = PIAgent(llm_provider=None)
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="test")
 
-    await pi.decide(state, SessionPreferences())
-    await pi.decide(state, SessionPreferences())
+    await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
+    await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
 
     assert len(state["pi_decisions"]) == 2
-    # decision_ids must be unique
     ids = [d["decision_id"] for d in state["pi_decisions"]]
     assert len(set(ids)) == 2
 
 
 @pytest.mark.asyncio
-async def test_decide_event_data_matches_persisted_dict():
+async def test_consult_event_data_matches_persisted_dict():
     """Event data payload matches what was appended to state."""
     bus = MagicMock()
     bus.emit = AsyncMock()
 
-    pi = PIAgent(transition_handler=_make_handler(), llm_provider=None, event_bus=bus)
-    state = _base_state()
+    pi = PIAgent(llm_provider=None, event_bus=bus)
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="test")
 
-    await pi.decide(state, SessionPreferences())
+    await pi.consult_escalation(ConsultKind.BACKTRACK_LIMIT, state, _CONTEXT)
 
     emitted_data = bus.emit.await_args_list[0].args[0].data
     persisted = state["pi_decisions"][0]
