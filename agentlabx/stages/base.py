@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel
 
-from agentlabx.core.state import CrossStageRequest, PipelineState
+from agentlabx.core.state import CrossStageRequest, PipelineState, StagePlan, StagePlanItem
 from agentlabx.core.zones import ZoneName
 
 if TYPE_CHECKING:
@@ -80,6 +80,28 @@ class StageResult(BaseModel):
     requests: list[CrossStageRequest] | None = None
 
 
+class StageExecution(BaseModel):
+    """Intermediate result of the `execute_plan` hook — fed to `evaluate`.
+
+    Shape matches StageResult but `evaluate` may override before `decide`.
+    """
+    output: Any
+    status: Literal["done", "backtrack", "negative_result", "request"]
+    reason: str
+    feedback: str | None = None
+    next_hint: str | None = None
+    requests: list[CrossStageRequest] | None = None
+
+
+class StageEvaluation(BaseModel):
+    """Evaluate-hook output. Overrides take precedence in decide()."""
+    dead_end: bool = False
+    override_status: Literal["done", "backtrack", "negative_result", "request"] | None = None
+    override_next_hint: str | None = None
+    override_reason: str | None = None
+    notes: list[str] = []
+
+
 class BaseStage(ABC):
     name: str
     description: str
@@ -90,6 +112,89 @@ class BaseStage(ABC):
 
     @abstractmethod
     async def run(self, state: PipelineState, context: StageContext) -> StageResult: ...
+
+    # ── Subgraph hooks (Plan 7B) ─────────────────────────────────────────
+    # Override these for plan-driven behaviour. Defaults delegate to .run()
+    # so non-migrated stages keep working unchanged.
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Return a StagePlan for this entry.
+
+        Default: a single `todo` item that the default execute_plan resolves
+        by calling `.run()`. Stages overriding this itemise concrete tasks
+        per §3.2.2.
+        """
+        return StagePlan(
+            items=[
+                StagePlanItem(
+                    id=f"{self.name}:run",
+                    description=f"Run {self.name} stage (legacy .run() path)",
+                    status="todo",
+                    source="contract",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            ],
+            rationale="Default plan — single todo delegating to .run().",
+            hash_of_consumed_inputs="",
+        )
+
+    async def execute_plan(
+        self,
+        state: PipelineState,
+        plan: StagePlan,
+        context: StageContext,
+    ) -> StageExecution:
+        """Execute actionable plan items. Default: delegate to .run() (legacy path)."""
+        result = await self.run(state, context)
+        return StageExecution(
+            output=result.output,
+            status=result.status,
+            reason=result.reason,
+            feedback=result.feedback,
+            next_hint=result.next_hint,
+            requests=result.requests,
+        )
+
+    def evaluate(
+        self,
+        state: PipelineState,
+        *,
+        plan: StagePlan,
+        execution: StageExecution,
+    ) -> StageEvaluation:
+        """Detect dead-ends or additional work. Default: pass through."""
+        return StageEvaluation()
+
+    def decide(
+        self,
+        state: PipelineState,
+        *,
+        plan: StagePlan,
+        execution: StageExecution,
+        evaluation: StageEvaluation,
+    ) -> StageResult:
+        """Build the final StageResult. Default: compose execution + evaluation.
+
+        evaluation.override_* fields win when set; otherwise execution's
+        fields pass through. This lets evaluate upgrade a `done` execution
+        into a `backtrack` (e.g., dead-end detected post-work) without the
+        execute_plan having to know.
+        """
+        status = evaluation.override_status or execution.status
+        next_hint = evaluation.override_next_hint or execution.next_hint
+        reason = evaluation.override_reason or execution.reason
+        return StageResult(
+            output=execution.output,
+            status=status,
+            next_hint=next_hint,
+            reason=reason,
+            feedback=execution.feedback,
+            requests=execution.requests,
+        )
 
     def validate(self, state: PipelineState) -> bool:
         return True
