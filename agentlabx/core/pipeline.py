@@ -38,9 +38,11 @@ class PipelineBuilder:
         self,
         registry: PluginRegistry,
         preferences: SessionPreferences | None = None,
+        pi_advisor: Any = None,  # PIAgent | None — Any to keep import light
     ) -> None:
         self.registry = registry
         self.preferences = preferences or SessionPreferences()
+        self.pi_advisor = pi_advisor
 
     def build(
         self,
@@ -123,11 +125,14 @@ class PipelineBuilder:
             builder.add_node(stage_name, runner.run)
 
         # Add transition node
-        transition_handler = TransitionHandler(preferences=self.preferences)
+        transition_handler = TransitionHandler(
+            preferences=self.preferences,
+            pi_advisor=self.pi_advisor,
+        )
 
-        def transition_node(state: PipelineState) -> dict[str, Any]:
+        async def transition_node(state: PipelineState) -> dict[str, Any]:
             """Route to next stage; maintain counters, log, partial rollback."""
-            decision = transition_handler.decide(state)
+            decision = await transition_handler.decide_async(state)
             current = state.get("current_stage", "")
             update: dict[str, Any] = {
                 "next_stage": decision.next_stage,
