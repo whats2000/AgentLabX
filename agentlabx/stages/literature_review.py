@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agentlabx.core.state import LitReviewResult, PipelineState
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 
 class LiteratureReviewStage(BaseStage):
@@ -31,6 +31,7 @@ class LiteratureReviewStage(BaseStage):
             "phd_student",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         arxiv_tool = resolve_tool(registry, "arxiv_search")
 
@@ -56,6 +57,7 @@ class LiteratureReviewStage(BaseStage):
 
         result = LitReviewResult(papers=papers[:10], summary=summary)
         num_iterations = min(iteration + 1, self.MAX_ITERATIONS)
+        sync_agent_memory_to_state(state, {"phd_student": phd})
         return StageResult(
             output={"literature_review": [result]},
             status="done",

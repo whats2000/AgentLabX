@@ -6,7 +6,7 @@ import re
 
 from agentlabx.core.state import PipelineState, ReportResult
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 
 class ReportWritingStage(BaseStage):
@@ -30,12 +30,14 @@ class ReportWritingStage(BaseStage):
             "professor",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         phd = resolve_agent(
             registry,
             "phd_student",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
 
         # Step 1: Professor drafts outline
@@ -67,6 +69,7 @@ class ReportWritingStage(BaseStage):
             compiled_pdf_path=None,
         )
 
+        sync_agent_memory_to_state(state, {"professor": professor, "phd_student": phd})
         return StageResult(
             output={"report": [report]},
             status="done",

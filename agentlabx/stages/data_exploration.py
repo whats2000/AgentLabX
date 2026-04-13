@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agentlabx.core.state import EDAResult, PipelineState
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 EDA_SCRIPT_JSON_FORMAT = (
     '{"code": "Python script that loads a dataset and prints shape/schema/stats", '
@@ -38,6 +38,7 @@ class DataExplorationStage(BaseStage):
             "sw_engineer",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         code_executor = resolve_tool(registry, "code_executor")
 
@@ -98,6 +99,7 @@ class DataExplorationStage(BaseStage):
             recommendations=findings_parsed.get("recommendations", []) or [],
         )
 
+        sync_agent_memory_to_state(state, {"sw_engineer": sw})
         return StageResult(
             output={"data_exploration": [eda]},
             status="done",

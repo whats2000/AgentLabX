@@ -7,7 +7,7 @@ import re
 
 from agentlabx.core.state import Hypothesis, PipelineState, ResearchPlan
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 PLAN_JSON_FORMAT = (
     '{"goals": ["goal 1", "goal 2", ...], '
@@ -37,12 +37,14 @@ class PlanFormulationStage(BaseStage):
             "postdoc",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         phd = resolve_agent(
             registry,
             "phd_student",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
 
         topic = state["research_topic"]
@@ -108,6 +110,7 @@ class PlanFormulationStage(BaseStage):
             for i, h in enumerate(hypothesis_statements)
         ]
 
+        sync_agent_memory_to_state(state, {"postdoc": postdoc, "phd_student": phd})
         return StageResult(
             output={"plan": [plan], "hypotheses": hypothesis_objects},
             status="done",

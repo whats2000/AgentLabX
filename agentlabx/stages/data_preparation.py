@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agentlabx.core.state import PipelineState
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 
 class DataPreparationStage(BaseStage):
@@ -33,12 +33,14 @@ class DataPreparationStage(BaseStage):
             "ml_engineer",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         sw = resolve_agent(
             registry,
             "sw_engineer",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         code_executor = resolve_tool(registry, "code_executor")
 
@@ -100,6 +102,7 @@ class DataPreparationStage(BaseStage):
             if fixed:
                 code = fixed
 
+        sync_agent_memory_to_state(state, {"ml_engineer": ml, "sw_engineer": sw})
         return StageResult(
             output={"dataset_code": [code] if code else []},
             status="done" if code else "backtrack",

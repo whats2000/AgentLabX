@@ -7,7 +7,7 @@ import re
 
 from agentlabx.core.state import EvidenceLink, Hypothesis, PipelineState
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 
 class ResultsInterpretationStage(BaseStage):
@@ -31,12 +31,14 @@ class ResultsInterpretationStage(BaseStage):
             "postdoc",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         phd = resolve_agent(
             registry,
             "phd_student",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
 
         experiments = state.get("experiment_results", [])
@@ -132,6 +134,7 @@ class ResultsInterpretationStage(BaseStage):
         if updated_hypotheses:
             output["hypotheses"] = updated_hypotheses
 
+        sync_agent_memory_to_state(state, {"postdoc": postdoc, "phd_student": phd})
         return StageResult(
             output=output,
             status="done",

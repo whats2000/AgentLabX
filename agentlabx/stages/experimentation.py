@@ -11,7 +11,7 @@ from typing import Literal
 
 from agentlabx.core.state import ExperimentResult, PipelineState, ReproducibilityRecord
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
-from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
 
 class ExperimentationStage(BaseStage):
@@ -35,6 +35,7 @@ class ExperimentationStage(BaseStage):
             "ml_engineer",
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         code_executor = resolve_tool(registry, "code_executor")
 
@@ -113,6 +114,7 @@ class ExperimentationStage(BaseStage):
 
         # Spec §3.6 validation
         if not has_baseline:
+            sync_agent_memory_to_state(state, {"ml_engineer": ml})
             return StageResult(
                 output={"experiment_results": results},
                 status="backtrack",
@@ -121,6 +123,7 @@ class ExperimentationStage(BaseStage):
             )
 
         if has_main and _has_positive_improvement(results) and not has_ablation:
+            sync_agent_memory_to_state(state, {"ml_engineer": ml})
             return StageResult(
                 output={"experiment_results": results},
                 status="backtrack",
@@ -129,12 +132,14 @@ class ExperimentationStage(BaseStage):
             )
 
         if has_main and not _has_positive_improvement(results):
+            sync_agent_memory_to_state(state, {"ml_engineer": ml})
             return StageResult(
                 output={"experiment_results": results},
                 status="negative_result",
                 reason="Experiments did not show significant improvement over baseline",
             )
 
+        sync_agent_memory_to_state(state, {"ml_engineer": ml})
         return StageResult(
             output={"experiment_results": results},
             status="done",
