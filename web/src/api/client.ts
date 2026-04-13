@@ -1,5 +1,15 @@
 import createClient from "openapi-fetch";
 import type { components, paths } from "./generated";
+import type {
+  GraphTopology,
+  SessionAgentInfo,
+  AgentContextResponse,
+  AgentHistoryResponse,
+  AgentMemoryRecord,
+  PIDecisionRecord,
+  RequestsResponse,
+  ExperimentsResponse,
+} from "../types/domain";
 
 const client = createClient<paths>({ baseUrl: "" });
 
@@ -123,5 +133,68 @@ export const api = {
   async listPlugins() {
     const result = await client.GET("/api/plugins", {});
     return unwrap(result);
+  },
+
+  async getGraph(sessionId: string): Promise<GraphTopology> {
+    const result = await client.GET("/api/sessions/{session_id}/graph", {
+      params: { path: { session_id: sessionId } },
+    });
+    return unwrap(result) as GraphTopology;
+  },
+
+  async listAgents(sessionId: string): Promise<SessionAgentInfo[]> {
+    const result = await client.GET("/api/sessions/{session_id}/agents", {
+      params: { path: { session_id: sessionId } },
+    });
+    return unwrap(result) as SessionAgentInfo[];
+  },
+
+  async getAgentContext(sessionId: string, agent: string): Promise<AgentContextResponse> {
+    const result = await client.GET("/api/sessions/{session_id}/agents/{name}/context", {
+      params: { path: { session_id: sessionId, name: agent } },
+    });
+    return unwrap(result) as AgentContextResponse;
+  },
+
+  async getAgentHistory(
+    sessionId: string,
+    agent: string,
+    params?: { limit?: number; after_ts?: string | null },
+  ): Promise<AgentHistoryResponse> {
+    const result = await client.GET("/api/sessions/{session_id}/agents/{name}/history", {
+      params: {
+        path: { session_id: sessionId, name: agent },
+        query: params,
+      },
+    });
+    return unwrap(result) as AgentHistoryResponse;
+  },
+
+  async getAgentMemory(sessionId: string, agent: string): Promise<AgentMemoryRecord> {
+    const result = await client.GET("/api/sessions/{session_id}/agents/{name}/memory", {
+      params: { path: { session_id: sessionId, name: agent } },
+    });
+    return unwrap(result) as AgentMemoryRecord;
+  },
+
+  async getPIHistory(sessionId: string): Promise<PIDecisionRecord[]> {
+    const result = await client.GET("/api/sessions/{session_id}/pi/history", {
+      params: { path: { session_id: sessionId } },
+    });
+    return unwrap(result) as PIDecisionRecord[];
+  },
+
+  async getRequests(sessionId: string): Promise<RequestsResponse> {
+    const result = await client.GET("/api/sessions/{session_id}/requests", {
+      params: { path: { session_id: sessionId } },
+    });
+    return unwrap(result) as RequestsResponse;
+  },
+
+  async getExperiments(sessionId: string): Promise<ExperimentsResponse> {
+    const result = await client.GET("/api/sessions/{session_id}/experiments", {
+      params: { path: { session_id: sessionId } },
+    });
+    return unwrap(result) as ExperimentsResponse;
   },
 };

@@ -21,3 +21,126 @@ export type SessionStatus =
 export type ControlLevel = "auto" | "notify" | "approve" | "edit";
 export type BacktrackControl = "auto" | "notify" | "approve";
 export type Mode = "auto" | "hitl";
+
+// Graph topology types
+export type GraphNodeStatus = "pending" | "active" | "complete" | "failed" | "skipped" | "meta";
+export type GraphNodeType = "stage" | "transition" | "subgraph";
+export type GraphEdgeKind = "sequential" | "backtrack" | "conditional";
+export type GraphZone = "discovery" | "implementation" | "synthesis";
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  zone: GraphZone | null;
+  status: GraphNodeStatus;
+  iteration_count: number;
+  skipped: boolean;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  kind: GraphEdgeKind;
+  reason?: string | null;
+}
+
+export interface GraphCursor {
+  node_id: string;
+  agent: string | null;
+  started_at: string | null;
+}
+
+export interface GraphTopology {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  cursor: GraphCursor | null;
+  subgraphs: Array<{ id: string; nodes: GraphNode[]; edges: GraphEdge[] }>;
+}
+
+// Agent turn / history types
+export type AgentTurnKind =
+  | "llm_request"
+  | "llm_response"
+  | "tool_call"
+  | "tool_result"
+  | "dialogue";
+
+export interface AgentTurnRow {
+  turn_id: string;
+  parent_turn_id: string | null;
+  agent: string;
+  stage: string;
+  kind: AgentTurnKind;
+  payload: Record<string, unknown>;
+  system_prompt_hash: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost_usd: number | null;
+  is_mock: boolean;
+  ts: string;
+}
+
+export interface AgentHistoryResponse {
+  turns: AgentTurnRow[];
+  next_cursor: string | null;
+}
+
+// Agent memory
+export interface AgentMemoryRecord {
+  working_memory: Record<string, unknown>;
+  notes: string[];
+  last_active_stage: string;
+  turn_count: number;
+}
+
+// Session agent listing
+export interface SessionAgentInfo {
+  name: string;
+  role: string;
+  turn_count: number;
+  last_active_stage: string | null;
+}
+
+// Agent context view
+export interface AgentContextResponse {
+  keys: string[];
+  preview: Record<string, unknown>;
+  scope: {
+    read: string[];
+    summarize: Record<string, string>;
+    write: string[];
+  };
+}
+
+// PI decision records
+export interface PIDecisionRecord {
+  decision_id: string;
+  action: string;
+  confidence: number;
+  next_stage: string | null;
+  reasoning: string;
+  used_fallback: boolean;
+  ts: string;
+}
+
+// Cross-stage requests
+export interface CrossStageRequestRecord {
+  from_stage: string;
+  to_stage: string;
+  request_type: string;
+  description: string;
+  status: string;
+  result?: unknown;
+}
+
+export interface RequestsResponse {
+  pending: CrossStageRequestRecord[];
+  completed: CrossStageRequestRecord[];
+}
+
+// Experiments
+export interface ExperimentsResponse {
+  runs: Array<Record<string, unknown>>;
+  log: Array<Record<string, unknown>>;
+}
