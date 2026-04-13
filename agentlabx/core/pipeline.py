@@ -10,7 +10,15 @@ from langgraph.graph import END, START, StateGraph
 from agentlabx.core.events import EventBus
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.session import SessionPreferences
-from agentlabx.core.state import CostTracker, PipelineState
+from datetime import UTC, datetime
+
+from agentlabx.core.state import (
+    CostTracker,
+    PipelineState,
+    StageError,
+    Transition,
+    apply_partial_rollback,
+)
 from agentlabx.providers.llm.base import BaseLLMProvider
 from agentlabx.stages.base import StageContext
 from agentlabx.stages.runner import StageRunner
@@ -106,14 +114,6 @@ class PipelineBuilder:
 
         def transition_node(state: PipelineState) -> dict[str, Any]:
             """Route to next stage; maintain counters, log, partial rollback."""
-            from datetime import datetime
-
-            from agentlabx.core.state import (
-                StageError,
-                Transition,
-                apply_partial_rollback,
-            )
-
             decision = transition_handler.decide(state)
             current = state.get("current_stage", "")
             update: dict[str, Any] = {
@@ -134,8 +134,12 @@ class PipelineBuilder:
                     feedback=state.get("backtrack_feedback"),
                 )
                 update.update(rollback)
+                # apply_partial_rollback returns next_stage=None per §3.3.2
+                # (clear the just-completed stage's stale hint); we then set
+                # next_stage to the routing target so LangGraph's conditional
+                # edge sends execution there.
+                update["next_stage"] = decision.next_stage
 
-                # Per-edge counter increment
                 edge_key = f"{current}->{decision.next_stage}"
                 attempts = dict(state.get("backtrack_attempts", {}))
                 attempts[edge_key] = attempts.get(edge_key, 0) + 1
@@ -161,7 +165,7 @@ class PipelineBuilder:
                         stage=current,
                         error_type="backtrack_limit_exceeded",
                         message=decision.reason,
-                        timestamp=datetime.now(),
+                        timestamp=datetime.now(UTC),
                         recovered=False,
                     )
                 ]
@@ -181,7 +185,7 @@ class PipelineBuilder:
                         to_stage=decision.next_stage,
                         reason=decision.reason,
                         triggered_by=triggered_by_map.get(decision.action, "system"),
-                        timestamp=datetime.now(),
+                        timestamp=datetime.now(UTC),
                     )
                 ]
 

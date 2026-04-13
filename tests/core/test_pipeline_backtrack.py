@@ -1,4 +1,4 @@
-"""Backtrack round-trip: counter increment, partial rollback, transition_log."""
+"""Backtrack round-trip: counter increment, partial rollback, routing, transition_log."""
 import pytest
 
 from agentlabx.core.pipeline import PipelineBuilder
@@ -17,14 +17,17 @@ def registry():
 
 
 @pytest.mark.asyncio
-async def test_backtrack_increments_counter_and_appends_transition_log(
-    registry, monkeypatch
-):
-    # Stage 1: experimentation emits backtrack once, then done on re-run.
-    calls = {"experimentation": 0}
+async def test_backtrack_round_trip(registry, monkeypatch):
+    """Experimentation backtracks to literature_review; both stages re-run and complete."""
+    calls: dict[str, int] = {
+        "literature_review": 0,
+        "plan_formulation": 0,
+        "experimentation": 0,
+    }
 
     async def fake_run(self, state):
         name = self.stage.name
+        calls[name] = calls.get(name, 0) + 1
         update = {
             "current_stage": name,
             "stage_iterations": {
@@ -33,12 +36,10 @@ async def test_backtrack_increments_counter_and_appends_transition_log(
             },
             "total_iterations": state.get("total_iterations", 0) + 1,
         }
-        if name == "experimentation":
-            calls["experimentation"] += 1
-            if calls["experimentation"] == 1:
-                update["next_stage"] = "literature_review"
-                update["backtrack_feedback"] = "need RL methods"
-                return update
+        if name == "experimentation" and calls["experimentation"] == 1:
+            update["next_stage"] = "literature_review"
+            update["backtrack_feedback"] = "need RL methods"
+            return update
         update["next_stage"] = None
         return update
 
@@ -61,10 +62,20 @@ async def test_backtrack_increments_counter_and_appends_transition_log(
         state, config={"configurable": {"thread_id": "t1"}}
     )
 
+    # Counter incremented for the backtrack edge
     assert (
         result["backtrack_attempts"].get("experimentation->literature_review")
         == 1
     )
-    # transition_log captures every transition including the backtrack
-    kinds = [t.from_stage + "->" + t.to_stage for t in result["transition_log"]]
-    assert "experimentation->literature_review" in kinds
+
+    # Target stage actually re-ran — this is what a real backtrack looks like
+    assert calls["literature_review"] >= 2
+
+    # transition_log contains the backtrack edge with triggered_by="agent"
+    backtrack_entries = [
+        t for t in result["transition_log"]
+        if t.from_stage == "experimentation"
+        and t.to_stage == "literature_review"
+    ]
+    assert len(backtrack_entries) == 1
+    assert backtrack_entries[0].triggered_by == "agent"
