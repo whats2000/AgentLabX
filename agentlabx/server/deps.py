@@ -24,7 +24,7 @@ from agentlabx.providers.llm.litellm_provider import LiteLLMProvider
 from agentlabx.providers.llm.mock_provider import MockLLMProvider
 from agentlabx.providers.storage.sqlite_backend import SQLiteBackend
 from agentlabx.server.ws.handlers import manager as ws_manager
-from agentlabx.stages.skeleton import register_default_stages
+from agentlabx.plugins._builtin import register_builtin_plugins
 from agentlabx.tools.arxiv_search import ArxivSearch
 from agentlabx.tools.code_executor import CodeExecutor
 from agentlabx.tools.github_search import GitHubSearch
@@ -69,8 +69,8 @@ def build_default_registry() -> PluginRegistry:
     configs = loader.load_all(AGENT_CONFIGS_DIR)
     loader.register_all(configs, registry)
 
-    # Stages (real + skeleton)
-    register_default_stages(registry)
+    # Stages (real + invocable-only like LabMeeting)
+    register_builtin_plugins(registry)
 
     # Stateless tools (instantiated on demand by _helpers.resolve_tool)
     registry.register(PluginType.TOOL, "arxiv_search", ArxivSearch)

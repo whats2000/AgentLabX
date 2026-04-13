@@ -7,13 +7,13 @@ import pytest
 from agentlabx.core.pipeline import PipelineBuilder
 from agentlabx.core.registry import PluginRegistry
 from agentlabx.core.state import create_initial_state
-from agentlabx.stages.skeleton import register_default_stages
+from agentlabx.plugins._builtin import register_builtin_plugins
 
 
 @pytest.fixture()
 def registry():
     reg = PluginRegistry()
-    register_default_stages(reg)
+    register_builtin_plugins(reg)
     return reg
 
 

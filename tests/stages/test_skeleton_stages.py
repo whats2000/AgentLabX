@@ -21,13 +21,13 @@ import pytest
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.state import create_initial_state
 from agentlabx.stages.base import StageContext
+from agentlabx.plugins._builtin import register_builtin_plugins
 from agentlabx.stages.skeleton import (
     ALL_STAGES,
     DataExplorationStage,
     DataPreparationStage,
     ExperimentationStage,
     ResultsInterpretationStage,
-    register_default_stages,
 )
 
 # ---------------------------------------------------------------------------
@@ -97,30 +97,31 @@ class TestSkeletonStageInvariants:
 # ---------------------------------------------------------------------------
 
 
-class TestRegisterDefaultStages:
+class TestRegisterBuiltinPlugins:
     def test_all_stages_registered(self):
         registry = PluginRegistry()
-        register_default_stages(registry)
+        register_builtin_plugins(registry)
         plugins = registry.list_plugins(PluginType.STAGE)
-        assert len(plugins) == 8
+        # 8 default pipeline stages + LabMeeting (invocable-only)
+        assert len(plugins) == 9
 
-    def test_each_stage_name_resolvable(self):
+    def test_each_default_stage_name_resolvable(self):
         registry = PluginRegistry()
-        register_default_stages(registry)
+        register_builtin_plugins(registry)
         for cls in ALL_STAGES:
             resolved = registry.resolve(PluginType.STAGE, cls.name)
             assert resolved is cls
 
     def test_register_twice_raises(self):
         registry = PluginRegistry()
-        register_default_stages(registry)
+        register_builtin_plugins(registry)
         with pytest.raises(ValueError, match="already registered"):
-            register_default_stages(registry)
+            register_builtin_plugins(registry)
 
     def test_register_twice_with_override(self):
         registry = PluginRegistry()
-        register_default_stages(registry)
+        register_builtin_plugins(registry)
         # Should succeed when using override=True
         for cls in ALL_STAGES:
             registry.register(PluginType.STAGE, cls.name, cls, override=True)
-        assert len(registry.list_plugins(PluginType.STAGE)) == 8
+        assert len(registry.list_plugins(PluginType.STAGE)) == 9

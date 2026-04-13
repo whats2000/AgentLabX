@@ -13,7 +13,6 @@ also fail because PipelineState keys are typed. The correct stub is `{}`.
 
 from __future__ import annotations
 
-from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.stages.base import BaseStage
 from agentlabx.stages.data_exploration import DataExplorationStage
 from agentlabx.stages.data_preparation import DataPreparationStage
@@ -47,9 +46,3 @@ ALL_STAGES: list[type[BaseStage]] = [
     ReportWritingStage,
     PeerReviewStage,
 ]
-
-
-def register_default_stages(registry: PluginRegistry) -> None:
-    """Register all 8 default research stages in the given PluginRegistry."""
-    for stage_cls in ALL_STAGES:
-        registry.register(PluginType.STAGE, stage_cls.name, stage_cls)

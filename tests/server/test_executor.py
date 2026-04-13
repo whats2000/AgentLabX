@@ -13,7 +13,7 @@ from agentlabx.providers.llm.mock_provider import MockLLMProvider
 from agentlabx.providers.storage.sqlite_backend import SQLiteBackend
 from agentlabx.server.deps import AGENT_CONFIGS_DIR
 from agentlabx.server.executor import PipelineExecutor
-from agentlabx.stages.skeleton import register_default_stages
+from agentlabx.plugins._builtin import register_builtin_plugins
 
 
 @pytest.fixture()
@@ -22,7 +22,7 @@ async def registry():
     loader = AgentConfigLoader()
     configs = loader.load_all(AGENT_CONFIGS_DIR)
     loader.register_all(configs, reg)
-    register_default_stages(reg)
+    register_builtin_plugins(reg)
     return reg
 
 

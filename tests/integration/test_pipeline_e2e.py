@@ -8,13 +8,13 @@ from agentlabx.core.pipeline import PipelineBuilder
 from agentlabx.core.registry import PluginRegistry
 from agentlabx.core.session import SessionManager
 from agentlabx.core.state import create_initial_state
-from agentlabx.stages.skeleton import register_default_stages
+from agentlabx.plugins._builtin import register_builtin_plugins
 
 
 @pytest.fixture()
 def full_pipeline():
     registry = PluginRegistry()
-    register_default_stages(registry)
+    register_builtin_plugins(registry)
     builder = PipelineBuilder(registry=registry)
     sequence = [
         "literature_review",
@@ -85,7 +85,7 @@ class TestPipelineE2E:
 
     async def test_partial_pipeline(self):
         registry = PluginRegistry()
-        register_default_stages(registry)
+        register_builtin_plugins(registry)
         builder = PipelineBuilder(registry=registry)
         short_sequence = ["literature_review", "plan_formulation"]
         graph = builder.build(stage_sequence=short_sequence)
