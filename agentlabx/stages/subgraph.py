@@ -56,8 +56,8 @@ class StageSubgraphBuilder:
         builder: StateGraph = StateGraph(_SubgraphState)
 
         def enter_node(s: _SubgraphState) -> dict[str, Any]:
-            # Placeholder node — keeps the graph shape symmetric and gives
-            # future extensions (memory hydration, feedback pickup) a home.
+            # Placeholder — reserved for memory hydration on re-entry (Plan 7C+).
+            # Feedback pickup is handled in stage_plan, not here.
             return {}
 
         async def plan_node(s: _SubgraphState) -> dict[str, Any]:

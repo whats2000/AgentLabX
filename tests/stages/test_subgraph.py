@@ -28,6 +28,8 @@ async def test_compiled_subgraph_has_expected_nodes():
     stage = _EchoStage()
     compiled = StageSubgraphBuilder().compile(stage)
     node_ids = set(compiled.get_graph().nodes)
+    # "gate" is a routing function (add_conditional_edges), not a node;
+    # LangGraph does not surface it in get_graph().nodes.
     assert {"enter", "stage_plan", "work", "evaluate", "decide"}.issubset(node_ids)
 
 
@@ -93,7 +95,7 @@ async def test_subgraph_bypass_when_plan_is_empty_of_actionable_items():
         config={"configurable": {"thread_id": "t1"}},
     )
     assert result["stage_result"].status == "done"
-    assert "plan-empty" in result["stage_result"].reason.lower()
+    assert result["stage_result"].reason.startswith("plan-empty:")
 
 
 @pytest.mark.asyncio
