@@ -7,7 +7,8 @@ from typing import Any
 
 from agentlabx.core.events import Event
 from agentlabx.core.state import PipelineState, StageError
-from agentlabx.stages.base import BaseStage, StageContext
+from agentlabx.stages.base import BaseStage, StageContext, StageResult
+from agentlabx.stages.subgraph import StageSubgraphBuilder
 
 
 class StageRunner:
@@ -22,6 +23,10 @@ class StageRunner:
     def __init__(self, stage: BaseStage, context: StageContext | None = None) -> None:
         self.stage = stage
         self.context = context or StageContext(settings={}, event_bus=None, registry=None)
+        # Compile the stage's LangGraph subgraph once at construction —
+        # the compiled object is reused across every run() call. See
+        # agentlabx/stages/subgraph.py and spec §3.2.1.
+        self._compiled_subgraph = StageSubgraphBuilder().compile(stage)
 
     async def run(self, state: PipelineState) -> dict[str, Any]:
         """Execute stage, return PARTIAL state update (LangGraph merges via reducers).
@@ -63,7 +68,15 @@ class StageRunner:
             await paused_event.wait()
 
         try:
-            result = await self.stage.run(entered_state, self.context)
+            subgraph_result = await self._compiled_subgraph.ainvoke(
+                {"state": entered_state, "context": self.context},
+                config={
+                    "configurable": {
+                        "thread_id": f"{state.get('session_id', 's')}:{self.stage.name}"
+                    }
+                },
+            )
+            result: StageResult = subgraph_result["stage_result"]
 
             # Merge stage output — this is how literature_review, plan, hypotheses,
             # review, etc. flow back into state. Reducer annotations on PipelineState
