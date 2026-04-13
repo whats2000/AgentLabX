@@ -78,6 +78,17 @@ class StageRunner:
             )
             result: StageResult = subgraph_result["stage_result"]
 
+            # Propagate stage_plans back to the outer pipeline state.
+            # The subgraph's plan_node mutates s["state"]["stage_plans"] in-place
+            # and that mutation is reflected in subgraph_result["state"]. LangGraph
+            # only applies node return dicts — in-place mutations on the input state
+            # are discarded — so we must explicitly include stage_plans in the update.
+            # stage_plans is a plain dict field (no reducer), so returning the whole
+            # updated dict causes a safe overwrite (stages run sequentially).
+            updated_stage_plans = subgraph_result.get("state", {}).get("stage_plans")
+            if updated_stage_plans is not None:
+                update["stage_plans"] = updated_stage_plans
+
             # Merge stage output — this is how literature_review, plan, hypotheses,
             # review, etc. flow back into state. Reducer annotations on PipelineState
             # handle appending for list fields.
