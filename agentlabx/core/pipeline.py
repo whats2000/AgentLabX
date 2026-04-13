@@ -132,6 +132,11 @@ class PipelineBuilder:
 
         async def transition_node(state: PipelineState) -> dict[str, Any]:
             """Route to next stage; maintain counters, log, partial rollback."""
+            # TODO(7D): decision.needs_approval is currently not consumed.
+            # Plan 7D will surface it via the CheckpointModal so PI-advised
+            # escalations pause for human confirmation before the route change
+            # takes effect. Today the flag is set on Priority-3 / Priority-5 /
+            # PI-advisor paths (see transition.py) but nothing reads it.
             decision = await transition_handler.decide_async(state)
             current = state.get("current_stage", "")
             update: dict[str, Any] = {

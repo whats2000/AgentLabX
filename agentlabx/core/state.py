@@ -243,6 +243,11 @@ class PipelineState(TypedDict):
     # returns MUST switch to Annotated[dict, _merge_stage_plans] first.
     stage_plans: dict[str, list[StagePlan]]
 
+    # Most recent stage's StageResult.status — populated by StageRunner on
+    # each stage exit. Used by TransitionHandler.decide_async to route the
+    # NEGATIVE_RESULT checkpoint consultation (spec §3.3.5, Plan 7C).
+    last_stage_status: str | None
+
 
 def apply_partial_rollback(
     state: PipelineState, *, target: str, feedback: str | None
@@ -333,4 +338,5 @@ def create_initial_state(
         backtrack_cost_spent=0.0,
         backtrack_feedback=None,
         stage_plans={},
+        last_stage_status=None,
     )

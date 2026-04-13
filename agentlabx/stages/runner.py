@@ -108,6 +108,11 @@ class StageRunner:
             if result.requests:
                 update["pending_requests"] = list(result.requests)
 
+            # Propagate last_stage_status for downstream routing decisions
+            # (TransitionHandler.decide_async consults PI advisor on
+            # negative_result and other future checkpoint kinds).
+            update["last_stage_status"] = result.status
+
             # Backtrack-specific state plumbing (Plan 7A)
             if result.status == "backtrack":
                 # Feedback handoff: target stage reads this on re-entry

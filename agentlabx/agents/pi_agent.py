@@ -96,6 +96,22 @@ _NEGATIVE_RESULT_PROMPT = (
     "Respond with valid JSON only."
 )
 
+# Required context keys per ConsultKind. Passed to `.format_map(fmt_vars)` in
+# consult_escalation(); missing keys are filled with "" via _SPARSE_DEFAULTS
+# (see format_map call below) so an LLM never sees a KeyError, but callers
+# SHOULD provide the full set for useful advice.
+#
+# ConsultKind.BACKTRACK_LIMIT:
+#   origin: str         — the stage that requested backtrack
+#   target: str         — the backtrack target the stage named
+#   attempts: int       — per-edge retry count so far
+#   max_attempts: int   — per-edge limit from SessionPreferences
+#   rule_fallback: str  — the rule-based next stage if advisor defers
+#
+# ConsultKind.NEGATIVE_RESULT:
+#   origin: str         — the stage concluding the negative result
+#   hypothesis_id: str  — the refuted hypothesis (may be "unknown")
+#   rule_fallback: str  — the rule-based next stage if advisor defers
 _PROMPTS: dict[ConsultKind, tuple[str, str]] = {
     ConsultKind.BACKTRACK_LIMIT: (_BACKTRACK_LIMIT_SYSTEM, _BACKTRACK_LIMIT_PROMPT),
     ConsultKind.NEGATIVE_RESULT: (_NEGATIVE_RESULT_SYSTEM, _NEGATIVE_RESULT_PROMPT),

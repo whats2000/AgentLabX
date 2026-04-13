@@ -193,52 +193,91 @@ class TransitionHandler:
         When pi_advisor is None (default), behaviour is identical to sync
         decide() — zero overhead, zero semantic change from Plan 7A.
 
-        When pi_advisor is set AND the rule decision is
-        "backtrack_limit_exceeded", the advisor is consulted via
-        ConsultKind.BACKTRACK_LIMIT. If advice is confident (used_fallback is
-        False and next_stage is not None), the advice's next_stage overrides
-        the rule-based fallback target. Otherwise the rule-based decision is
-        returned unchanged.
+        Consultation checkpoints (in evaluation order):
 
-        Other action types (advance, backtrack, forced_advance, complete,
-        human_override) never consult the advisor — that's the transition
-        handler's job (spec §3.3.5: PI is an advisor, NOT a router).
+        1. ConsultKind.BACKTRACK_LIMIT — when rule_decision.action is
+           "backtrack_limit_exceeded". Advisor suggests a concrete next stage
+           overriding the default-sequence force-advance. Returns early if
+           advisor overrides.
+
+        2. ConsultKind.NEGATIVE_RESULT — when last_stage_status is
+           "negative_result" AND rule_decision.action is "advance". Advisor
+           decides publish / pivot / redirect. Returns early if advisor overrides.
+
+        Other action types (backtrack, forced_advance, complete, human_override)
+        never consult the advisor — PI is an advisor, NOT a router
+        (spec §3.3.5).
         """
         rule_decision = self.decide(state)
 
         if self.pi_advisor is None:
             return rule_decision
 
-        if rule_decision.action != "backtrack_limit_exceeded":
+        # ── Checkpoint 1: backtrack_limit_exceeded ────────────────────────────
+        if rule_decision.action == "backtrack_limit_exceeded":
+            current = state.get("current_stage", "")
+            target = state.get("next_stage")  # the backtrack target the stage requested
+            edge_key = f"{current}->{target}"
+            attempts = state.get("backtrack_attempts", {}).get(edge_key, 0)
+            max_attempts = self.preferences.max_backtrack_attempts_per_edge
+
+            advice = await self.pi_advisor.consult_escalation(
+                ConsultKind.BACKTRACK_LIMIT,
+                state,
+                context={
+                    "origin": current,
+                    "target": target,
+                    "attempts": attempts,
+                    "max_attempts": max_attempts,
+                    "rule_fallback": rule_decision.next_stage,
+                },
+            )
+
+            if not advice.used_fallback and advice.next_stage is not None:
+                return TransitionDecision(
+                    next_stage=advice.next_stage,
+                    action="backtrack_limit_exceeded",
+                    reason=f"PI advisor: {advice.reasoning}",
+                    needs_approval=True,
+                )
+
             return rule_decision
 
-        current = state.get("current_stage", "")
-        target = state.get("next_stage")  # the backtrack target the stage requested
-        edge_key = f"{current}->{target}"
-        attempts = state.get("backtrack_attempts", {}).get(edge_key, 0)
-        max_attempts = self.preferences.max_backtrack_attempts_per_edge
+        # ── Checkpoint 2: negative_result (Plan 7C follow-up) ─────────────────
+        if (
+            state.get("last_stage_status") == "negative_result"
+            and rule_decision.action == "advance"  # only on the forward path
+        ):
+            origin = state.get("current_stage", "")
+            experiment_results = state.get("experiment_results") or []
+            hypothesis_id = "unknown"
+            if experiment_results:
+                last_exp = experiment_results[-1]
+                hypothesis_id = (
+                    last_exp.hypothesis_id
+                    if hasattr(last_exp, "hypothesis_id")
+                    else getattr(last_exp, "hypothesis_id", None) or "unknown"
+                )
 
-        advice = await self.pi_advisor.consult_escalation(
-            ConsultKind.BACKTRACK_LIMIT,
-            state,
-            context={
-                "origin": current,
-                "target": target,
-                "attempts": attempts,
-                "max_attempts": max_attempts,
-                "rule_fallback": rule_decision.next_stage,
-            },
-        )
+            advice = await self.pi_advisor.consult_escalation(
+                ConsultKind.NEGATIVE_RESULT,
+                state,
+                context={
+                    "origin": origin,
+                    "hypothesis_id": hypothesis_id,
+                    "rule_fallback": rule_decision.next_stage,
+                },
+            )
 
-        if advice.used_fallback or advice.next_stage is None:
-            return rule_decision
+            if not advice.used_fallback and advice.next_stage is not None:
+                return TransitionDecision(
+                    next_stage=advice.next_stage,
+                    action=rule_decision.action,
+                    reason=f"PI advisor (negative result): {advice.reasoning}",
+                    needs_approval=True,
+                )
 
-        return TransitionDecision(
-            next_stage=advice.next_stage,
-            action="backtrack_limit_exceeded",
-            reason=f"PI advisor: {advice.reasoning}",
-            needs_approval=True,
-        )
+        return rule_decision
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 

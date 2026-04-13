@@ -61,12 +61,13 @@ async def test_executor_constructs_pi_advisor_for_real_llm(tmp_path, monkeypatch
 
     # Invoke start_session — this builds the graph (and therefore
     # invokes the spying PipelineBuilder.__init__).
+    import asyncio
     try:
         running = await executor.start_session(session)
         # Cancel immediately so we don't wait for the full pipeline run
         await executor.cancel_session(session.session_id)
-    except Exception:
-        pass  # we don't care about execution success; only that builder was constructed
+    except asyncio.CancelledError:
+        pass  # expected — we only needed the build step
 
     assert "advisor" in captured, "PipelineBuilder was never constructed"
     assert isinstance(captured["advisor"], PIAgent), (
@@ -110,11 +111,12 @@ async def test_executor_does_not_construct_advisor_for_mock_llm(tmp_path, monkey
 
     session = session_manager.create_session(user_id="u1", research_topic="t")
 
+    import asyncio
     try:
         running = await executor.start_session(session)
         await executor.cancel_session(session.session_id)
-    except Exception:
-        pass
+    except asyncio.CancelledError:
+        pass  # expected — we only needed the build step
 
     assert captured.get("advisor") is None, (
         f"Expected no advisor for mock LLM, got {captured.get('advisor')!r}"
