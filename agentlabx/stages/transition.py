@@ -81,7 +81,10 @@ class TransitionHandler:
         current_iters = stage_iterations.get(current_stage, 0)
         at_stage_limit = stage_limit > 0 and current_iters >= stage_limit
 
-        # ── Priority 3: backtrack retry/cost gate (Plan 7A) ──────────────────
+        # ── Priority 3: backtrack retry/cost gate ────────────────────────────
+        # Self-loops (next_hint == current_stage) are not backtracks by
+        # _is_backtrack's definition and bypass this gate — they're gated
+        # only by stage iteration limits (Priority 4).
         if next_hint is not None and self._is_backtrack(
             next_hint, current_stage, default_sequence
         ):
@@ -99,9 +102,12 @@ class TransitionHandler:
             cost_tracker = state.get("cost_tracker")
             total_cost = float(cost_tracker.total_cost) if cost_tracker else 0.0
             cost_spent = float(state.get("backtrack_cost_spent", 0.0))
-            if total_cost > 0.0 and escalate_reason is None:
+            if total_cost > 0.0:
                 fraction = cost_spent / total_cost
-                if fraction >= self.preferences.max_backtrack_cost_fraction:
+                if (
+                    fraction >= self.preferences.max_backtrack_cost_fraction
+                    and escalate_reason is None
+                ):
                     escalate_reason = (
                         f"Cumulative backtrack cost fraction "
                         f"{fraction:.2f} >= limit "

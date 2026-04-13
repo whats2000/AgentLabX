@@ -1,4 +1,6 @@
 """Retry gate: per-edge limit + cost fraction, with decide() owning fallback."""
+from __future__ import annotations
+
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import CostTracker, create_initial_state
 from agentlabx.stages.transition import TransitionHandler
@@ -64,6 +66,7 @@ def test_cost_fraction_exceeded_escalates_with_fallback():
     d = h.decide(s)
 
     assert d.action == "backtrack_limit_exceeded"
+    assert d.needs_approval is True
     assert d.next_stage == "peer_review"
     assert "cost" in d.reason.lower()
 
@@ -80,3 +83,24 @@ def test_zero_budget_does_not_divide_by_zero():
 
     assert d.action == "backtrack"
     assert d.next_stage == "literature_review"
+
+
+def test_dual_exceeded_returns_per_edge_message_first():
+    """When both gates trip, per-edge reason wins (first-trigger message semantic)."""
+    s = _state()
+    s["backtrack_attempts"] = {"experimentation->literature_review": 3}
+    s["backtrack_cost_spent"] = 100.0
+    s["cost_tracker"] = CostTracker(total_cost=200.0)  # also 50% > 0.4
+
+    h = TransitionHandler(
+        preferences=SessionPreferences(
+            max_backtrack_attempts_per_edge=2,
+            max_backtrack_cost_fraction=0.4,
+        )
+    )
+    d = h.decide(s)
+
+    assert d.action == "backtrack_limit_exceeded"
+    assert d.needs_approval is True
+    assert "per-edge" in d.reason.lower()
+    assert "cost" not in d.reason.lower()
