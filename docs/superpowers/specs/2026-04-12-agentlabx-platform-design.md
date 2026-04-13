@@ -319,6 +319,11 @@ class PipelineState(TypedDict):
     messages: list[AgentMessage]
     cost_tracker: CostTracker
     errors: list[StageError]
+
+    # Agent observability (Plan 6)
+    agent_memory: dict[str, AgentMemoryRecord]   # per-agent scratchpad
+    experiment_log: list[ExperimentAttempt]      # cross-agent failure memory
+    pi_decisions: list[dict]                     # PIDecision.model_dump() list
 ```
 
 Stage outputs are **versioned** — when a stage runs multiple times, results append to a list. The latest entry is the "active" version used by downstream stages. Previous versions remain for comparison.
@@ -348,6 +353,25 @@ class EvidenceLink:
 The PI agent uses hypothesis status as structured input for routing decisions: "H1 is refuted — should we abandon this line entirely, or is there a variant worth testing?" This is far more rigorous than reading summaries.
 
 Plan formulation proposes initial hypotheses. Experimentation links results to hypotheses. Interpretation updates hypothesis status. The PI agent tracks which hypotheses are active when making transition decisions.
+
+### 3.5.1 Agent Observability Types (Plan 6)
+
+```python
+class AgentMemoryRecord(TypedDict):
+    working_memory: dict[str, Any]
+    notes: list[str]
+    last_active_stage: str
+    turn_count: int
+
+class ExperimentAttempt(TypedDict):
+    attempt_id: str
+    approach_summary: str
+    outcome: Literal["success", "failure", "inconclusive"]
+    failure_reason: str | None
+    learnings: list[str]
+    linked_hypothesis_id: str | None
+    ts: datetime
+```
 
 ### 3.6 Experimentation — Internal Structure
 
@@ -448,11 +472,13 @@ When an agent runs, context is assembled by:
 
 ### 4.3 Working Memory
 
-Each agent maintains a personal scratchpad, persisted with session checkpoints:
+Agent memory persists in two places:
 
-- **Notes** — key findings, decisions, hypotheses to remember across iterations
-- **Conversation history** — sliding window (length varies: professor=short, PhD=long)
-- **Peer messages** — direct messages from collaborating agents (e.g., professor guidance to student)
+1. **Scratchpad state** — `PipelineState.agent_memory[agent_name]` holds `working_memory`, `notes`, `last_active_stage`, and `turn_count`. Loaded by `resolve_agent` on instantiation; written back by the stage `on_exit` hook when dirty. Rides the LangGraph checkpoint automatically.
+
+2. **Conversation turns** — separate append-only `agent_turns` table in the storage backend. Indexed by `(session_id, agent, ts)` and `(session_id, stage, ts)`. Kept out of checkpoint state to prevent blob growth on long sessions.
+
+Every `ConfigAgent.inference()` call creates one logical *turn* with a UUID `turn_id`. LLM requests, LLM responses, and nested tool calls produced by that inference share the same `turn_id` (tool calls that internally trigger another inference get a `parent_turn_id` pointer). This is the correlation key for chat-style rendering and for filtering a single "what did this agent say?" view.
 
 ---
 
@@ -559,21 +585,40 @@ code_agent:
 | GET | `/api/sessions/{id}/cost` | Token usage and cost |
 | GET | `/api/sessions/{id}/hypotheses` | Hypothesis status and evidence |
 | GET | `/api/plugins` | Available stages, tools, agents |
+| GET | `/api/sessions/{id}/graph` | Owned topology — nodes, edges, cursor, subgraphs |
+| GET | `/api/sessions/{id}/agents` | List agents registered for this session |
+| GET | `/api/sessions/{id}/agents/{name}/context` | Post-scope-filter assembled context snapshot |
+| GET | `/api/sessions/{id}/agents/{name}/history` | Paginated `agent_turns` for this agent |
+| GET | `/api/sessions/{id}/agents/{name}/memory` | AgentMemoryRecord scratchpad |
+| GET | `/api/sessions/{id}/pi/history` | PI decision log with confidence + used_fallback |
+| GET | `/api/sessions/{id}/requests` | Pending + completed CrossStageRequest |
+| GET | `/api/sessions/{id}/experiments` | ExperimentResult + ExperimentAttempt log + refs |
 
 ### 7.2 WebSocket
 
 Endpoint: `ws://host:port/ws/sessions/{id}`
 
 **Server → Client events:**
-- `stage_started` — which stage, which agents
-- `agent_thinking` — streaming LLM output (token by token)
-- `agent_tool_call` — tool invocation + result
-- `agent_dialogue` — inter-agent messages
-- `stage_completed` — output summary
-- `transition` — PI decision + reasoning
-- `checkpoint_reached` — awaiting human input (with options: approve, edit, redirect)
-- `cost_update` — token usage delta
-- `error` — stage failure + recovery action
+
+| Event | Payload |
+|---|---|
+| `stage_started` | {stage, agents, started_at} |
+| `stage_completed` | {stage, status, summary, elapsed_ms} |
+| `stage_failed` | {stage, error} |
+| `agent_turn_started` | {turn_id, agent, stage, started_at, system_prompt_hash, system_prompt_preview, assembled_context_keys, memory_scope_applied, is_mock} |
+| `agent_turn_completed` | {turn_id, elapsed_ms, tokens_in_total, tokens_out_total, cost_usd} |
+| `agent_llm_request` | {turn_id, parent_turn_id?, model, messages, temperature, is_mock} |
+| `agent_llm_response` | {turn_id, content, tokens_in, tokens_out, cost_usd, model, is_mock} |
+| `agent_tool_call` | {turn_id, parent_turn_id?, tool, args} |
+| `agent_tool_result` | {turn_id, tool, success, result_preview, error?} |
+| `agent_dialogue` | {turn_id, from_agent, to_agent, message} |
+| `pi_decision` | {decision_id, action, confidence, next_stage, reasoning, used_fallback} |
+| `hypothesis_update` | {hypothesis_id, new_status, evidence_link?} |
+| `checkpoint_reached` | unchanged |
+| `cost_update` | unchanged |
+| `error` | unchanged |
+
+Content fields are truncated at 8KB on the wire; full payloads retrievable from `/agents/{name}/history`.
 
 **Client → Server actions:**
 - `approve` — approve checkpoint
@@ -601,16 +646,16 @@ Endpoint: `ws://host:port/ws/sessions/{id}`
 - **Session List (Dashboard)** — all sessions with status (running/paused/completed), current stage, iteration count, cost
 - **Session Create** — config wizard: research topic, LLM model, pipeline config, agent selection, stage controls
 - **Session Detail** — main workspace:
-  - Left sidebar: pipeline progress tracker (shows backtracks like "Plan ×2"), controls (pause/stop), mode toggle (auto/HITL)
-  - Center: agent activity feed with streaming output, tool calls, execution results, inter-agent dialogue
-  - Right panel: current stage output summary, PI agent assessment, budget tracker
+  - The center splits vertically. Top: an always-visible `GraphTopology` canvas showing the live pipeline with rich nodes (status dot, elapsed time, iteration count, current agent, per-stage control dropdown, per-stage cost). Bottom: tabs — Conversations (default), Artifacts, Experiments, Cost.
+  - The left sider carries only global controls: Pause, Resume, Cancel. Per-stage control levels live on the graph nodes, not in a parallel list.
+  - The right sider is the Agent Monitor. For the currently-focused agent it shows memory scope (read/summarize/write keys), assembled-context preview (what this agent saw on its last turn), conversation history (paginated), and scratchpad (working_memory + notes). Focus follows the latest `agent_turn_started` event unless pinned. Below the monitor: Hypotheses (unchanged), PI decision log (last N), compact Cost tracker stack below the Agent Monitor.
   - Bottom: human feedback input for sending notes to agents or redirecting
 - **Plugin Browser** — available stages, tools, agents with descriptions and config schemas
 - **Settings** — global config: default LLM, API keys, execution backend, storage backend
 
 ### 8.3 Key Components
 
-- `PipelineGraph` — React Flow visualization of the transition graph (nodes = stages, edges = transitions with reasons)
+- `GraphTopology` — @xyflow/react + elkjs auto-layout pipeline graph (replaces `PipelineGraph`)
 - `AgentActivityFeed` — real-time streaming log of agent actions via WebSocket
 - `StageOutputPanel` — versioned results viewer (compare iteration N vs N-1)
 - `ControlBar` — mode toggle, pause/resume, per-stage review preference toggles
@@ -618,6 +663,16 @@ Endpoint: `ws://host:port/ws/sessions/{id}`
 - `CheckpointModal` — HITL approval dialog with PI recommendation
 - `FeedbackInput` — human → agent messaging
 - `HypothesisTracker` — visual status of all hypotheses (active/supported/refuted/abandoned) with linked evidence
+- `ChatView` — center "Conversations" tab (`mode` prop reserved for future `lab_scene`)
+- `AgentMonitor` — right sider; per-agent tabs with auto-focus and pin
+- `AgentScopeCard` — read/summarize/write memory scope keys
+- `AgentContextPreview` — assembled-context snapshot for the agent's latest turn
+- `AgentMemoryCard` — working_memory + notes scratchpad viewer
+- `AgentHistoryCard` — paginated turn list filtered to this agent
+- `ExperimentsTab` — experiment run cards + prior-attempts ribbon
+- `ExperimentDetail` — one run: script, stdout, stderr, repro, refs, linked hypothesis
+- `ExperimentDiffView` — side-by-side run compare
+- `PIDecisionLog` — last N PI decisions with confidence chips
 
 ---
 
