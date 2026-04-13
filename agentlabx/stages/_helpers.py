@@ -122,6 +122,7 @@ def build_agent_context(
         phase=phase,
         state=filtered,
         working_memory=agent.working_memory,
+        session_id=state.get("session_id"),
     )
 
 

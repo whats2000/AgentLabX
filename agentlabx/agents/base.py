@@ -27,6 +27,7 @@ class AgentContext(BaseModel):
     phase: str
     state: dict[str, Any]
     working_memory: dict[str, Any]
+    session_id: str | None = None
     model_config = {"arbitrary_types_allowed": True}
 
 
