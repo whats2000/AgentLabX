@@ -26,6 +26,7 @@ def resolve_agent(
     llm_provider: Any = None,
     model: str = "claude-sonnet-4-6",
     cost_tracker: Any = None,
+    state: dict | None = None,
 ) -> BaseAgent:
     """Resolve an agent from the registry and instantiate it.
 
@@ -36,22 +37,32 @@ def resolve_agent(
     When llm_provider is passed, it's injected into the ConfigAgent so the
     agent uses real LLM inference instead of mock stubs. cost_tracker is
     forwarded so agents accumulate usage into the session's shared tracker.
+
+    When state is provided, the agent's memory is hydrated from
+    state["agent_memory"][name] (if that key exists), so the agent resumes
+    from its last persisted state rather than starting fresh.
     """
     entry = registry.resolve(PluginType.AGENT, name)
 
     if isinstance(entry, AgentConfig):
-        return ConfigAgent.from_config(
+        agent = ConfigAgent.from_config(
             entry,
             llm_provider=llm_provider,
             model=model,
             cost_tracker=cost_tracker,
         )
+    elif isinstance(entry, type) and issubclass(entry, BaseAgent):
+        agent = entry()
+    else:
+        msg = f"Agent plugin '{name}' is neither AgentConfig nor BaseAgent subclass"
+        raise TypeError(msg)
 
-    if isinstance(entry, type) and issubclass(entry, BaseAgent):
-        return entry()
+    if state is not None:
+        memory_dict = (state.get("agent_memory") or {}).get(name)
+        if memory_dict:
+            agent.load_memory(memory_dict)
 
-    msg = f"Agent plugin '{name}' is neither AgentConfig nor BaseAgent subclass"
-    raise TypeError(msg)
+    return agent
 
 
 def resolve_tool(registry: PluginRegistry, name: str) -> BaseTool:
