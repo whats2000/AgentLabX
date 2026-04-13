@@ -181,11 +181,13 @@ class TestTransitionHandler:
         assert decision.needs_approval is True
 
     def test_backtrack_control_auto_no_checkpoint(self):
-        """backtrack_control='auto' never requires approval for backtrack."""
+        """backtrack_control='auto' suppresses the backtrack_control gate, but
+        zone-aware defaults still apply.  A within-zone backtrack produces no
+        approval regardless of backtrack_control."""
         prefs = SessionPreferences(backtrack_control="auto")
         state = make_state(
-            current_stage="peer_review",
-            next_stage="experimentation",
+            current_stage="plan_formulation",
+            next_stage="literature_review",  # within-zone (both 'discovery')
             human_override=None,
             default_sequence=DEFAULT_SEQ,
             completed_stages=[],

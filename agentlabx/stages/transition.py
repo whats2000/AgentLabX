@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import PipelineState
+from agentlabx.core.zones import cross_zone
 
 
 class TransitionDecision(BaseModel):
@@ -217,14 +218,25 @@ class TransitionHandler:
         return None
 
     def _check_approval(self, *, action: str, stage: str, target: str) -> bool:
-        """Return True if this transition requires human approval (HITL)."""
-        # Check per-stage control for the originating stage
-        stage_control = self.preferences.get_stage_control(stage)
-        if stage_control == "approve" or stage_control == "edit":
-            return True
+        """Zone-aware HITL approval (spec §3.3.3).
 
-        # Check backtrack control preference
-        if action == "backtrack" and self.preferences.backtrack_control == "approve":
+        Per-stage control overrides (highest priority):
+          "approve"/"edit" → always approve
+          "auto"           → never approve
+        Zone-aware defaults:
+          advance          → no approval (notify only, even cross-zone)
+          backtrack        → approve iff cross-zone OR backtrack_control=approve
+        """
+        sc = self.preferences.stage_controls.get(stage)
+        if sc in ("approve", "edit"):
             return True
+        if sc == "auto":
+            return False
 
+        if action == "backtrack":
+            if self.preferences.backtrack_control == "approve":
+                return True
+            return cross_zone(stage, target)
+
+        # advance / forced_advance / human_override default: no approval
         return False
