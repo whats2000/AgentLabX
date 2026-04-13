@@ -33,7 +33,7 @@ class LiteratureReviewStage(BaseStage):
             cost_tracker=context.cost_tracker,
             state=state,
         )
-        arxiv_tool = resolve_tool(registry, "arxiv_search")
+        arxiv_tool = resolve_tool(registry, "arxiv_search", event_bus=context.event_bus, storage=context.storage)
 
         topic = state["research_topic"]
         papers: list[dict] = []

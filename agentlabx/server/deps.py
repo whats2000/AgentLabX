@@ -139,6 +139,7 @@ async def build_app_context(
         registry=registry,
         session_manager=session_manager,
         llm_provider=llm_provider,
+        storage=storage,
         checkpoint_db_path=str(checkpoint_db_path),
         event_forwarder=ws_manager.broadcast,  # Fix G: single subscription per session
     )

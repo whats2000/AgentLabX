@@ -40,7 +40,7 @@ class DataExplorationStage(BaseStage):
             cost_tracker=context.cost_tracker,
             state=state,
         )
-        code_executor = resolve_tool(registry, "code_executor")
+        code_executor = resolve_tool(registry, "code_executor", event_bus=context.event_bus, storage=context.storage)
 
         plan_list = state.get("plan", [])
         plan_summary = plan_list[-1].methodology if plan_list else "No plan yet"

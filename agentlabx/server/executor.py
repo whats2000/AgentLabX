@@ -29,6 +29,7 @@ from agentlabx.core.registry import PluginRegistry
 from agentlabx.core.session import Session, SessionManager
 from agentlabx.core.state import CostTracker, create_initial_state
 from agentlabx.providers.llm.base import BaseLLMProvider
+from agentlabx.providers.llm.traced import TracedLLMProvider
 from agentlabx.stages.base import StageContext
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class PipelineExecutor:
         registry: PluginRegistry,
         session_manager: SessionManager,
         llm_provider: BaseLLMProvider,
+        storage: Any = None,
         checkpoint_db_path: str = "data/checkpoints.db",
         event_forwarder: Any = None,
     ) -> None:
@@ -74,10 +76,14 @@ class PipelineExecutor:
         event_forwarder: optional async callable(session_id, event_dict) that
         receives every event from every session's event_bus. Set by the app
         to the WS connection manager's broadcast method (Fix G).
+
+        storage: optional storage backend forwarded to StageContext so stages
+        can pass it to resolve_tool for TracedTool wrapping.
         """
         self.registry = registry
         self.session_manager = session_manager
         self.llm_provider = llm_provider
+        self.storage = storage
         self.checkpoint_db_path = checkpoint_db_path
         self.event_forwarder = event_forwarder
         self._running: dict[str, RunningSession] = {}
@@ -136,6 +142,20 @@ class PipelineExecutor:
         event_bus = session.event_bus  # Fix B: reuse session-owned bus
         cost_tracker = CostTracker()
 
+        # Wrap the LLM provider with tracing for this session. TracedLLMProvider
+        # is a passthrough when no TurnContext is active (e.g., outside inference
+        # calls), so this is safe to apply unconditionally. Tracing only fires when
+        # B6 pushes a TurnContext from ConfigAgent.inference().
+        traced_llm_provider: BaseLLMProvider
+        if self.storage is not None:
+            traced_llm_provider = TracedLLMProvider(
+                inner=self.llm_provider,
+                event_bus=event_bus,
+                storage=self.storage,
+            )
+        else:
+            traced_llm_provider = self.llm_provider
+
         # Cooperative pause event (Fix A) — set means running
         paused_event = asyncio.Event()
         paused_event.set()
@@ -144,8 +164,9 @@ class PipelineExecutor:
         stage_context = StageContext(
             settings={},
             event_bus=event_bus,
+            storage=self.storage,
             registry=self.registry,
-            llm_provider=self.llm_provider,
+            llm_provider=traced_llm_provider,
             cost_tracker=cost_tracker,
             paused_event=paused_event,
         )

@@ -62,6 +62,7 @@ class StageContext(BaseModel):
 
     settings: Any = None
     event_bus: Any = None
+    storage: Any = None
     registry: Any = None
     llm_provider: Any = None
     cost_tracker: Any = None

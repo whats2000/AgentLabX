@@ -17,6 +17,7 @@ from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.state import PipelineState
 from agentlabx.stages.base import StageContext
 from agentlabx.tools.base import BaseTool
+from agentlabx.tools.traced import TracedTool
 
 
 def resolve_agent(
@@ -65,22 +66,36 @@ def resolve_agent(
     return agent
 
 
-def resolve_tool(registry: PluginRegistry, name: str) -> BaseTool:
+def resolve_tool(
+    registry: PluginRegistry,
+    name: str,
+    *,
+    event_bus: Any = None,
+    storage: Any = None,
+) -> BaseTool:
     """Resolve a tool from the registry and instantiate it if it's a class.
 
     Tools may be registered either as classes (instantiated on demand) or as
     pre-configured instances (e.g., CodeExecutor with an injected backend).
+
+    When both ``event_bus`` and ``storage`` are provided, the resolved tool is
+    wrapped in a TracedTool that emits agent_tool_call / agent_tool_result events
+    and writes agent_turns rows when a TurnContext is active. If either is None,
+    the raw tool is returned (backward-compatible passthrough).
     """
     entry = registry.resolve(PluginType.TOOL, name)
 
     if isinstance(entry, type) and issubclass(entry, BaseTool):
-        return entry()
+        raw: BaseTool = entry()
+    elif isinstance(entry, BaseTool):
+        raw = entry
+    else:
+        msg = f"Tool plugin '{name}' is neither BaseTool subclass nor instance"
+        raise TypeError(msg)
 
-    if isinstance(entry, BaseTool):
-        return entry
-
-    msg = f"Tool plugin '{name}' is neither BaseTool subclass nor instance"
-    raise TypeError(msg)
+    if event_bus is not None and storage is not None:
+        return TracedTool(inner=raw, event_bus=event_bus, storage=storage)
+    return raw
 
 
 def build_agent_context(
