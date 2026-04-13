@@ -20,6 +20,20 @@ def sync_agent_memory_to_state(state: dict, agents: dict[str, BaseAgent]) -> Non
         state: The pipeline state dict to update.
         agents: A dict mapping agent names to BaseAgent instances.
     """
+    # INVARIANT (2026-04-13, Plan 6A): this helper mutates state["agent_memory"]
+    # in place. PipelineState declares `agent_memory: dict[str, AgentMemoryRecord]`
+    # WITHOUT an `Annotated[..., reducer]` wrapper, so LangGraph's default
+    # behavior is whole-value overwrite — NOT dict merge. The current pipeline
+    # is safe only because (1) stages run sequentially and (2) every stage calls
+    # this helper which setdefault's the live dict before mutating.
+    #
+    # DO NOT refactor this helper to build a fresh dict and return it, OR return
+    # `{"agent_memory": memory}` as a partial state update from a stage — either
+    # change will silently wipe entries for agents that didn't run in this stage.
+    #
+    # If Plan 6B/7 introduces event-driven paths that return partial state dicts,
+    # switch PipelineState.agent_memory to `Annotated[dict, _merge_agent_memory]`
+    # with a proper dict-merge reducer BEFORE relying on partial updates.
     memory = state.setdefault("agent_memory", {})
     for name, agent in agents.items():
         if getattr(agent, "dirty", False):
