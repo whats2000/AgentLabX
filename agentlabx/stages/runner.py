@@ -68,11 +68,16 @@ class StageRunner:
             await paused_event.wait()
 
         try:
+            # Include stage iteration count so backtrack-induced re-entries get distinct
+            # thread_ids. The subgraph has no child checkpointer today (see subgraph.py),
+            # so thread_id is just ephemeral message-passing scope — but reuse across
+            # invocations would cause channel state leakage if a checkpointer is added later.
+            stage_iter = state.get("stage_iterations", {}).get(self.stage.name, 0)
             subgraph_result = await self._compiled_subgraph.ainvoke(
                 {"state": entered_state, "context": self.context},
                 config={
                     "configurable": {
-                        "thread_id": f"{state.get('session_id', 's')}:{self.stage.name}"
+                        "thread_id": f"{state.get('session_id', 's')}:{self.stage.name}:{stage_iter}"
                     }
                 },
             )

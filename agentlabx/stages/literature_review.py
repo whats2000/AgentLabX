@@ -8,6 +8,15 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 
 class LiteratureReviewStage(BaseStage):
+    """Plan 7B migration: build_plan itemises topic-survey + recent-papers
+    + optional feedback-driven work; execute_plan stays at the default
+    (delegates to legacy .run()), so plan items are OBSERVABILITY-ONLY in 7B.
+
+    Plan 7B² will migrate execute_plan to iterate over plan.items and dispatch
+    a PhD student inference per item, at which point the plan becomes
+    authoritative for the search strategy.
+    """
+
     name = "literature_review"
     zone = "discovery"
     description = "PhD student iteratively searches and synthesizes related work."
