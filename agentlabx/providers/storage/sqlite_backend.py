@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from agentlabx.providers.storage.base import AgentTurnRecord, BaseStorageBackend
 from agentlabx.providers.storage.models import (
+    AgentTurn,
     ArtifactRecord,
     Base,
     CheckpointRecord,
@@ -145,7 +148,29 @@ class SQLiteBackend(BaseStorageBackend):
             shutil.rmtree(session_dir, ignore_errors=True)
 
     async def append_agent_turn(self, record: AgentTurnRecord) -> int:
-        raise NotImplementedError("Implemented in Task A4")
+        if self._session_factory is None:
+            msg = "Backend not initialized — call initialize() first"
+            raise RuntimeError(msg)
+        async with self._session_factory() as session:
+            row = AgentTurn(
+                session_id=record.session_id,
+                turn_id=record.turn_id,
+                parent_turn_id=record.parent_turn_id,
+                agent=record.agent,
+                stage=record.stage,
+                kind=record.kind,
+                payload_json=json.dumps(record.payload, default=str),
+                system_prompt_hash=record.system_prompt_hash,
+                tokens_in=record.tokens_in,
+                tokens_out=record.tokens_out,
+                cost_usd=record.cost_usd,
+                is_mock=record.is_mock,
+                ts=record.ts or datetime.now(UTC),
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return row.id
 
     async def list_agent_turns(
         self,
@@ -156,4 +181,33 @@ class SQLiteBackend(BaseStorageBackend):
         after_ts=None,
         limit: int = 200,
     ) -> list[AgentTurnRecord]:
-        raise NotImplementedError("Implemented in Task A4")
+        if self._session_factory is None:
+            return []
+        async with self._session_factory() as session:
+            stmt = select(AgentTurn).where(AgentTurn.session_id == session_id)
+            if agent is not None:
+                stmt = stmt.where(AgentTurn.agent == agent)
+            if stage is not None:
+                stmt = stmt.where(AgentTurn.stage == stage)
+            if after_ts is not None:
+                stmt = stmt.where(AgentTurn.ts > after_ts)
+            stmt = stmt.order_by(AgentTurn.ts.asc()).limit(limit)
+            rows = (await session.execute(stmt)).scalars().all()
+            return [
+                AgentTurnRecord(
+                    session_id=r.session_id,
+                    turn_id=r.turn_id,
+                    parent_turn_id=r.parent_turn_id,
+                    agent=r.agent,
+                    stage=r.stage,
+                    kind=r.kind,
+                    payload=json.loads(r.payload_json),
+                    system_prompt_hash=r.system_prompt_hash,
+                    tokens_in=r.tokens_in,
+                    tokens_out=r.tokens_out,
+                    cost_usd=r.cost_usd,
+                    is_mock=bool(r.is_mock),
+                    ts=r.ts,
+                )
+                for r in rows
+            ]
