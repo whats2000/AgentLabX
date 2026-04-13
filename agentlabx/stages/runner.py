@@ -54,6 +54,12 @@ class StageRunner:
         if paused_event is not None:
             await paused_event.wait()
 
+        # Snapshot cost_tracker.total_cost for backtrack-cost accounting
+        cost_tracker_at_entry = state.get("cost_tracker")
+        cost_at_entry = (
+            float(cost_tracker_at_entry.total_cost) if cost_tracker_at_entry else 0.0
+        )
+
         try:
             result = await self.stage.run(entered_state, self.context)
 
@@ -70,6 +76,20 @@ class StageRunner:
             # Cross-stage requests (reducer field — return only NEW requests)
             if result.requests:
                 update["pending_requests"] = list(result.requests)
+
+            # Backtrack-specific state plumbing (Plan 7A)
+            if result.status == "backtrack":
+                # Feedback handoff: target stage reads this on re-entry
+                update["backtrack_feedback"] = result.feedback
+
+                # Cost attribution: the cost of this run led to the backtrack
+                current_total = (
+                    float(state["cost_tracker"].total_cost)
+                    if state.get("cost_tracker") else 0.0
+                )
+                delta = max(0.0, current_total - cost_at_entry)
+                prior = float(state.get("backtrack_cost_spent", 0.0))
+                update["backtrack_cost_spent"] = prior + delta
 
             # Emit stage_completed (only on success path — Fix K: never both)
             if self.context.event_bus is not None:
