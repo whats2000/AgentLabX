@@ -190,9 +190,34 @@ class PipelineExecutor:
 
             event_bus.subscribe("*", forward_to_ws)
 
+        # Construct PI advisor when LLM provider is real (not mock).
+        # Mock path stays advisor-free — Plan 7A rule-based behaviour.
+        pi_advisor = None
+        if not getattr(self.llm_provider, "is_mock", False):
+            from agentlabx.agents.config_loader import AgentConfigLoader
+            from agentlabx.agents.pi_agent import PIAgent
+
+            pi_config_path = (
+                Path(__file__).parent.parent
+                / "agents"
+                / "configs"
+                / "pi_agent.yaml"
+            )
+            pi_config = (
+                AgentConfigLoader().load_config(pi_config_path)
+                if pi_config_path.exists()
+                else None
+            )
+            pi_advisor = PIAgent(
+                llm_provider=self.llm_provider,
+                pi_agent_config=pi_config,
+                event_bus=event_bus,
+            )
+
         builder = PipelineBuilder(
             registry=self.registry,
             preferences=session.preferences,
+            pi_advisor=pi_advisor,
         )
         graph = builder.build(
             stage_sequence=default_sequence,
