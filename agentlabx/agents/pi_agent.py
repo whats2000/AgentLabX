@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
 
 from agentlabx.agents.config_loader import AgentConfig
 from agentlabx.agents.context import ContextAssembler
+from agentlabx.core.events import Event, EventBus
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import PipelineState
 from agentlabx.providers.llm.base import BaseLLMProvider
+from agentlabx.server.events import EventTypes
 from agentlabx.stages.transition import TransitionHandler
 
 
@@ -62,10 +66,12 @@ class PIAgent:
         llm_provider: BaseLLMProvider | None = None,
         model: str = "claude-sonnet-4-6",
         confidence_threshold: float | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self.transition_handler = transition_handler
         self.llm_provider = llm_provider
         self.model = model
+        self._event_bus = event_bus
         # Threshold priority: explicit arg > config.confidence_threshold > default
         if confidence_threshold is not None:
             self.confidence_threshold = confidence_threshold
@@ -82,6 +88,24 @@ class PIAgent:
             self._memory_scope = MemoryScope()
         self._context_assembler = ContextAssembler()
         self.decision_history: list[PIDecision] = []
+
+    async def _finalize(self, decision: PIDecision, state: PipelineState) -> PIDecision:
+        """Persist decision to state and emit event; called from every return path."""
+        decision_dict = decision.model_dump()
+        decision_dict["decision_id"] = uuid.uuid4().hex
+        decision_dict["ts"] = datetime.now(UTC).isoformat()
+        state.setdefault("pi_decisions", []).append(decision_dict)
+        self.decision_history.append(decision)
+
+        if self._event_bus is not None:
+            await self._event_bus.emit(
+                Event(
+                    type=EventTypes.PI_DECISION,
+                    data=decision_dict,
+                    source="pi_agent",
+                )
+            )
+        return decision
 
     async def decide(
         self,
@@ -103,8 +127,7 @@ class PIAgent:
                 budget_note="Budget warning active" if budget_warning else None,
                 used_fallback=used_fallback,
             )
-            self.decision_history.append(decision)
-            return decision
+            return await self._finalize(decision, state)
 
         # LLM path: assemble context, query, parse JSON
         context_dict = self._context_assembler.assemble(state, self._memory_scope)
@@ -165,8 +188,7 @@ class PIAgent:
             budget_note="Budget warning active" if budget_warning else None,
             used_fallback=used_fallback,
         )
-        self.decision_history.append(decision)
-        return decision
+        return await self._finalize(decision, state)
 
     def _parse_decision(self, text: str) -> dict[str, Any]:
         """Extract JSON from the LLM response.
