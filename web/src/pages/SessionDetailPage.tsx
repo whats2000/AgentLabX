@@ -77,6 +77,7 @@ export default function SessionDetailPage() {
         display: "flex",
         flexDirection: "column",
         minHeight: "calc(100vh - 56px - 64px)",
+        width: "100%",
       }}
     >
       {/* Header — topic + session_id + status badge */}
@@ -111,9 +112,9 @@ export default function SessionDetailPage() {
       <Card
         variant="borderless"
         styles={{ body: { padding: 0 } }}
-        style={{ flex: 1, display: "flex" }}
+        style={{ flex: 1, display: "flex", width: "100%" }}
       >
-        <Layout style={{ background: "transparent", flex: 1 }}>
+        <Layout style={{ background: "transparent", flex: 1, width: "100%" }}>
           <Sider
             width={200}
             theme="light"
@@ -123,7 +124,15 @@ export default function SessionDetailPage() {
             <ControlBar sessionId={sessionId} />
           </Sider>
 
-          <Content style={{ background: "#ffffff", padding: "12px 24px" }}>
+          <Content
+            style={{
+              background: "#ffffff",
+              padding: "12px 24px",
+              flex: 1,
+              minWidth: 0,
+              overflow: "auto",
+            }}
+          >
             <Tabs
               activeKey={detailTab}
               onChange={(k) => setDetailTab(k as typeof detailTab)}

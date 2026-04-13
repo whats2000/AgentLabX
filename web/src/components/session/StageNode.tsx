@@ -1,5 +1,7 @@
-import { Tag } from "antd";
+import { Tag, Select } from "antd";
+import { Handle, Position } from "@xyflow/react";
 import type { GraphNode } from "../../types/domain";
+import type { ControlLevel } from "../../hooks/useUpdateStagePreference";
 
 const STATUS_COLOR: Record<GraphNode["status"], string> = {
   pending: "default",
@@ -12,9 +14,11 @@ const STATUS_COLOR: Record<GraphNode["status"], string> = {
 
 interface Props {
   node: GraphNode;
+  control?: ControlLevel;
+  onControlChange?: (level: ControlLevel) => void;
 }
 
-export function StageNode({ node }: Props) {
+export function StageNode({ node, control, onControlChange }: Props) {
   const opacity = node.skipped ? 0.4 : 1.0;
   return (
     <div
@@ -27,8 +31,13 @@ export function StageNode({ node }: Props) {
         border: "1px solid #e0e0e0",
         minWidth: 180,
         opacity,
+        position: "relative",
       }}
     >
+      {/* React Flow edge attachment points */}
+      <Handle type="target" position={Position.Left} style={{ background: "#999" }} />
+      <Handle type="source" position={Position.Right} style={{ background: "#999" }} />
+
       <div style={{ fontSize: 12, fontWeight: 600 }}>{node.label}</div>
       <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
         <Tag color={STATUS_COLOR[node.status]} bordered={false}>
@@ -36,6 +45,24 @@ export function StageNode({ node }: Props) {
         </Tag>
         {node.iteration_count > 0 && <span>· iter {node.iteration_count}</span>}
       </div>
+
+      {/* Per-stage control level — only for real stage nodes */}
+      {node.type === "stage" && onControlChange && (
+        <Select
+          size="small"
+          value={control ?? "auto"}
+          onChange={(v) => onControlChange(v as ControlLevel)}
+          options={[
+            { value: "auto", label: "auto" },
+            { value: "notify", label: "notify" },
+            { value: "approve", label: "approve" },
+            { value: "edit", label: "edit" },
+          ]}
+          style={{ width: "100%", marginTop: 8 }}
+          onClick={(e) => e.stopPropagation()}
+          styles={{ popup: { root: { zIndex: 1000 } } }}
+        />
+      )}
     </div>
   );
 }

@@ -20,6 +20,10 @@ vi.mock("../../src/api/client", () => ({
       cursor: {node_id: "plan_formulation", agent: "postdoc", started_at: null},
       subgraphs: [],
     }),
+    getSession: vi.fn().mockResolvedValue({
+      session_id: "s1",
+      preferences: { stage_controls: {} },
+    }),
   },
 }));
 
