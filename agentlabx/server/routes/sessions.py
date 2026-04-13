@@ -277,8 +277,8 @@ async def get_graph(session_id: str, request: Request):
     if running is None:
         # Session not started — return topology with empty state (all pending)
         # Build a one-shot graph to extract topology without a checkpointer.
-        from agentlabx.core.pipeline import PipelineBuilder
         from agentlabx.core.config import PipelineConfig
+        from agentlabx.core.pipeline import PipelineBuilder
 
         builder = PipelineBuilder(registry=context.registry)
         default_sequence = PipelineConfig().default_sequence
@@ -300,12 +300,14 @@ async def list_session_agents(session_id: str, request: Request):
             role = getattr(cfg, "role", name)
         except KeyError:
             role = name
-        out.append({
-            "name": name,
-            "role": role,
-            "turn_count": rec.get("turn_count", 0),
-            "last_active_stage": rec.get("last_active_stage"),
-        })
+        out.append(
+            {
+                "name": name,
+                "role": role,
+                "turn_count": rec.get("turn_count", 0),
+                "last_active_stage": rec.get("last_active_stage"),
+            }
+        )
     return out
 
 
@@ -401,7 +403,7 @@ async def get_session_requests(session_id: str, request: Request):
 
     def _ser(items: Any) -> list:
         out = []
-        for item in (items or []):
+        for item in items or []:
             if hasattr(item, "model_dump"):
                 out.append(item.model_dump())
             elif isinstance(item, dict):
@@ -430,7 +432,7 @@ async def get_session_experiments(session_id: str, request: Request):
             runs.append({"index": idx})
 
     log = []
-    for entry in (state.get("experiment_log") or []):
+    for entry in state.get("experiment_log") or []:
         if hasattr(entry, "model_dump"):
             log.append(entry.model_dump())
         elif isinstance(entry, dict):

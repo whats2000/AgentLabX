@@ -8,10 +8,10 @@ task has its own context copy, so concurrent inference calls don't interfere.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator
 
 
 @dataclass

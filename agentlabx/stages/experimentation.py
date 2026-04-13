@@ -40,7 +40,9 @@ class ExperimentationStage(BaseStage):
             event_bus=context.event_bus,
             storage=context.storage,
         )
-        code_executor = resolve_tool(registry, "code_executor", event_bus=context.event_bus, storage=context.storage)
+        code_executor = resolve_tool(
+            registry, "code_executor", event_bus=context.event_bus, storage=context.storage
+        )
 
         plan_list = state.get("plan", [])
         hypotheses = state.get("hypotheses", [])

@@ -54,32 +54,35 @@ def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
     nodes: list[dict[str, Any]] = []
     for nid in g.nodes:
         if nid in META_NODE_IDS:
-            nodes.append({
-                "id": nid,
-                "type": "transition",
-                "label": nid,
-                "zone": None,
-                "status": "meta",
-                "iteration_count": 0,
-                "skipped": False,
-            })
+            nodes.append(
+                {
+                    "id": nid,
+                    "type": "transition",
+                    "label": nid,
+                    "zone": None,
+                    "status": "meta",
+                    "iteration_count": 0,
+                    "skipped": False,
+                }
+            )
             continue
-        nodes.append({
-            "id": nid,
-            "type": "stage",
-            "label": _pretty(nid),
-            "zone": STAGE_ZONES.get(nid),
-            "status": _status(nid),
-            "iteration_count": int(iters.get(nid, 0)),
-            "skipped": nid in skip,
-        })
+        nodes.append(
+            {
+                "id": nid,
+                "type": "stage",
+                "label": _pretty(nid),
+                "zone": STAGE_ZONES.get(nid),
+                "status": _status(nid),
+                "iteration_count": int(iters.get(nid, 0)),
+                "skipped": nid in skip,
+            }
+        )
 
     # LangGraph's get_graph() returns a Graph whose .edges is a plain list;
     # unit-test mocks may expose it as a callable. Support both.
     raw_edges = g.edges() if callable(g.edges) else g.edges
     edges: list[dict[str, Any]] = [
-        {"from": e.source, "to": e.target, "kind": "sequential", "reason": None}
-        for e in raw_edges
+        {"from": e.source, "to": e.target, "kind": "sequential", "reason": None} for e in raw_edges
     ]
 
     # Overlay backtracks from transition_log when they're not already edges.
@@ -89,11 +92,14 @@ def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
         if not s or not d:
             continue
         if _edge_idx(edges, s, d) == -1:
-            edges.append({
-                "from": s, "to": d,
-                "kind": "backtrack",
-                "reason": t.get("reason"),
-            })
+            edges.append(
+                {
+                    "from": s,
+                    "to": d,
+                    "kind": "backtrack",
+                    "reason": t.get("reason"),
+                }
+            )
 
     cursor: dict[str, Any] | None = None
     if current:

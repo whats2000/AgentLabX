@@ -41,17 +41,26 @@ class TracedTool:
             "tool": self._inner.name,
             "args": _safe_preview(kwargs),
         }
-        await self._bus.emit(Event(
-            type=EventTypes.AGENT_TOOL_CALL, data=call_payload, source=ctx.agent,
-        ))
+        await self._bus.emit(
+            Event(
+                type=EventTypes.AGENT_TOOL_CALL,
+                data=call_payload,
+                source=ctx.agent,
+            )
+        )
         if ctx.session_id:
-            await self._storage.append_agent_turn(AgentTurnRecord(
-                session_id=ctx.session_id, turn_id=ctx.turn_id,
-                parent_turn_id=ctx.parent_turn_id,
-                agent=ctx.agent, stage=ctx.stage,
-                kind="tool_call", payload=call_payload,
-                is_mock=ctx.is_mock,
-            ))
+            await self._storage.append_agent_turn(
+                AgentTurnRecord(
+                    session_id=ctx.session_id,
+                    turn_id=ctx.turn_id,
+                    parent_turn_id=ctx.parent_turn_id,
+                    agent=ctx.agent,
+                    stage=ctx.stage,
+                    kind="tool_call",
+                    payload=call_payload,
+                    is_mock=ctx.is_mock,
+                )
+            )
 
         result = await self._inner.execute(**kwargs)
         success = bool(getattr(result, "success", True))
@@ -65,17 +74,26 @@ class TracedTool:
             "result_preview": preview,
             "error": err,
         }
-        await self._bus.emit(Event(
-            type=EventTypes.AGENT_TOOL_RESULT, data=res_payload, source=ctx.agent,
-        ))
+        await self._bus.emit(
+            Event(
+                type=EventTypes.AGENT_TOOL_RESULT,
+                data=res_payload,
+                source=ctx.agent,
+            )
+        )
         if ctx.session_id:
-            await self._storage.append_agent_turn(AgentTurnRecord(
-                session_id=ctx.session_id, turn_id=ctx.turn_id,
-                parent_turn_id=ctx.parent_turn_id,
-                agent=ctx.agent, stage=ctx.stage,
-                kind="tool_result", payload=res_payload,
-                is_mock=ctx.is_mock,
-            ))
+            await self._storage.append_agent_turn(
+                AgentTurnRecord(
+                    session_id=ctx.session_id,
+                    turn_id=ctx.turn_id,
+                    parent_turn_id=ctx.parent_turn_id,
+                    agent=ctx.agent,
+                    stage=ctx.stage,
+                    kind="tool_result",
+                    payload=res_payload,
+                    is_mock=ctx.is_mock,
+                )
+            )
         return result
 
 

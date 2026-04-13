@@ -35,7 +35,9 @@ class LiteratureReviewStage(BaseStage):
             event_bus=context.event_bus,
             storage=context.storage,
         )
-        arxiv_tool = resolve_tool(registry, "arxiv_search", event_bus=context.event_bus, storage=context.storage)
+        arxiv_tool = resolve_tool(
+            registry, "arxiv_search", event_bus=context.event_bus, storage=context.storage
+        )
 
         topic = state["research_topic"]
         papers: list[dict] = []

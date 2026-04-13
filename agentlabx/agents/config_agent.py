@@ -120,7 +120,11 @@ class ConfigAgent(BaseAgent):
             session_id=session_id,
             system_prompt_hash=sp_hash,
         )
-        ctx_keys = sorted(list(getattr(context, "state", {}).keys())) if getattr(context, "state", None) else []
+        ctx_keys = (
+            sorted(list(getattr(context, "state", {}).keys()))
+            if getattr(context, "state", None)
+            else []
+        )
 
         start_payload = {
             "turn_id": turn_id,
@@ -137,11 +141,13 @@ class ConfigAgent(BaseAgent):
             "is_mock": is_mock,
         }
         if self._event_bus is not None:
-            await self._event_bus.emit(Event(
-                type=EventTypes.AGENT_TURN_STARTED,
-                data=start_payload,
-                source=self.name,
-            ))
+            await self._event_bus.emit(
+                Event(
+                    type=EventTypes.AGENT_TURN_STARTED,
+                    data=start_payload,
+                    source=self.name,
+                )
+            )
 
         # Bump counters and mark dirty BEFORE running body so even on error the
         # agent's state reflects the attempt.
@@ -163,11 +169,13 @@ class ConfigAgent(BaseAgent):
             "cost_usd": ctx.cost_usd,
         }
         if self._event_bus is not None:
-            await self._event_bus.emit(Event(
-                type=EventTypes.AGENT_TURN_COMPLETED,
-                data=end_payload,
-                source=self.name,
-            ))
+            await self._event_bus.emit(
+                Event(
+                    type=EventTypes.AGENT_TURN_COMPLETED,
+                    data=end_payload,
+                    source=self.name,
+                )
+            )
         return content
 
     async def _run_inference_body(self, prompt: str, context: AgentContext) -> str:

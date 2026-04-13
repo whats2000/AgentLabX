@@ -37,8 +37,10 @@ class TracedLLMProvider(BaseLLMProvider):
         ctx = current_turn()
         if ctx is None:
             return await self._inner.query(
-                model=model, prompt=prompt,
-                system_prompt=system_prompt, temperature=temperature,
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
             )
 
         req_payload = {
@@ -50,25 +52,33 @@ class TracedLLMProvider(BaseLLMProvider):
             "turn_id": ctx.turn_id,
             "parent_turn_id": ctx.parent_turn_id,
         }
-        await self._bus.emit(Event(
-            type=EventTypes.AGENT_LLM_REQUEST, data=req_payload, source=ctx.agent,
-        ))
+        await self._bus.emit(
+            Event(
+                type=EventTypes.AGENT_LLM_REQUEST,
+                data=req_payload,
+                source=ctx.agent,
+            )
+        )
         if ctx.session_id:
-            await self._storage.append_agent_turn(AgentTurnRecord(
-                session_id=ctx.session_id,
-                turn_id=ctx.turn_id,
-                parent_turn_id=ctx.parent_turn_id,
-                agent=ctx.agent,
-                stage=ctx.stage,
-                kind="llm_request",
-                payload=req_payload,
-                system_prompt_hash=ctx.system_prompt_hash,
-                is_mock=self.is_mock,
-            ))
+            await self._storage.append_agent_turn(
+                AgentTurnRecord(
+                    session_id=ctx.session_id,
+                    turn_id=ctx.turn_id,
+                    parent_turn_id=ctx.parent_turn_id,
+                    agent=ctx.agent,
+                    stage=ctx.stage,
+                    kind="llm_request",
+                    payload=req_payload,
+                    system_prompt_hash=ctx.system_prompt_hash,
+                    is_mock=self.is_mock,
+                )
+            )
 
         resp = await self._inner.query(
-            model=model, prompt=prompt,
-            system_prompt=system_prompt, temperature=temperature,
+            model=model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
         )
 
         resp_payload = {
@@ -84,21 +94,27 @@ class TracedLLMProvider(BaseLLMProvider):
         ctx.tokens_out += resp.tokens_out or 0
         ctx.cost_usd += resp.cost or 0.0
 
-        await self._bus.emit(Event(
-            type=EventTypes.AGENT_LLM_RESPONSE, data=resp_payload, source=ctx.agent,
-        ))
+        await self._bus.emit(
+            Event(
+                type=EventTypes.AGENT_LLM_RESPONSE,
+                data=resp_payload,
+                source=ctx.agent,
+            )
+        )
         if ctx.session_id:
-            await self._storage.append_agent_turn(AgentTurnRecord(
-                session_id=ctx.session_id,
-                turn_id=ctx.turn_id,
-                parent_turn_id=ctx.parent_turn_id,
-                agent=ctx.agent,
-                stage=ctx.stage,
-                kind="llm_response",
-                payload=resp_payload,
-                tokens_in=resp.tokens_in,
-                tokens_out=resp.tokens_out,
-                cost_usd=resp.cost,
-                is_mock=self.is_mock,
-            ))
+            await self._storage.append_agent_turn(
+                AgentTurnRecord(
+                    session_id=ctx.session_id,
+                    turn_id=ctx.turn_id,
+                    parent_turn_id=ctx.parent_turn_id,
+                    agent=ctx.agent,
+                    stage=ctx.stage,
+                    kind="llm_response",
+                    payload=resp_payload,
+                    tokens_in=resp.tokens_in,
+                    tokens_out=resp.tokens_out,
+                    cost_usd=resp.cost,
+                    is_mock=self.is_mock,
+                )
+            )
         return resp

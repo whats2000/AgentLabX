@@ -137,15 +137,17 @@ class ResultsInterpretationStage(BaseStage):
             updated_hypotheses.append(updated_hyp)
 
             if context.event_bus is not None:
-                await context.event_bus.emit(Event(
-                    type=EventTypes.HYPOTHESIS_UPDATE,
-                    data={
-                        "hypothesis_id": hid,
-                        "new_status": new_status,
-                        "evidence_link": update.get("evidence"),
-                    },
-                    source="postdoc",
-                ))
+                await context.event_bus.emit(
+                    Event(
+                        type=EventTypes.HYPOTHESIS_UPDATE,
+                        data={
+                            "hypothesis_id": hid,
+                            "new_status": new_status,
+                            "evidence_link": update.get("evidence"),
+                        },
+                        source="postdoc",
+                    )
+                )
 
         output: dict = {"interpretation": [interpretation_text]}
         if updated_hypotheses:
