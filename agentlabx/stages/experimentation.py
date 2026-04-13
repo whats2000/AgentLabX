@@ -17,6 +17,7 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 class ExperimentationStage(BaseStage):
     name = "experimentation"
+    zone = "implementation"
     description = "ML engineer runs baseline/main/ablation experiments with validation."
     required_agents = ["ml_engineer"]
     required_tools = ["code_executor"]

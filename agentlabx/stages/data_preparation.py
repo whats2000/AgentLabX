@@ -14,6 +14,7 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 class DataPreparationStage(BaseStage):
     name = "data_preparation"
+    zone = "implementation"
     description = "ML + SW engineers collaborate on data pipeline; validate via execution."
     required_agents = ["ml_engineer", "sw_engineer"]
     required_tools = ["code_executor"]

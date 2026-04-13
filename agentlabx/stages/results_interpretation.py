@@ -14,6 +14,7 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 class ResultsInterpretationStage(BaseStage):
     name = "results_interpretation"
+    zone = "synthesis"
     description = "Postdoc and PhD interpret results and update hypothesis status."
     required_agents = ["postdoc", "phd_student"]
     required_tools = []

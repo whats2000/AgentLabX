@@ -21,6 +21,7 @@ REVIEW_JSON_FORMAT = (
 
 class PeerReviewStage(BaseStage):
     name = "peer_review"
+    zone = "synthesis"
     description = "Blind peer review — 3 reviewers see only the final report."
     required_agents = ["reviewers"]
     required_tools = []

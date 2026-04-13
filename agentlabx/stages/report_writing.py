@@ -11,6 +11,7 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 class ReportWritingStage(BaseStage):
     name = "report_writing"
+    zone = "synthesis"
     description = "Professor and PhD student write the research paper in LaTeX."
     required_agents = ["professor", "phd_student"]
     required_tools = []

@@ -18,6 +18,7 @@ PLAN_JSON_FORMAT = (
 
 class PlanFormulationStage(BaseStage):
     name = "plan_formulation"
+    zone = "discovery"
     description = "Postdoc and PhD student collaborate to formulate the research plan."
     required_agents = ["postdoc", "phd_student"]
     required_tools = []

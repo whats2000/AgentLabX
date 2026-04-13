@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import BaseModel
 
@@ -79,11 +79,15 @@ class StageResult(BaseModel):
     requests: list[CrossStageRequest] | None = None
 
 
+ZoneName = Literal["discovery", "implementation", "synthesis"]
+
+
 class BaseStage(ABC):
     name: str
     description: str
     required_agents: list[str]
     required_tools: list[str]
+    zone: ClassVar[ZoneName | None] = None
 
     @abstractmethod
     async def run(self, state: PipelineState, context: StageContext) -> StageResult: ...

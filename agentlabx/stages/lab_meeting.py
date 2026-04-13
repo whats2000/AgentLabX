@@ -20,6 +20,7 @@ class LabMeetingTrigger:
 
 class LabMeeting(BaseStage):
     name = "lab_meeting"
+    zone = None
     description = "Cross-zone collaboration meeting when a stage is stuck"
     required_agents = []
     required_tools = []

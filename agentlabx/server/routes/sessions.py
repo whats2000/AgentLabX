@@ -278,9 +278,9 @@ async def get_graph(session_id: str, request: Request):
         # Session not started — use the pre-compiled default graph cached at
         # app startup; avoids rebuilding PipelineBuilder + compiling LangGraph
         # on every poll from the UI.
-        return build_topology(context.default_graph, state)
+        return build_topology(context.default_graph, state, registry=context.registry)
 
-    return build_topology(running.graph, state)
+    return build_topology(running.graph, state, registry=context.registry)
 
 
 @router.get("/{session_id}/agents")

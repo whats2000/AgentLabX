@@ -9,6 +9,7 @@ from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_age
 
 class LiteratureReviewStage(BaseStage):
     name = "literature_review"
+    zone = "discovery"
     description = "PhD student iteratively searches and synthesizes related work."
     required_agents = ["phd_student"]
     required_tools = ["arxiv_search"]

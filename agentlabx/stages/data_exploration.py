@@ -19,6 +19,7 @@ EDA_SCRIPT_JSON_FORMAT = (
 
 class DataExplorationStage(BaseStage):
     name = "data_exploration"
+    zone = "implementation"
     description = "SW engineer runs exploratory data analysis via code executor."
     required_agents = ["sw_engineer"]
     required_tools = ["code_executor"]

@@ -10,21 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-STAGE_ZONES = {
-    "literature_review": "discovery",
-    "plan_formulation": "discovery",
-    "data_exploration": "implementation",
-    "data_preparation": "implementation",
-    "experimentation": "implementation",
-    "results_interpretation": "synthesis",
-    "report_writing": "synthesis",
-    "peer_review": "synthesis",
-}
+from agentlabx.core.zones import zone_for
 
 META_NODE_IDS = ("__start__", "__end__", "transition")
 
 
-def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
+def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]:
     """Return the owned graph topology shape for the given state.
 
     Args:
@@ -32,6 +23,9 @@ def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
             returning an object with .nodes (iterable of node ids) and
             .edges() returning iterable of edge objects with .source/.target.
         state: the current pipeline state dict.
+        registry: optional PluginRegistry for zone resolution. When provided,
+            zones are read from the stage class attribute; otherwise the
+            hardcoded fallback map in zones.py is used.
 
     Returns:
         dict with keys: nodes, edges, cursor, subgraphs.
@@ -71,7 +65,7 @@ def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
                 "id": nid,
                 "type": "stage",
                 "label": _pretty(nid),
-                "zone": STAGE_ZONES.get(nid),
+                "zone": zone_for(nid, registry),
                 "status": _status(nid),
                 "iteration_count": int(iters.get(nid, 0)),
                 "skipped": nid in skip,
