@@ -12,7 +12,7 @@ class TestEvent:
         assert event.data["stage"] == "lit_review"
 
     def test_event_with_source(self):
-        event = Event(type="agent_thinking", data={}, source="phd_student")
+        event = Event(type="agent_llm_response", data={}, source="phd_student")
         assert event.source == "phd_student"
 
 
