@@ -210,8 +210,9 @@ class TestTransitionHandler:
         decision = TransitionHandler().decide(state)
         assert decision.action == "complete"
 
-    def test_skip_already_completed_stages(self):
-        """Advance skips completed stages to find next uncompleted."""
+    def test_advance_ignores_completed_stages(self):
+        """Advance moves to the next position in the sequence regardless of
+        completed_stages. completed_stages is a history ledger, not a filter."""
         state = make_state(
             current_stage="literature_review",
             next_stage=None,
@@ -220,11 +221,15 @@ class TestTransitionHandler:
             completed_stages=["plan_formulation"],
         )
         decision = TransitionHandler().decide(state)
-        # plan_formulation is done, so it skips to data_exploration
-        assert decision.next_stage == "data_exploration"
+        # plan_formulation is in completed_stages but _next_in_sequence does NOT
+        # skip it — it simply returns the stage at position + 1.
+        assert decision.next_stage == "plan_formulation"
+        assert decision.action == "advance"
 
-    def test_unknown_current_stage_starts_from_beginning(self):
-        """Unknown current_stage falls back to first in sequence."""
+    def test_unknown_current_stage_completes(self):
+        """Unknown current_stage in _next_in_sequence returns None, which means
+        the pipeline reaches Priority 7 (end of sequence → complete).
+        Silently starting from position 0 would hide upstream bugs."""
         state = make_state(
             current_stage="nonexistent_stage",
             next_stage=None,
@@ -233,5 +238,5 @@ class TestTransitionHandler:
             completed_stages=[],
         )
         decision = TransitionHandler().decide(state)
-        assert decision.next_stage == "literature_review"
-        assert decision.action == "advance"
+        assert decision.next_stage is None
+        assert decision.action == "complete"

@@ -46,15 +46,15 @@ async def test_per_edge_limit_escalates_and_forces_advance(registry, monkeypatch
         "experimentation",
         "peer_review",
     ]
-    # max_backtrack_attempts_per_edge=0 means zero backtracks are permitted on
-    # any edge; the first backtrack request from experimentation immediately
-    # triggers escalation.  This exercises the full escalation → forced-advance
-    # path without needing the stage to re-execute after each backtrack (which
-    # the routing prevents because a backtracked stage is added to
-    # completed_stages and therefore skipped on the return journey).
+    # max_backtrack_attempts_per_edge=2 means experimentation may backtrack to
+    # literature_review twice before the per-edge limit triggers escalation.
+    # With _next_in_sequence now advancing purely by position (no completed_stages
+    # filter), experimentation re-runs after each backtrack and the counter
+    # actually reaches 2, at which point the handler escalates and force-advances
+    # to peer_review.
     graph = PipelineBuilder(
         registry=registry,
-        preferences=SessionPreferences(max_backtrack_attempts_per_edge=0),
+        preferences=SessionPreferences(max_backtrack_attempts_per_edge=2),
     ).build(stage_sequence=seq)
 
     state = create_initial_state(

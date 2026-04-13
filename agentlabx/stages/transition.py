@@ -37,8 +37,8 @@ class TransitionHandler:
        → backtrack_limit_exceeded (handler owns fallback, returns concrete next_stage)
     4. stage iteration limit reached + next_stage hint → forced_advance
     5. next_stage hint within stage limit → follow hint (backtrack or advance)
-    6. no hint → advance to next uncompleted stage in default_sequence
-    7. all stages complete → complete
+    6. no hint → advance to next stage in default_sequence
+    7. end of sequence → complete
     """
 
     def __init__(
@@ -161,7 +161,7 @@ class TransitionHandler:
                 needs_approval=needs_approval,
             )
 
-        # ── Priority 6: no hint — advance to next uncompleted stage ──────────
+        # ── Priority 6: no hint — advance to next stage in sequence ─────────
         next_in_seq = self._next_in_sequence(current_stage, default_sequence, completed_stages)
         if next_in_seq is not None:
             needs_approval = self._check_approval(
@@ -176,11 +176,11 @@ class TransitionHandler:
                 needs_approval=needs_approval,
             )
 
-        # ── Priority 7: all done ──────────────────────────────────────────────
+        # ── Priority 7: reached end of sequence ──────────────────────────────
         return TransitionDecision(
             next_stage=None,
             action="complete",
-            reason="All stages in default_sequence are complete",
+            reason="Reached end of default_sequence",
             needs_approval=False,
         )
 
@@ -204,18 +204,23 @@ class TransitionHandler:
         self,
         current: str,
         sequence: list[str],
-        completed: list[str],
+        completed: list[str],  # kept for signature stability (still used by callers) but unused here
     ) -> str | None:
-        """Return the first stage after current that isn't completed, or None."""
+        """Return the stage immediately after `current` in the sequence, or None if at end.
+
+        Does NOT filter by completed_stages. Re-running a stage is expected after
+        a backtrack (or after a human override routes back into an earlier stage)
+        — the stage itself decides whether it actually needs to redo work (via
+        its bypass/plan logic in Plan 7B). completed_stages remains a history
+        ledger for observability, not a routing filter.
+        """
         try:
             start = sequence.index(current) + 1
         except ValueError:
-            start = 0
-
-        for stage in sequence[start:]:
-            if stage not in completed:
-                return stage
-        return None
+            return None
+        if start >= len(sequence):
+            return None
+        return sequence[start]
 
     def _check_approval(self, *, action: str, stage: str, target: str) -> bool:
         """Zone-aware HITL approval (spec §3.3.3).
