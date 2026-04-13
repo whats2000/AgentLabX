@@ -10,7 +10,7 @@ export interface UseWebSocketOptions {
 
 /**
  * Acquires a shared SessionWebSocket from the registry. For every event:
- *   1. Appends to the wsStore ring buffer (so AgentActivityFeed can render it)
+ *   1. Appends to the wsStore ring buffer (infrastructure for future debug tooling)
  *   2. Invalidates relevant TanStack caches on state-changing events (Fix H)
  *   3. Calls the caller's onEvent handler (via ref — no dependency churn)
  *

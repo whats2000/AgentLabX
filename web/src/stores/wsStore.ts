@@ -6,8 +6,9 @@ import type { PipelineEvent } from "../types/events";
  *
  * The buffer is client-only state — no server authority, so it does not
  * belong in TanStack Query. Newer events are appended; once the buffer
- * exceeds MAX_EVENTS the oldest entries drop. AgentActivityFeed reads
- * from this store via `getEvents(sessionId)`.
+ * exceeds MAX_EVENTS the oldest entries drop. Kept as infrastructure for
+ * future debugging tooling; no component currently reads from it directly
+ * (ChatView reads canonical turns from REST via useAgentHistory).
  */
 export const MAX_EVENTS = 500;
 
