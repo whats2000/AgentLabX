@@ -321,9 +321,9 @@ class PipelineState(TypedDict):
     errors: list[StageError]
 
     # Agent observability (Plan 6)
-    agent_memory: dict[str, AgentMemoryRecord]   # per-agent scratchpad
-    experiment_log: list[ExperimentAttempt]      # cross-agent failure memory
-    pi_decisions: list[dict]                     # PIDecision.model_dump() list
+    agent_memory: dict[str, AgentMemoryRecord]   # per-agent scratchpad. See §3.5.1
+    experiment_log: list[ExperimentAttempt]      # cross-agent failure memory. See §3.5.1
+    pi_decisions: list[dict]                     # PIDecision.model_dump() list. See §3.5.1
 ```
 
 Stage outputs are **versioned** — when a stage runs multiple times, results append to a list. The latest entry is the "active" version used by downstream stages. Previous versions remain for comparison.
@@ -370,6 +370,15 @@ class ExperimentAttempt(TypedDict):
     failure_reason: str | None
     learnings: list[str]
     linked_hypothesis_id: str | None
+    ts: datetime
+
+class PIDecision(TypedDict):
+    decision_id: str
+    action: str                  # "advance" | "backtrack" | "iterate" | "accept_negative" | "pivot" | "complete" | "flag_human"
+    confidence: float
+    next_stage: str | None
+    reasoning: str
+    used_fallback: bool           # true when confidence < threshold and default sequence applied
     ts: datetime
 ```
 
@@ -649,7 +658,7 @@ Content fields are truncated at 8KB on the wire; full payloads retrievable from 
   - The center splits vertically. Top: an always-visible `GraphTopology` canvas showing the live pipeline with rich nodes (status dot, elapsed time, iteration count, current agent, per-stage control dropdown, per-stage cost). Bottom: tabs — Conversations (default), Artifacts, Experiments, Cost.
   - The left sider carries only global controls: Pause, Resume, Cancel. Per-stage control levels live on the graph nodes, not in a parallel list.
   - The right sider is the Agent Monitor. For the currently-focused agent it shows memory scope (read/summarize/write keys), assembled-context preview (what this agent saw on its last turn), conversation history (paginated), and scratchpad (working_memory + notes). Focus follows the latest `agent_turn_started` event unless pinned. Below the monitor: Hypotheses (unchanged), PI decision log (last N), compact Cost tracker stack below the Agent Monitor.
-  - Bottom: human feedback input for sending notes to agents or redirecting
+  - Page footer: sticky human feedback input for sending notes to agents or redirecting
 - **Plugin Browser** — available stages, tools, agents with descriptions and config schemas
 - **Settings** — global config: default LLM, API keys, execution backend, storage backend
 
