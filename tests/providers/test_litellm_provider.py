@@ -93,13 +93,13 @@ class TestLiteLLMProvider:
         assert call_count["n"] == 2
 
     @pytest.mark.skipif(
-        not os.getenv("ANTHROPIC_API_KEY"),
-        reason="ANTHROPIC_API_KEY not set",
+        not os.getenv("GEMINI_API_KEY"),
+        reason="GEMINI_API_KEY not set",
     )
     async def test_real_api_call(self):
         provider = LiteLLMProvider()
         response = await provider.query(
-            model="anthropic/claude-haiku-4-5-20251001",
+            model="gemini/gemini-3.1-flash-lite-preview",
             prompt="Say 'hello' in one word.",
             temperature=0.0,
         )
