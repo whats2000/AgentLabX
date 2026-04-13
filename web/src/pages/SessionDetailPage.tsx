@@ -15,6 +15,7 @@ import { HypothesisTracker } from "../components/session/HypothesisTracker";
 import { PIDecisionLog } from "../components/session/PIDecisionLog";
 import { CheckpointModal } from "../components/session/CheckpointModal";
 import { FeedbackInput } from "../components/session/FeedbackInput";
+import { CrossStageRequestsPanel } from "../components/session/CrossStageRequestsPanel";
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -162,6 +163,9 @@ export default function SessionDetailPage() {
             <div style={{ borderTop: "1px solid #efefef" }} />
             <SectionHeader>Hypotheses</SectionHeader>
             <HypothesisTracker sessionId={sessionId} />
+            <div style={{ borderTop: "1px solid #efefef" }} />
+            <SectionHeader>Cross-stage requests</SectionHeader>
+            <CrossStageRequestsPanel sessionId={sessionId} />
             <div style={{ borderTop: "1px solid #efefef" }} />
             <SectionHeader>PI decisions</SectionHeader>
             <div style={{ padding: "0 12px 12px" }}>

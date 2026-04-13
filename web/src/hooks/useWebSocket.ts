@@ -8,10 +8,28 @@ export interface UseWebSocketOptions {
   onEvent?: (event: PipelineEvent) => void;
 }
 
-// Map turn_id → agent name, populated on agent_turn_started, consumed by
-// subsequent llm_*/tool_* events that don't carry agent in their payload.
-// Module-scope is fine: turn_id values are UUIDs so no cross-session collisions.
-const turnIdToAgent = new Map<string, string>();
+// session_id → (turn_id → agent name).  Keyed by session so per-session maps
+// can be wiped independently without touching other sessions' state.
+const turnIdToAgent = new Map<string, Map<string, string>>();
+
+function getSessionTurnMap(sid: string): Map<string, string> {
+  let m = turnIdToAgent.get(sid);
+  if (!m) {
+    m = new Map();
+    turnIdToAgent.set(sid, m);
+  }
+  return m;
+}
+
+/** INTERNAL: clear the turn→agent map for a session. Also exported for tests. */
+export function _clearTurnMapForSession(sid: string): void {
+  turnIdToAgent.delete(sid);
+}
+
+/** Test-only: wipe all per-session turn maps. Called from vitest setup. */
+export function _clearAllTurnMaps(): void {
+  turnIdToAgent.clear();
+}
 
 type EventData = Record<string, unknown>;
 type InvalidatorFn = (sid: string, data: EventData) => Array<readonly unknown[]>;
@@ -20,7 +38,7 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
   agent_turn_started: (sid, d) => {
     const agent = d.agent as string | undefined;
     const turnId = d.turn_id as string | undefined;
-    if (agent && turnId) turnIdToAgent.set(turnId, agent);
+    if (agent && turnId) getSessionTurnMap(sid).set(turnId, agent);
     return agent
       ? [["agent-history", sid, agent], ["agents", sid]]
       : [["agents", sid]];
@@ -28,7 +46,7 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
   agent_turn_completed: (sid, d) => {
     const agent = d.agent as string | undefined;
     const turnId = d.turn_id as string | undefined;
-    if (turnId) turnIdToAgent.delete(turnId); // cleanup to keep memory bounded
+    if (turnId) turnIdToAgent.get(sid)?.delete(turnId);
     return agent
       ? [
           ["agent-history", sid, agent],
@@ -41,25 +59,25 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
   agent_llm_request: (sid, d) => {
     const agent =
       (d.agent as string | undefined) ??
-      turnIdToAgent.get(d.turn_id as string);
+      turnIdToAgent.get(sid)?.get(d.turn_id as string);
     return agent ? [["agent-history", sid, agent]] : [];
   },
   agent_llm_response: (sid, d) => {
     const agent =
       (d.agent as string | undefined) ??
-      turnIdToAgent.get(d.turn_id as string);
+      turnIdToAgent.get(sid)?.get(d.turn_id as string);
     return agent ? [["agent-history", sid, agent]] : [];
   },
   agent_tool_call: (sid, d) => {
     const agent =
       (d.agent as string | undefined) ??
-      turnIdToAgent.get(d.turn_id as string);
+      turnIdToAgent.get(sid)?.get(d.turn_id as string);
     return agent ? [["agent-history", sid, agent]] : [];
   },
   agent_tool_result: (sid, d) => {
     const agent =
       (d.agent as string | undefined) ??
-      turnIdToAgent.get(d.turn_id as string);
+      turnIdToAgent.get(sid)?.get(d.turn_id as string);
     return agent ? [["agent-history", sid, agent]] : [];
   },
   agent_dialogue: (sid, d) => {
@@ -133,6 +151,7 @@ export function useWebSocket(
     });
     return () => {
       unsubscribe();
+      _clearTurnMapForSession(sessionId);
       wsRegistry.release(sessionId);
     };
   }, [sessionId, appendEvent, queryClient]);

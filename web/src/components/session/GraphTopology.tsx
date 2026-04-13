@@ -44,10 +44,9 @@ async function layoutWithElk(topo: Topo) {
 
 interface Props {
   sessionId: string;
-  onNodeOpen?: (nodeId: string) => void;
 }
 
-export function GraphTopology({ sessionId, onNodeOpen: _onNodeOpen }: Props) {
+export function GraphTopology({ sessionId }: Props) {
   const { data: topo, isLoading } = useGraph(sessionId);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<StageNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);

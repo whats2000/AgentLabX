@@ -19,7 +19,7 @@ vi.mock("../../src/api/client", () => ({
     listAgents: vi.fn().mockResolvedValue([]),
     getPIHistory: vi.fn().mockResolvedValue([]),
     getExperiments: vi.fn().mockResolvedValue({ runs: [], log: [] }),
-    getRequests: vi.fn().mockResolvedValue([]),
+    getRequests: vi.fn().mockResolvedValue({ pending: [], completed: [] }),
     getAgentContext: vi.fn().mockResolvedValue(null),
     getAgentMemory: vi.fn().mockResolvedValue(null),
     getAgentHistory: vi.fn().mockResolvedValue([]),

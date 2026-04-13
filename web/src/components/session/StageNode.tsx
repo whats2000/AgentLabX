@@ -12,16 +12,14 @@ const STATUS_COLOR: Record<GraphNode["status"], string> = {
 
 interface Props {
   node: GraphNode;
-  onOpen?: (id: string) => void;
 }
 
-export function StageNode({ node, onOpen }: Props) {
+export function StageNode({ node }: Props) {
   const opacity = node.skipped ? 0.4 : 1.0;
   return (
     <div
       data-testid={`stage-node-${node.id}`}
       data-status={node.status}
-      onClick={() => onOpen?.(node.id)}
       style={{
         padding: 10,
         borderRadius: 8,
@@ -29,7 +27,6 @@ export function StageNode({ node, onOpen }: Props) {
         border: "1px solid #e0e0e0",
         minWidth: 180,
         opacity,
-        cursor: onOpen ? "pointer" : "default",
       }}
     >
       <div style={{ fontSize: 12, fontWeight: 600 }}>{node.label}</div>
