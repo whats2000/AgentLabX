@@ -44,6 +44,10 @@ class ExperimentResult(BaseModel):
     reproducibility: ReproducibilityRecord
     hypothesis_id: str | None = None
     code_path: str | None = None
+    exit_code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    execution_time: float | None = None
 
 
 class CrossStageRequest(BaseModel):

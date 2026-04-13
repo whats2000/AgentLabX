@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -68,8 +69,12 @@ class ExperimentationStage(BaseStage):
                 if not exec_result.success:
                     continue
 
-                stdout = exec_result.data.get("stdout", "") if exec_result.data else ""
-                metrics = _extract_metrics(stdout) or parsed.get("metrics", {})
+                exec_stdout = exec_result.data.get("stdout", "") if exec_result.data else ""
+                exec_stderr = exec_result.data.get("stderr", "") if exec_result.data else ""
+                exec_exit_code = exec_result.data.get("exit_code", 0) if exec_result.data else 0
+                exec_time = exec_result.data.get("execution_time") if exec_result.data else None
+
+                metrics = _extract_metrics(exec_stdout) or parsed.get("metrics", {})
 
                 # Cast metrics values to float defensively
                 clean_metrics: dict[str, float] = {}
@@ -103,8 +108,24 @@ class ExperimentationStage(BaseStage):
                     metrics=clean_metrics,
                     description=parsed.get("description", f"{tier} experiment"),
                     reproducibility=repro_record,
+                    exit_code=exec_exit_code,
+                    stdout=exec_stdout,
+                    stderr=exec_stderr,
+                    execution_time=exec_time,
                 )
                 results.append(result)
+
+                outcome, reason = _classify_outcome(result)
+                attempt = {
+                    "attempt_id": uuid.uuid4().hex,
+                    "approach_summary": (result.description or "")[:500],
+                    "outcome": outcome,
+                    "failure_reason": reason,
+                    "learnings": [],
+                    "linked_hypothesis_id": result.hypothesis_id,
+                    "ts": datetime.now(UTC).isoformat(),
+                }
+                state.setdefault("experiment_log", []).append(attempt)
 
             # Skip ablation if main didn't show improvement
             if tier == "main" and not _has_positive_improvement(results):
@@ -212,3 +233,12 @@ def _has_positive_improvement(results: list) -> bool:
             if mains[-1].metrics[metric] > baselines[-1].metrics[metric]:
                 return True
     return False
+
+
+def _classify_outcome(er: ExperimentResult) -> tuple[str, str | None]:
+    """Classify an ExperimentResult into an outcome label + optional reason."""
+    if er.exit_code not in (0, None):
+        return "failure", f"non-zero exit {er.exit_code}"
+    if not er.metrics:
+        return "inconclusive", "no metrics produced"
+    return "success", None
