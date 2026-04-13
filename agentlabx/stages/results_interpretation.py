@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import re
 
+from agentlabx.core.event_types import EventTypes
 from agentlabx.core.events import Event
 from agentlabx.core.state import EvidenceLink, Hypothesis, PipelineState
-from agentlabx.server.events import EventTypes
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 

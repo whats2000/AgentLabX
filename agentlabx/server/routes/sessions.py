@@ -275,15 +275,10 @@ async def get_graph(session_id: str, request: Request):
     executor = context.executor
     running = executor.get_running(session_id) if executor is not None else None
     if running is None:
-        # Session not started — return topology with empty state (all pending)
-        # Build a one-shot graph to extract topology without a checkpointer.
-        from agentlabx.core.config import PipelineConfig
-        from agentlabx.core.pipeline import PipelineBuilder
-
-        builder = PipelineBuilder(registry=context.registry)
-        default_sequence = PipelineConfig().default_sequence
-        temp_graph = builder.build(stage_sequence=default_sequence)
-        return build_topology(temp_graph, state)
+        # Session not started — use the pre-compiled default graph cached at
+        # app startup; avoids rebuilding PipelineBuilder + compiling LangGraph
+        # on every poll from the UI.
+        return build_topology(context.default_graph, state)
 
     return build_topology(running.graph, state)
 

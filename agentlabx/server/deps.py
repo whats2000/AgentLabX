@@ -53,6 +53,7 @@ class AppContext:
         self.storage = storage
         self.llm_provider = llm_provider
         self.executor: Any = None  # Set in Task 6 (PipelineExecutor)
+        self.default_graph: Any = None  # Cached at startup; used by /graph for unstarted sessions
 
 
 def build_default_registry() -> PluginRegistry:
@@ -145,5 +146,14 @@ async def build_app_context(
     )
     await executor.initialize()
     context.executor = executor
+
+    # Cache the default pipeline graph topology once at startup so that
+    # GET /api/sessions/{id}/graph on unstarted sessions doesn't rebuild
+    # a fresh PipelineBuilder + compile a LangGraph on every request.
+    from agentlabx.core.config import PipelineConfig
+    from agentlabx.core.pipeline import PipelineBuilder
+
+    _builder = PipelineBuilder(registry=registry)
+    context.default_graph = _builder.build(stage_sequence=PipelineConfig().default_sequence)
 
     return context

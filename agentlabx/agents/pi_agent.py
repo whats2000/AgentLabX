@@ -12,11 +12,11 @@ from pydantic import BaseModel
 
 from agentlabx.agents.config_loader import AgentConfig
 from agentlabx.agents.context import ContextAssembler
+from agentlabx.core.event_types import EventTypes
 from agentlabx.core.events import Event, EventBus
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import PipelineState
 from agentlabx.providers.llm.base import BaseLLMProvider
-from agentlabx.server.events import EventTypes
 from agentlabx.stages.transition import TransitionHandler
 
 
@@ -52,11 +52,29 @@ PI_DECISION_PROMPT = (
 
 
 class PIAgent:
-    """PI agent — wraps TransitionHandler with LLM judgment + confidence scoring.
+    """LLM-powered research director that routes stage transitions.
 
-    When llm_provider is None, falls back to rule-based decisions (Plan 2 behavior).
-    When llm_provider is present, the PI agent evaluates the rule-based
-    suggestion and may override it.
+    Wraps ``TransitionHandler`` with LLM judgment and confidence scoring.
+    When ``llm_provider`` is ``None``, falls back to rule-based decisions
+    (Plan 2 behavior). When present, the PI evaluates the rule-based suggestion
+    and may override it.
+
+    **Observability contract (Plan 6):** PI is NOT a turn-grained agent.
+    Its LLM calls do NOT appear in
+    ``/api/sessions/{id}/agents/pi_agent/history`` because ``decide()`` does
+    not push a ``TurnContext``; ``TracedLLMProvider`` therefore passes through
+    without writing ``agent_turns`` rows. PI decisions are observable via a
+    dedicated channel:
+
+    - REST: ``GET /api/sessions/{id}/pi/history`` → ``state["pi_decisions"]``
+    - WebSocket: ``pi_decision`` event (emitted from ``_finalize``)
+
+    This is intentional: PI decisions have their own structured shape
+    (action, confidence, used_fallback, next_stage, reasoning) that does not
+    fit the generic llm_request/response/turn envelope. If you need to see the
+    raw prompt/response the PI saw, that information is not captured today — a
+    future plan can opt PI into turn-grained tracing by wrapping ``decide()``
+    in ``push_turn(TurnContext(agent="pi_agent", stage="__transition__", ...))``.
     """
 
     def __init__(

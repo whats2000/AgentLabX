@@ -175,6 +175,19 @@ ContextVar avoids threading `turn_id` through every function signature and is as
 
 Every emitted event also writes an `agent_turns` row. WS stream and REST history endpoint read the same table — single source of truth.
 
+### 3.2.1 PI agent observability split (Plan 6B follow-up)
+
+``PIAgent.decide()`` calls its ``llm_provider.query(...)`` directly without
+pushing a ``TurnContext``. As a result ``TracedLLMProvider`` sees
+``current_turn() == None`` and passes through without writing ``agent_turns``
+rows. ``/api/sessions/{id}/agents/pi_agent/history`` will therefore return
+empty results — this is intentional. PI decisions have their own structured
+shape (action, confidence, used_fallback, next_stage, reasoning) and are
+observable via ``GET /api/sessions/{id}/pi/history`` (reads
+``state["pi_decisions"]``) and the ``pi_decision`` WebSocket event (emitted
+from ``PIAgent._finalize``). The authoritative documentation lives in the
+``PIAgent`` class docstring in ``agentlabx/agents/pi_agent.py``.
+
 ### 3.3 Endpoints
 
 Thin wrappers — the data is already in state or `agent_turns`:

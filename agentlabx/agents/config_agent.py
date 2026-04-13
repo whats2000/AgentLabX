@@ -10,9 +10,9 @@ from typing import Any
 
 from agentlabx.agents.base import AgentContext, BaseAgent, MemoryScope
 from agentlabx.agents.config_loader import AgentConfig
+from agentlabx.core.event_types import EventTypes
 from agentlabx.core.events import Event
 from agentlabx.core.turn_context import TurnContext, push_turn
-from agentlabx.server.events import EventTypes
 
 
 class ConfigAgent(BaseAgent):

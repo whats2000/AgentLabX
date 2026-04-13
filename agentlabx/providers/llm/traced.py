@@ -5,11 +5,11 @@ when no turn is active (e.g., during startup/tests without pipeline context).
 
 from __future__ import annotations
 
+from agentlabx.core.event_types import EventTypes
 from agentlabx.core.events import Event
 from agentlabx.core.turn_context import current_turn
 from agentlabx.providers.llm.base import BaseLLMProvider, LLMResponse
 from agentlabx.providers.storage.base import AgentTurnRecord
-from agentlabx.server.events import EventTypes
 
 
 class TracedLLMProvider(BaseLLMProvider):
