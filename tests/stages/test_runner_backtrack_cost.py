@@ -1,4 +1,6 @@
 """StageRunner accumulates backtrack cost + plumbs feedback into state."""
+from __future__ import annotations
+
 import pytest
 
 from agentlabx.core.state import CostTracker, create_initial_state
@@ -11,7 +13,6 @@ class _FakeStage(BaseStage):
     description = "fake"
     required_agents: list[str] = []
     required_tools: list[str] = []
-    zone = "discovery"
 
     def __init__(self, cost_delta: float, status: str, feedback: str | None):
         self._cost_delta = cost_delta

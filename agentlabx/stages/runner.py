@@ -46,6 +46,14 @@ class StageRunner:
                 )
             )
 
+        # Snapshot cost_tracker.total_cost for backtrack-cost accounting
+        # Must be taken before on_enter so any cost incurred during on_enter
+        # is attributed to the stage run, not hidden in the baseline.
+        cost_tracker_at_entry = state.get("cost_tracker")
+        cost_at_entry = (
+            float(cost_tracker_at_entry.total_cost) if cost_tracker_at_entry else 0.0
+        )
+
         # Call on_enter (may modify state — but we pass original state)
         entered_state = self.stage.on_enter(state)
 
@@ -53,12 +61,6 @@ class StageRunner:
         paused_event = self.context.paused_event
         if paused_event is not None:
             await paused_event.wait()
-
-        # Snapshot cost_tracker.total_cost for backtrack-cost accounting
-        cost_tracker_at_entry = state.get("cost_tracker")
-        cost_at_entry = (
-            float(cost_tracker_at_entry.total_cost) if cost_tracker_at_entry else 0.0
-        )
 
         try:
             result = await self.stage.run(entered_state, self.context)
@@ -84,8 +86,8 @@ class StageRunner:
 
                 # Cost attribution: the cost of this run led to the backtrack
                 current_total = (
-                    float(state["cost_tracker"].total_cost)
-                    if state.get("cost_tracker") else 0.0
+                    float(cost_tracker_at_entry.total_cost)
+                    if cost_tracker_at_entry else 0.0
                 )
                 delta = max(0.0, current_total - cost_at_entry)
                 prior = float(state.get("backtrack_cost_spent", 0.0))
