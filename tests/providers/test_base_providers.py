@@ -6,7 +6,7 @@ from typing import Any
 from agentlabx.providers.code_agent.base import BaseCodeAgent, CodeContext, CodeResult
 from agentlabx.providers.execution.base import BaseExecutionBackend, ExecutionResult
 from agentlabx.providers.llm.base import BaseLLMProvider, LLMResponse
-from agentlabx.providers.storage.base import BaseStorageBackend
+from agentlabx.providers.storage.base import AgentTurnRecord, BaseStorageBackend
 
 
 class DummyLLMProvider(BaseLLMProvider):
@@ -74,6 +74,12 @@ class DummyStorageBackend(BaseStorageBackend):
         prefix = f"{session_id}/"
         for key in [k for k in self._store if k.startswith(prefix)]:
             del self._store[key]
+
+    async def append_agent_turn(self, record: AgentTurnRecord) -> int:
+        raise NotImplementedError("Implemented in Task A4")
+
+    async def list_agent_turns(self, session_id, *, agent=None, stage=None, after_ts=None, limit=200):
+        raise NotImplementedError("Implemented in Task A4")
 
 
 class TestBaseStorageBackend:

@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from agentlabx.providers.storage.base import BaseStorageBackend
+from agentlabx.providers.storage.base import AgentTurnRecord, BaseStorageBackend
 from agentlabx.providers.storage.models import (
     ArtifactRecord,
     Base,
@@ -143,3 +143,17 @@ class SQLiteBackend(BaseStorageBackend):
         session_dir = self.artifacts_path / session_id
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
+
+    async def append_agent_turn(self, record: AgentTurnRecord) -> int:
+        raise NotImplementedError("Implemented in Task A4")
+
+    async def list_agent_turns(
+        self,
+        session_id: str,
+        *,
+        agent: str | None = None,
+        stage: str | None = None,
+        after_ts=None,
+        limit: int = 200,
+    ) -> list[AgentTurnRecord]:
+        raise NotImplementedError("Implemented in Task A4")
