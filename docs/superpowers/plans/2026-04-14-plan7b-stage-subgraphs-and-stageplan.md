@@ -20,6 +20,55 @@
 - Frontend subgraph drawer (Plan 7D)
 - Lab_meeting's full multi-agent discussion body (Plan 7C or a dedicated later plan)
 
+## Design decisions pinned before implementation
+
+Four seams the review flagged. Resolved in this plan text so Task 4 doesn't pause mid-implementation.
+
+**1. Subgraph checkpointer — NO child checkpointer; subgraph runs atomically per parent step.**
+
+Each stage's compiled subgraph is built WITHOUT a checkpointer. The parent pipeline graph's checkpointer (injected by `PipelineBuilder.build`) persists at the parent's node boundaries — the stage's entire `enter → stage_plan → gate → work → evaluate → decide` chain is a single parent-step from the checkpointer's perspective. Implication:
+- On pause mid-stage, resume restarts the stage's subgraph from `enter`. Stages must be idempotent at this granularity (they already are — `StageResult` lists are append-only).
+- No `thread_id` juggling at the subgraph layer.
+- `StagePlan` persists via the state key `stage_plans[stage_name]` written at the end of the `stage_plan` node, which lands in the parent checkpoint along with every other state field when the stage's subgraph completes.
+
+If a future plan needs intra-stage replay (e.g., for debugging a specific stage turn without re-running prior turns), that's a targeted subgraph-checkpointer addition, not Plan 7B.
+
+**2. `stage_plans` reducer semantics — in-place mutation invariant, matches `agent_memory` (Plan 6A).**
+
+Declared as plain `dict[str, list[StagePlan]]` with no `Annotated[..., reducer]` wrapper. LangGraph's default behaviour for unannotated dicts is whole-value overwrite, **not** dict merge. This is safe only because:
+- Stages run sequentially (enforced by `PipelineBuilder`'s linear wiring).
+- Only the current stage's subgraph writes to `stage_plans[name]`.
+- The subgraph's `stage_plan` node mutates `state["stage_plans"]` in place via `state["stage_plans"] = {**existing, name: history + [new_plan]}`.
+
+**Do NOT refactor** to return a partial `{"stage_plans": {...}}` update from a stage — it will silently wipe other stages' entries. If Plan 7B²/7C introduces parallel stage execution or event-driven partial returns, switch to `Annotated[dict, _merge_stage_plans]` with a proper dict-merge reducer FIRST. Same invariant as `agent_memory` in `agentlabx/stages/base.py::sync_agent_memory_to_state` — keep the docstring there in sync with this one.
+
+**3. Explicit hook signatures (used throughout Task 3/4/6):**
+
+```python
+# On BaseStage:
+def build_plan(self, state: PipelineState, *, feedback: str | None) -> StagePlan
+async def execute_plan(self, state: PipelineState, plan: StagePlan, context: StageContext) -> StageExecution
+def evaluate(self, state: PipelineState, *, plan: StagePlan, execution: StageExecution) -> StageEvaluation
+def decide(self, state: PipelineState, *, plan: StagePlan, execution: StageExecution, evaluation: StageEvaluation) -> StageResult
+```
+
+Defaults in Task 3:
+- `build_plan` → single `todo` item `"Run {self.name} stage (legacy .run() path)"`.
+- `execute_plan` → awaits `self.run(state, context)` (legacy path), wraps the returned `StageResult` into a `StageExecution` (same fields minus `status` enum widened). One-to-one conversion, no adapter loss.
+- `evaluate` → returns empty `StageEvaluation` (no overrides, no dead-end).
+- `decide` → composes `StageResult` from `execution` + `evaluation.override_*` fields (override wins if set, else passthrough).
+
+`StageExecution` and `StageEvaluation` types are introduced in Task 3 alongside the hooks.
+
+**4. `invocable_only` stages get their own entry in the graph topology `subgraphs` array.**
+
+Top-level `graph_mapper.build_topology` returns `{nodes, edges, cursor, subgraphs}`. Plan 7A left `subgraphs: []` with a `# TODO(7B)` comment. Plan 7B T2 populates it:
+- Each registered stage whose class has `invocable_only=True` gets a subgraph entry: `{"id": "lab_meeting", "kind": "invocable_only", "label": "Lab Meeting", "nodes": [], "edges": []}`.
+- Keeps `lab_meeting` off the production-line graph (per §5.5) while letting the frontend discover it for the recursive subgraph drawer (per §8.2).
+- The `nodes`/`edges` arrays stay empty until Plan 7D; the frontend can still render a placeholder drill-in node.
+
+Normal stage subgraphs (literature_review's `enter → ... → decide`) are NOT added to the topology's `subgraphs` array in 7B — the live-cursor graph drawer (§8.2) renders those from the compiled stage's `get_graph()` at runtime, not from a pre-serialised topology blob. Only invocable-only stages need topology-time discoverability because they have no top-level node to hang off.
+
 ---
 
 ## File structure
@@ -129,6 +178,17 @@ Then add a field to `PipelineState` (just below the Plan 7A backtrack keys):
 
 ```python
     # Stage plans (Plan 7B) — versioned list per stage, last element is latest.
+    # INVARIANT: this field is a plain dict (NOT Annotated with a reducer).
+    # LangGraph's default behaviour is whole-value overwrite, NOT dict merge.
+    # Safe because (1) stages run sequentially, (2) only the current stage's
+    # subgraph writes to stage_plans[name]. The stage_plan node in the
+    # subgraph mutates via state["stage_plans"] = {**existing, name: hist+new}.
+    #
+    # DO NOT return {"stage_plans": {...}} as a partial update from a stage —
+    # that will silently wipe other stages' entries. Same invariant as
+    # agent_memory (see agentlabx/stages/base.py::sync_agent_memory_to_state).
+    # Plan 7B²/7C introducing parallel stage execution or event-driven partial
+    # returns MUST switch to Annotated[dict, _merge_stage_plans] first.
     stage_plans: dict[str, list[StagePlan]]
 ```
 
@@ -152,12 +212,13 @@ git commit -m "feat(state): StagePlan + StagePlanItem types + stage_plans state 
 
 ---
 
-## Task 2: `invocable_only` flag on `BaseStage` + `LabMeeting.invocable_only = True` + `PipelineBuilder` exclusion
+## Task 2: `invocable_only` flag on `BaseStage` + `LabMeeting.invocable_only = True` + `PipelineBuilder` exclusion + graph_mapper topology surfacing
 
 **Files:**
 - Modify: `agentlabx/stages/base.py`
 - Modify: `agentlabx/stages/lab_meeting.py`
 - Modify: `agentlabx/core/pipeline.py`
+- Modify: `agentlabx/core/graph_mapper.py` — surface invocable-only stages via the topology's `subgraphs` array so the frontend can discover them even though they're not on the production-line graph
 - Create: `tests/stages/test_invocable_only.py`
 
 - [ ] **Step 1: Write failing test**
@@ -288,19 +349,82 @@ Note: if `effective_sequence` is empty (e.g., all stages invocable_only — absu
             raise ValueError("stage_sequence has no runnable (non-invocable-only) stages")
 ```
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 5: Surface invocable-only stages in `graph_mapper` topology**
+
+Frontend needs to discover invocable-only stages for the recursive subgraph drawer (§8.2) even though they're off the production-line graph. Update `agentlabx/core/graph_mapper.py::build_topology` to populate the `subgraphs` list with entries for invocable-only registered stages.
+
+Replace the `# TODO(7B)` block (added during Plan 7A polish) with:
+
+```python
+    # Invocable-only stages (e.g., lab_meeting, §5.5) are registered but not
+    # wired into the top-level graph. Surface them here so the frontend can
+    # discover them for the recursive subgraph drawer (spec §8.2). The
+    # nodes/edges arrays stay empty in Plan 7B; Plan 7D renders the
+    # subgraph internals from the compiled stage's get_graph() at runtime.
+    subgraphs: list[dict[str, object]] = []
+    if registry is not None:
+        try:
+            from agentlabx.core.registry import PluginType
+            for name, cls in registry.list(PluginType.STAGE):
+                if getattr(cls, "invocable_only", False):
+                    subgraphs.append({
+                        "id": name,
+                        "kind": "invocable_only",
+                        "label": getattr(cls, "description", name),
+                        "nodes": [],
+                        "edges": [],
+                    })
+        except Exception:
+            # Registry-less path (tests) — subgraphs stays empty.
+            pass
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "cursor": cursor,
+        "subgraphs": subgraphs,
+    }
+```
+
+(The exact registry enumeration method may differ — check `PluginRegistry` for the right API. If it's `registry.plugins[PluginType.STAGE].items()` or similar, adapt.)
+
+Add a test to `tests/stages/test_invocable_only.py`:
+
+```python
+def test_graph_mapper_surfaces_invocable_only_stages(registry):
+    """Invocable-only stages appear in topology.subgraphs, not in topology.nodes."""
+    from agentlabx.core.graph_mapper import build_topology
+    from agentlabx.core.pipeline import PipelineBuilder
+
+    builder = PipelineBuilder(
+        registry=registry, preferences=SessionPreferences()
+    )
+    compiled = builder.build(stage_sequence=["literature_review", "plan_formulation"])
+    state = {}  # build_topology doesn't need a full state here
+
+    topology = build_topology(compiled, state, registry=registry)
+    node_ids = {n["id"] for n in topology["nodes"]}
+    subgraph_ids = {s["id"] for s in topology["subgraphs"]}
+
+    assert "lab_meeting" not in node_ids
+    assert "lab_meeting" in subgraph_ids
+    lm = next(s for s in topology["subgraphs"] if s["id"] == "lab_meeting")
+    assert lm["kind"] == "invocable_only"
+```
+
+- [ ] **Step 6: Run tests**
 
 Run: `uv run pytest tests/stages/test_invocable_only.py -v`
-Expected: 4 PASS.
+Expected: all 5 PASS (4 existing + 1 new graph_mapper test).
 
 Also run regression: `uv run pytest tests/ -x -q`
 Expected: all pass. Pre-existing tests that enumerated all stages in `default_sequence` via registry → actual graph nodes may break if they enumerated `lab_meeting`. Update per pre-production principle.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add agentlabx/stages/base.py agentlabx/stages/lab_meeting.py agentlabx/core/pipeline.py tests/stages/test_invocable_only.py
-git commit -m "feat(pipeline): invocable_only flag excludes lab_meeting from top-level graph (Plan 7B T2)"
+git add agentlabx/stages/base.py agentlabx/stages/lab_meeting.py agentlabx/core/pipeline.py agentlabx/core/graph_mapper.py tests/stages/test_invocable_only.py
+git commit -m "feat(pipeline): invocable_only flag excludes lab_meeting + surfaces in topology subgraphs (Plan 7B T2)"
 ```
 
 ---
