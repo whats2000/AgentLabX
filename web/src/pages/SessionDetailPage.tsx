@@ -108,84 +108,98 @@ export default function SessionDetailPage() {
         </Card>
       </div>
 
-      {/* Main 3-column layout */}
-      <Card
-        variant="borderless"
-        styles={{ body: { padding: 0 } }}
-        style={{ flex: 1, display: "flex", width: "100%" }}
+      {/* Main 3-column layout — Layout is its own row-flex; no Card wrapper.
+          Wrapping AntD Layout in a flex Card collapses .ant-card-body to its
+          children's intrinsic min-width (squashing Content to a tube). */}
+      <Layout
+        style={{
+          background: "transparent",
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+          border: "1px solid #efefef",
+          borderRadius: 8,
+          overflow: "hidden",
+        }}
       >
-        <Layout style={{ background: "transparent", flex: 1, width: "100%" }}>
-          <Sider
-            width={200}
-            theme="light"
-            style={{ background: "#ffffff", borderRight: "1px solid #efefef" }}
-          >
-            <SectionHeader>Controls</SectionHeader>
-            <ControlBar sessionId={sessionId} />
-          </Sider>
+        <Sider
+          width={200}
+          theme="light"
+          style={{
+            background: "#ffffff",
+            borderRight: "1px solid #efefef",
+            overflowY: "auto",
+          }}
+        >
+          <SectionHeader>Controls</SectionHeader>
+          <ControlBar sessionId={sessionId} />
+        </Sider>
 
-          <Content
-            style={{
-              background: "#ffffff",
-              padding: "12px 24px",
-              flex: 1,
-              minWidth: 0,
-              overflow: "auto",
-            }}
-          >
-            <Tabs
-              activeKey={detailTab}
-              onChange={(k) => setDetailTab(k as typeof detailTab)}
-              type="line"
-              items={[
-                {
-                  key: "conversations",
-                  label: "Conversations",
-                  children: <ChatView sessionId={sessionId} />,
-                },
-                {
-                  key: "artifacts",
-                  label: "Artifacts",
-                  children: <StageOutputPanel sessionId={sessionId} />,
-                },
-                {
-                  key: "experiments",
-                  label: "Experiments",
-                  children: <ExperimentsTab sessionId={sessionId} />,
-                },
-                {
-                  key: "cost",
-                  label: "Cost",
-                  children: <CostTracker sessionId={sessionId} />,
-                },
-              ]}
-            />
-          </Content>
+        <Content
+          style={{
+            background: "#ffffff",
+            padding: "12px 24px",
+            flex: 1,
+            minWidth: 0,
+            overflow: "auto",
+          }}
+        >
+          <Tabs
+            activeKey={detailTab}
+            onChange={(k) => setDetailTab(k as typeof detailTab)}
+            type="line"
+            items={[
+              {
+                key: "conversations",
+                label: "Conversations",
+                children: <ChatView sessionId={sessionId} />,
+              },
+              {
+                key: "artifacts",
+                label: "Artifacts",
+                children: <StageOutputPanel sessionId={sessionId} />,
+              },
+              {
+                key: "experiments",
+                label: "Experiments",
+                children: <ExperimentsTab sessionId={sessionId} />,
+              },
+              {
+                key: "cost",
+                label: "Cost",
+                children: <CostTracker sessionId={sessionId} />,
+              },
+            ]}
+          />
+        </Content>
 
-          <Sider
-            width={320}
-            theme="light"
-            style={{ background: "#ffffff", borderLeft: "1px solid #efefef" }}
-          >
-            <SectionHeader>Agent Monitor</SectionHeader>
-            <AgentMonitor sessionId={sessionId} />
-            <div style={{ borderTop: "1px solid #efefef" }} />
-            <SectionHeader>Hypotheses</SectionHeader>
-            <HypothesisTracker sessionId={sessionId} />
-            <div style={{ borderTop: "1px solid #efefef" }} />
-            <SectionHeader>Cross-stage requests</SectionHeader>
-            <CrossStageRequestsPanel sessionId={sessionId} />
-            <div style={{ borderTop: "1px solid #efefef" }} />
-            <SectionHeader>PI decisions</SectionHeader>
-            <div style={{ padding: "0 12px 12px" }}>
-              <PIDecisionLog sessionId={sessionId} />
-            </div>
-            <div style={{ borderTop: "1px solid #efefef" }} />
-            <SectionHeader>Cost</SectionHeader>
-            <CostTracker sessionId={sessionId} compact />
-          </Sider>
-        </Layout>
-      </Card>
+        <Sider
+          width={320}
+          theme="light"
+          style={{
+            background: "#ffffff",
+            borderLeft: "1px solid #efefef",
+            overflowY: "auto",
+          }}
+        >
+          <SectionHeader>Agent Monitor</SectionHeader>
+          <AgentMonitor sessionId={sessionId} />
+          <div style={{ borderTop: "1px solid #efefef" }} />
+          <SectionHeader>Hypotheses</SectionHeader>
+          <HypothesisTracker sessionId={sessionId} />
+          <div style={{ borderTop: "1px solid #efefef" }} />
+          <SectionHeader>Cross-stage requests</SectionHeader>
+          <CrossStageRequestsPanel sessionId={sessionId} />
+          <div style={{ borderTop: "1px solid #efefef" }} />
+          <SectionHeader>PI decisions</SectionHeader>
+          <div style={{ padding: "0 12px 12px" }}>
+            <PIDecisionLog sessionId={sessionId} />
+          </div>
+          <div style={{ borderTop: "1px solid #efefef" }} />
+          <SectionHeader>Cost</SectionHeader>
+          <CostTracker sessionId={sessionId} compact />
+        </Sider>
+      </Layout>
 
       {/* Sticky feedback input footer */}
       <div
