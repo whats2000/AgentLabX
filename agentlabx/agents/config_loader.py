@@ -32,7 +32,7 @@ class AgentConfigLoader:
 
     def load_config(self, path: Path) -> AgentConfig:
         """Load a single agent config from a YAML file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data: dict[str, Any] = yaml.safe_load(f)
 
         # Parse memory_scope sub-dict if present
