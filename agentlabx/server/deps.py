@@ -109,9 +109,7 @@ async def build_app_context(
 
     # Backend-dependent tools — construct now that execution backend exists
     execution_backend = SubprocessBackend()
-    registry.register(
-        PluginType.EXECUTION_BACKEND, execution_backend.name, execution_backend
-    )
+    registry.register(PluginType.EXECUTION_BACKEND, execution_backend.name, execution_backend)
     code_executor = CodeExecutor(backend=execution_backend)
     # Register as instance (resolve_tool handles both class and instance)
     registry.register(PluginType.TOOL, "code_executor", code_executor)

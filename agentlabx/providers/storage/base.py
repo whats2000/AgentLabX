@@ -24,7 +24,7 @@ class AgentTurnRecord:
     tokens_out: int | None = None
     cost_usd: float | None = None
     is_mock: bool = False
-    ts: datetime | None = None   # backend fills if None
+    ts: datetime | None = None  # backend fills if None
 
 
 class BaseStorageBackend(ABC):

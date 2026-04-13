@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from agentlabx.agents.base import BaseAgent
 
 
-def sync_agent_memory_to_state(state: dict, agents: dict[str, "BaseAgent"]) -> None:
+def sync_agent_memory_to_state(state: dict, agents: dict[str, BaseAgent]) -> None:
     """Write each dirty agent's snapshot into state[agent_memory][name]. Clears dirty flags.
 
     Args:
