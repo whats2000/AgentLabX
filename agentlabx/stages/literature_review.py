@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentlabx.core.state import LitReviewResult, PipelineState
+from agentlabx.core.state import LitReviewResult, PipelineState, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -16,6 +16,81 @@ class LiteratureReviewStage(BaseStage):
 
     MAX_ITERATIONS = 3
     MIN_PAPERS = 5
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise planned literature searches based on topic + optional feedback.
+
+        Default plan is two todos (topic survey + recent papers). When prior
+        output exists and no feedback targets this stage, the topic-survey
+        item is marked done as a prior-reference. When feedback IS present,
+        all items stay todo so the PhD student re-executes under the new
+        context (spec §3.2.2).
+        """
+        topic = state.get("research_topic", "")
+
+        topic_survey = StagePlanItem(
+            id="lit:topic-survey",
+            description=f"Survey existing work on: {topic}",
+            status="todo",
+            source="contract",
+            existing_artifact_ref=None,
+            edit_note=None,
+            removed_reason=None,
+        )
+        recent_papers = StagePlanItem(
+            id="lit:recent-papers",
+            description="Gather 3-5 recent (last 2y) key papers",
+            status="todo",
+            source="contract",
+            existing_artifact_ref=None,
+            edit_note=None,
+            removed_reason=None,
+        )
+
+        items: list[StagePlanItem] = [topic_survey, recent_papers]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="lit:feedback-driven",
+                    description=f"Address feedback: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        # Prior-output bypass: if a lit_review exists AND no feedback targets us,
+        # mark topic-survey as `done` referencing the prior artifact. This is
+        # just the topic-level item; recent-papers still requires work because
+        # we can't tell without coverage analysis whether prior papers satisfy.
+        prior = state.get("literature_review", [])
+        if prior and not feedback:
+            items[0] = StagePlanItem(
+                id="lit:topic-survey",
+                description=topic_survey["description"],
+                status="done",
+                source="prior",
+                existing_artifact_ref="literature_review[-1]",
+                edit_note=None,
+                removed_reason=None,
+            )
+
+        rationale_parts = [f"Literature review plan for '{topic}'"]
+        if feedback:
+            rationale_parts.append("(revising based on feedback)")
+        elif prior:
+            rationale_parts.append("(topic already surveyed; gathering any recent additions)")
+
+        return StagePlan(
+            items=items,
+            rationale=" ".join(rationale_parts),
+            hash_of_consumed_inputs=topic,
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry
