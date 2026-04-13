@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +16,7 @@ class SessionPreferences(BaseModel):
 
     mode: str = "auto"  # "auto" or "hitl"
     stage_controls: dict[str, str] = Field(default_factory=dict)
-    backtrack_control: str = "auto"
+    backtrack_control: Literal["auto", "approve"] = "auto"
     max_backtrack_attempts_per_edge: int = 2
     max_backtrack_cost_fraction: float = 0.4
 

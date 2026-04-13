@@ -226,6 +226,9 @@ class TransitionHandler:
         Zone-aware defaults:
           advance          → no approval (notify only, even cross-zone)
           backtrack        → approve iff cross-zone OR backtrack_control=approve
+
+        A stage with zone=None (e.g. lab_meeting) is treated as cross-zone
+        on either side, so backtracks involving it always trigger approval.
         """
         sc = self.preferences.stage_controls.get(stage)
         if sc in ("approve", "edit"):

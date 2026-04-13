@@ -958,7 +958,7 @@ from agentlabx.core.zones import cross_zone
           advance          → no approval (notify only, even cross-zone)
           backtrack        → approve iff cross-zone OR backtrack_control=approve
         """
-        sc = self.preferences.get_stage_control(stage)
+        sc = self.preferences.stage_controls.get(stage)
         if sc in ("approve", "edit"):
             return True
         if sc == "auto":

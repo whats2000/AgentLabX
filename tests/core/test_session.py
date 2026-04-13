@@ -30,9 +30,9 @@ class TestSessionPreferences:
 
     def test_update_returns_new_instance(self):
         prefs = SessionPreferences()
-        updated = prefs.update(mode="hitl", backtrack_control="hitl")
+        updated = prefs.update(mode="hitl", backtrack_control="approve")
         assert updated.mode == "hitl"
-        assert updated.backtrack_control == "hitl"
+        assert updated.backtrack_control == "approve"
         # Original unchanged
         assert prefs.mode == "auto"
 
