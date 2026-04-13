@@ -106,11 +106,17 @@ def build_agent_context(
 def resolve_agents_for_stage(
     context: StageContext,
     agent_names: list[str],
+    *,
+    state: dict | None = None,
 ) -> dict[str, BaseAgent]:
     """Resolve multiple agents from the stage context, injecting the LLM provider.
 
     Returns a dict mapping agent name to instantiated agent, ready for
     inference calls. All agents share the same llm_provider from the context.
+
+    When ``state`` is provided, each resolved agent is hydrated from
+    ``state["agent_memory"][name]`` so notes/working_memory/turn_count survive
+    across stage boundaries.
     """
     registry = context.registry
     if registry is None:
@@ -123,6 +129,7 @@ def resolve_agents_for_stage(
             name,
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
+            state=state,
         )
         for name in agent_names
     }

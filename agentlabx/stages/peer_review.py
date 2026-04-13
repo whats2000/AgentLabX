@@ -47,7 +47,11 @@ class PeerReviewStage(BaseStage):
             )
         latest_report = reports[-1]
 
-        # Resolve reviewer template from registry (AgentConfig instance)
+        # Resolve reviewer template from registry (AgentConfig instance).
+        # NOTE: reviewers deliberately skip agent_memory hydration/write-back.
+        # Blind peer review (spec §4.1, §8.2) requires fresh instances per
+        # session — carrying scratchpad notes across reviews would leak prior
+        # opinions and break the "see only the final report" invariant.
         reviewer_entry = registry.resolve(PluginType.AGENT, "reviewers")
 
         # Strict blind scope — reviewers see ONLY the final report
