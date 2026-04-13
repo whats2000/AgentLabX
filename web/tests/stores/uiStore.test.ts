@@ -5,7 +5,7 @@ describe("uiStore", () => {
   beforeEach(() => {
     useUIStore.setState({
       sidebarCollapsed: false,
-      detailTab: "activity",
+      detailTab: "conversations",
       sessionListFilter: "",
     });
   });
@@ -19,8 +19,8 @@ describe("uiStore", () => {
   });
 
   it("sets detail tab", () => {
-    useUIStore.getState().setDetailTab("graph");
-    expect(useUIStore.getState().detailTab).toBe("graph");
+    useUIStore.getState().setDetailTab("experiments");
+    expect(useUIStore.getState().detailTab).toBe("experiments");
   });
 
   it("updates session list filter", () => {

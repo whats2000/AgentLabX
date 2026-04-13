@@ -8,7 +8,7 @@ import { create } from "zustand";
  * React Router URL params respectively, not here.
  */
 
-export type DetailTab = "activity" | "artifacts" | "graph" | "cost";
+export type DetailTab = "conversations" | "artifacts" | "experiments" | "cost";
 
 interface UIState {
   sidebarCollapsed: boolean;
@@ -23,7 +23,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarCollapsed: false,
-  detailTab: "activity",
+  detailTab: "conversations",
   sessionListFilter: "",
 
   setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),

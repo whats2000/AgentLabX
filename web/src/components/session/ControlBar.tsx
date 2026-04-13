@@ -1,9 +1,7 @@
 import { useState } from "react";
 import {
   Button,
-  Collapse,
   Segmented,
-  Select,
   Space,
   Typography,
   message,
@@ -22,12 +20,10 @@ import {
   useUpdatePreferences,
 } from "../../hooks/useSessionMutations";
 import { StatusBadge } from "../common/StatusBadge";
-import { STAGE_LABELS, STAGE_SEQUENCE } from "../../lib/pipelineStages";
 import { RedirectModal } from "./RedirectModal";
 
 const { Text } = Typography;
 
-type ControlLevel = "auto" | "notify" | "approve" | "edit";
 type BacktrackControl = "auto" | "notify" | "approve";
 type Mode = "auto" | "hitl";
 
@@ -48,11 +44,9 @@ export function ControlBar({ sessionId }: Props) {
   const status = session?.status ?? "created";
   const preferences = (session?.preferences ?? {}) as {
     mode?: Mode;
-    stage_controls?: Record<string, ControlLevel>;
     backtrack_control?: BacktrackControl;
   };
   const mode: Mode = preferences.mode ?? "auto";
-  const stageControls = preferences.stage_controls ?? {};
   const backtrackControl: BacktrackControl =
     preferences.backtrack_control ?? "auto";
 
@@ -184,65 +178,6 @@ export function ControlBar({ sessionId }: Props) {
             style={{ marginTop: 4 }}
           />
         </div>
-
-        {mode === "hitl" ? (
-          <Collapse
-            ghost
-            size="small"
-            items={[
-              {
-                key: "stage-controls",
-                label: "Stage controls",
-                children: (
-                  <Space
-                    direction="vertical"
-                    size={4}
-                    style={{ width: "100%" }}
-                  >
-                    {STAGE_SEQUENCE.map((stage) => {
-                      const value = stageControls[stage] ?? "auto";
-                      return (
-                        <div
-                          key={stage}
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                          }}
-                        >
-                          <Text style={{ fontSize: 12 }}>
-                            {STAGE_LABELS[stage]}
-                          </Text>
-                          <Select
-                            size="small"
-                            value={value}
-                            style={{ width: 100 }}
-                            disabled={isTerminal}
-                            onChange={(v) => {
-                              updatePrefs.mutate({
-                                stage_controls: {
-                                  ...stageControls,
-                                  [stage]: v as ControlLevel,
-                                },
-                              });
-                            }}
-                            options={[
-                              { label: "Auto", value: "auto" },
-                              { label: "Notify", value: "notify" },
-                              { label: "Approve", value: "approve" },
-                              { label: "Edit", value: "edit" },
-                            ]}
-                          />
-                        </div>
-                      );
-                    })}
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        ) : null}
 
         <Button
           type="text"

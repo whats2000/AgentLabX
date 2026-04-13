@@ -5,12 +5,14 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { useUIStore } from "../stores/uiStore";
 import { StatusBadge } from "../components/common/StatusBadge";
 import { ControlBar } from "../components/session/ControlBar";
-import { PipelineTracker } from "../components/session/PipelineTracker";
-import { PipelineGraph } from "../components/session/PipelineGraph";
-import { AgentActivityFeed } from "../components/session/AgentActivityFeed";
+import { GraphTopology } from "../components/session/GraphTopology";
+import { ChatView } from "../components/session/ChatView";
 import { StageOutputPanel } from "../components/session/StageOutputPanel";
-import { HypothesisTracker } from "../components/session/HypothesisTracker";
+import { ExperimentsTab } from "../components/session/ExperimentsTab";
 import { CostTracker } from "../components/session/CostTracker";
+import { AgentMonitor } from "../components/session/AgentMonitor";
+import { HypothesisTracker } from "../components/session/HypothesisTracker";
+import { PIDecisionLog } from "../components/session/PIDecisionLog";
 import { CheckpointModal } from "../components/session/CheckpointModal";
 import { FeedbackInput } from "../components/session/FeedbackInput";
 
@@ -40,7 +42,7 @@ export default function SessionDetailPage() {
   const detailTab = useUIStore((s) => s.detailTab);
   const setDetailTab = useUIStore((s) => s.setDetailTab);
 
-  // Wire the session-scoped WebSocket; auto-invalidates TanStack cache (Fix H).
+  // Wire the session-scoped WebSocket; auto-invalidates TanStack cache.
   useWebSocket(sessionId);
 
   if (error) {
@@ -67,71 +69,69 @@ export default function SessionDetailPage() {
     );
   }
 
-  // Outer flex column so the sticky FeedbackInput gets its own row that spans
-  // the full width (Fix K). The inner Layout handles the three columns.
+  // Outer flex column: graph canvas on top, tabs+siders below, sticky feedback at bottom.
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
-        // Subtract shell padding (32px top + 32px bottom = 64) from 100vh,
-        // then account for the 56px header
         minHeight: "calc(100vh - 56px - 64px)",
       }}
     >
-      {/* Topline identity */}
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
-          }}
-        >
-          <div>
-            <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
-              {session.research_topic}
-            </Title>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {session.session_id} · {session.user_id}
-            </Text>
-          </div>
-          <StatusBadge status={session.status} />
+      {/* Header — topic + session_id + status badge */}
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+        }}
+      >
+        <div>
+          <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
+            {session.research_topic}
+          </Title>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {session.session_id} · {session.user_id}
+          </Text>
         </div>
+        <StatusBadge status={session.status} />
       </div>
 
-      {/* 3-column layout */}
+      {/* Graph canvas — always visible */}
+      <div style={{ marginBottom: 16 }}>
+        <Card variant="borderless" styles={{ body: { padding: 8 } }}>
+          <GraphTopology sessionId={sessionId} />
+        </Card>
+      </div>
+
+      {/* Main 3-column layout */}
       <Card
         variant="borderless"
         styles={{ body: { padding: 0 } }}
-        style={{ flex: 1, overflow: "hidden", display: "flex" }}
+        style={{ flex: 1, display: "flex" }}
       >
         <Layout style={{ background: "transparent", flex: 1 }}>
           <Sider
-            width={260}
+            width={200}
             theme="light"
-            style={{
-              background: "#ffffff",
-              borderRight: "1px solid #efefef",
-            }}
+            style={{ background: "#ffffff", borderRight: "1px solid #efefef" }}
           >
             <SectionHeader>Controls</SectionHeader>
             <ControlBar sessionId={sessionId} />
-            <SectionHeader>Pipeline</SectionHeader>
-            <PipelineTracker sessionId={sessionId} />
           </Sider>
 
           <Content style={{ background: "#ffffff", padding: "12px 24px" }}>
             <Tabs
               activeKey={detailTab}
-              onChange={(key) => setDetailTab(key as typeof detailTab)}
+              onChange={(k) => setDetailTab(k as typeof detailTab)}
               type="line"
               items={[
                 {
-                  key: "activity",
-                  label: "Activity",
-                  children: <AgentActivityFeed sessionId={sessionId} />,
+                  key: "conversations",
+                  label: "Conversations",
+                  children: <ChatView sessionId={sessionId} />,
                 },
                 {
                   key: "artifacts",
@@ -139,9 +139,9 @@ export default function SessionDetailPage() {
                   children: <StageOutputPanel sessionId={sessionId} />,
                 },
                 {
-                  key: "graph",
-                  label: "Graph",
-                  children: <PipelineGraph sessionId={sessionId} />,
+                  key: "experiments",
+                  label: "Experiments",
+                  children: <ExperimentsTab sessionId={sessionId} />,
                 },
                 {
                   key: "cost",
@@ -153,20 +153,20 @@ export default function SessionDetailPage() {
           </Content>
 
           <Sider
-            width={300}
+            width={320}
             theme="light"
-            style={{
-              background: "#ffffff",
-              borderLeft: "1px solid #efefef",
-            }}
+            style={{ background: "#ffffff", borderLeft: "1px solid #efefef" }}
           >
-            <SectionHeader>Current stage</SectionHeader>
-            <div style={{ padding: "0 16px 16px" }}>
-              <StageOutputPanel sessionId={sessionId} compact />
-            </div>
+            <SectionHeader>Agent Monitor</SectionHeader>
+            <AgentMonitor sessionId={sessionId} />
             <div style={{ borderTop: "1px solid #efefef" }} />
             <SectionHeader>Hypotheses</SectionHeader>
             <HypothesisTracker sessionId={sessionId} />
+            <div style={{ borderTop: "1px solid #efefef" }} />
+            <SectionHeader>PI decisions</SectionHeader>
+            <div style={{ padding: "0 12px 12px" }}>
+              <PIDecisionLog sessionId={sessionId} />
+            </div>
             <div style={{ borderTop: "1px solid #efefef" }} />
             <SectionHeader>Cost</SectionHeader>
             <CostTracker sessionId={sessionId} compact />
@@ -174,7 +174,7 @@ export default function SessionDetailPage() {
         </Layout>
       </Card>
 
-      {/* Sticky feedback bar — outside the Layout so it spans full width */}
+      {/* Sticky feedback input footer */}
       <div
         style={{
           position: "sticky",
@@ -189,7 +189,7 @@ export default function SessionDetailPage() {
         <FeedbackInput sessionId={sessionId} />
       </div>
 
-      {/* Checkpoint modal — self-manages open state from WS events (Task 13). */}
+      {/* Checkpoint modal — self-manages open state from WS events. */}
       <CheckpointModal sessionId={sessionId} />
     </div>
   );

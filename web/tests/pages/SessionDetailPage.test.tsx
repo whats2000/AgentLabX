@@ -15,6 +15,14 @@ vi.mock("../../src/api/client", () => ({
     getArtifacts: vi.fn().mockResolvedValue([]),
     getTransitions: vi.fn().mockResolvedValue([]),
     getHypotheses: vi.fn().mockResolvedValue([]),
+    getGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [], cursor: null, subgraphs: [] }),
+    listAgents: vi.fn().mockResolvedValue([]),
+    getPIHistory: vi.fn().mockResolvedValue([]),
+    getExperiments: vi.fn().mockResolvedValue({ runs: [], log: [] }),
+    getRequests: vi.fn().mockResolvedValue([]),
+    getAgentContext: vi.fn().mockResolvedValue(null),
+    getAgentMemory: vi.fn().mockResolvedValue(null),
+    getAgentHistory: vi.fn().mockResolvedValue([]),
   },
   APIError: class extends Error {},
   isValidationError: () => false,
@@ -26,6 +34,24 @@ vi.mock("../../src/api/wsRegistry", () => ({
     getSocket: vi.fn(() => null),
   },
 }));
+
+// Heavy canvas/layout components that don't work in jsdom
+vi.mock("../../src/components/session/GraphTopology", () => ({
+  GraphTopology: () => <div data-testid="graph-topology" />,
+}));
+vi.mock("../../src/components/session/AgentMonitor", () => ({
+  AgentMonitor: () => <div data-testid="agent-monitor" />,
+}));
+vi.mock("../../src/components/session/PIDecisionLog", () => ({
+  PIDecisionLog: () => <div data-testid="pi-decision-log" />,
+}));
+vi.mock("../../src/components/session/ChatView", () => ({
+  ChatView: () => <div data-testid="chat-view" />,
+}));
+vi.mock("../../src/components/session/ExperimentsTab", () => ({
+  ExperimentsTab: () => <div data-testid="experiments-tab" />,
+}));
+
 vi.mock("../../src/components/session/CostGauge", () => ({
   CostGauge: () => <div data-testid="cost-gauge" />,
 }));
@@ -68,14 +94,15 @@ describe("SessionDetailPage", () => {
     renderAt("sess-x");
     expect(await screen.findByText("My research")).toBeInTheDocument();
     expect(screen.getAllByText(/sess-x/).length).toBeGreaterThan(0);
-    // Status appears both in topbar (Running) — we only assert its presence
+    // Status appears both in topbar (Running) and ControlBar status row
     expect(screen.getAllByText(/Running/i).length).toBeGreaterThan(0);
-    // Cost sider renders "Total cost" label — sanity check that the panels
-    // mount (Task 13 replaced the stub with real content).
+    // Graph canvas stub is always rendered above the tabs
+    expect(screen.getByTestId("graph-topology")).toBeInTheDocument();
+    // Cost sider renders "Total cost" label
     expect(screen.getAllByText(/Total cost/i).length).toBeGreaterThan(0);
   });
 
-  it("shows the activity tab by default", async () => {
+  it("shows the conversations tab by default", async () => {
     mockedApi.getSession.mockResolvedValue({
       session_id: "sess-x",
       user_id: "alice",
@@ -86,8 +113,10 @@ describe("SessionDetailPage", () => {
     });
     renderAt("sess-x");
     await screen.findByText("T");
-    // The Activity tab header is always rendered
-    expect(screen.getByRole("tab", { name: /Activity/i })).toBeInTheDocument();
+    // The Conversations tab header is always rendered
+    expect(
+      screen.getByRole("tab", { name: /Conversations/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows an error alert when the session fetch fails", async () => {
