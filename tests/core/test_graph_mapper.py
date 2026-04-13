@@ -1,4 +1,5 @@
 # tests/core/test_graph_mapper.py
+import pytest
 from agentlabx.core.graph_mapper import build_topology
 
 
@@ -120,3 +121,37 @@ def test_topology_overlays_backtrack_from_transition_log():
     assert backtrack[0]["from"] == "plan_formulation"
     assert backtrack[0]["to"] == "literature_review"
     assert "more papers" in (backtrack[0].get("reason") or "")
+
+
+@pytest.fixture
+def compiled_graph_fixture():
+    from agentlabx.core.pipeline import PipelineBuilder
+    from agentlabx.core.registry import PluginRegistry
+    from agentlabx.plugins._builtin import register_builtin_plugins
+    r = PluginRegistry()
+    register_builtin_plugins(r)
+    return PipelineBuilder(registry=r).build(
+        stage_sequence=["literature_review", "plan_formulation", "experimentation"]
+    )
+
+
+def test_graph_mapper_surfaces_backtrack_attempts_on_edges(
+    compiled_graph_fixture,
+):
+    from agentlabx.core.state import create_initial_state
+
+    state = create_initial_state(
+        session_id="s1", user_id="u1", research_topic="t"
+    )
+    state["backtrack_attempts"] = {"experimentation->literature_review": 2}
+
+    topo = build_topology(compiled_graph_fixture, state)
+
+    backtrack_edges = [
+        e for e in topo["edges"]
+        if e.get("from") == "experimentation"
+        and e.get("to") == "literature_review"
+    ]
+    assert backtrack_edges, "expected a backtrack edge to be surfaced"
+    assert backtrack_edges[0].get("attempts") == 2
+    assert backtrack_edges[0].get("kind") == "backtrack"

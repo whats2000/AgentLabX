@@ -95,6 +95,30 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
                 }
             )
 
+    # Overlay backtrack attempt counters from state["backtrack_attempts"].
+    # Each key is "src->dst"; annotate matching edge or append a new one.
+    attempts_map = state.get("backtrack_attempts") or {}
+    for edge_key, count in attempts_map.items():
+        try:
+            src, dst = edge_key.split("->")
+        except ValueError:
+            continue
+        existing = next(
+            (e for e in edges if e.get("from") == src and e.get("to") == dst),
+            None,
+        )
+        if existing is not None:
+            existing["attempts"] = count
+            existing["kind"] = "backtrack"
+        else:
+            edges.append({
+                "from": src,
+                "to": dst,
+                "kind": "backtrack",
+                "attempts": count,
+                "reason": None,
+            })
+
     cursor: dict[str, Any] | None = None
     if current:
         cursor = {"node_id": current, "agent": None, "started_at": None}
