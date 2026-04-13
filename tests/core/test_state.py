@@ -12,6 +12,7 @@ from agentlabx.core.state import (
     Hypothesis,
     ReproducibilityRecord,
     Transition,
+    apply_partial_rollback,
     create_initial_state,
 )
 
@@ -261,3 +262,60 @@ def test_backtrack_attempts_uses_edge_string_keys():
     assert (
         state["backtrack_attempts"]["experimentation->literature_review"] == 2
     )
+
+
+def test_apply_partial_rollback_preserves_hypotheses_and_experiment_log():
+    from datetime import datetime
+
+    state = create_initial_state(
+        session_id="s1", user_id="u1", research_topic="t"
+    )
+    state["current_stage"] = "experimentation"
+    state["next_stage"] = None
+    state["completed_stages"] = [
+        "literature_review",
+        "plan_formulation",
+        "data_exploration",
+        "data_preparation",
+    ]
+    state["hypotheses"] = [
+        Hypothesis(
+            id="H1",
+            statement="X improves Y",
+            status="active",
+            created_at_stage="plan_formulation",
+        )
+    ]
+    state["experiment_log"] = [
+        {
+            "attempt_id": "a1",
+            "approach_summary": "baseline",
+            "outcome": "failure",
+            "failure_reason": "OOM",
+            "learnings": [],
+            "linked_hypothesis_id": "H1",
+            "ts": datetime.now(),
+        }
+    ]
+    state["agent_memory"] = {
+        "ml_engineer": {
+            "working_memory": {"k": "v"},
+            "notes": ["n1"],
+            "last_active_stage": "experimentation",
+            "turn_count": 5,
+        }
+    }
+
+    update = apply_partial_rollback(
+        state, target="literature_review", feedback="Missing RL methods"
+    )
+
+    # Partial update shape: ONLY the rewound fields present.
+    assert set(update.keys()) == {
+        "current_stage",
+        "next_stage",
+        "backtrack_feedback",
+    }
+    assert update["current_stage"] == "literature_review"
+    assert update["next_stage"] is None
+    assert update["backtrack_feedback"] == "Missing RL methods"

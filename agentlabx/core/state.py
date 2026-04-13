@@ -210,6 +210,26 @@ class PipelineState(TypedDict):
     backtrack_feedback: str | None
 
 
+def apply_partial_rollback(
+    state: PipelineState, *, target: str, feedback: str | None
+) -> dict[str, Any]:
+    """Return a partial state update rewinding `current_stage` to `target`.
+
+    Deliberately returns only the three keys to overwrite. LangGraph's
+    node-return merge semantics leave every other field untouched —
+    hypotheses, experiment_log, experiment_results, completed_stages,
+    cost_tracker, and agent_memory are preserved.
+
+    Real labs don't forget what they've learned when they revisit an earlier
+    stage (spec §3.3.2).
+    """
+    return {
+        "current_stage": target,
+        "next_stage": None,
+        "backtrack_feedback": feedback,
+    }
+
+
 def active_hypotheses(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
     """Return the latest hypothesis record per ID (last-write-wins by position).
 
