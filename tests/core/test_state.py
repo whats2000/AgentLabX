@@ -319,3 +319,45 @@ def test_apply_partial_rollback_preserves_hypotheses_and_experiment_log():
     assert update["current_stage"] == "literature_review"
     assert update["next_stage"] == "literature_review"
     assert update["backtrack_feedback"] == "Missing RL methods"
+
+
+from agentlabx.core.state import (
+    StagePlan,
+    StagePlanItem,
+    StagePlanStatus,
+)
+
+
+def test_stage_plan_status_has_four_values():
+    assert set(StagePlanStatus.__args__) == {"done", "edit", "todo", "removed"}
+
+
+def test_stage_plan_item_shape():
+    item: StagePlanItem = {
+        "id": "i1",
+        "description": "Collect 3 recent papers on CoT",
+        "status": "todo",
+        "source": "contract",
+        "existing_artifact_ref": None,
+        "edit_note": None,
+        "removed_reason": None,
+    }
+    assert item["status"] == "todo"
+
+
+def test_stage_plan_shape():
+    plan: StagePlan = {
+        "items": [],
+        "rationale": "empty plan for a bypassed stage",
+        "hash_of_consumed_inputs": "abc123",
+    }
+    assert plan["rationale"].startswith("empty")
+
+
+def test_initial_state_has_stage_plans_key():
+    from agentlabx.core.state import create_initial_state
+
+    state = create_initial_state(
+        session_id="s1", user_id="u1", research_topic="t"
+    )
+    assert state["stage_plans"] == {}

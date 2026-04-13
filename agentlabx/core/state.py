@@ -111,6 +111,26 @@ class ExperimentAttempt(TypedDict):
     ts: datetime
 
 
+StagePlanStatus = Literal["done", "edit", "todo", "removed"]
+StagePlanItemSource = Literal["contract", "feedback", "request", "user", "prior"]
+
+
+class StagePlanItem(TypedDict):
+    id: str
+    description: str
+    status: StagePlanStatus
+    source: StagePlanItemSource
+    existing_artifact_ref: str | None
+    edit_note: str | None
+    removed_reason: str | None
+
+
+class StagePlan(TypedDict):
+    items: list[StagePlanItem]
+    rationale: str
+    hash_of_consumed_inputs: str
+
+
 class LitReviewResult(BaseModel):
     papers: list[dict[str, Any]]
     summary: str
@@ -209,6 +229,20 @@ class PipelineState(TypedDict):
     backtrack_cost_spent: float
     backtrack_feedback: str | None
 
+    # Stage plans (Plan 7B) — versioned list per stage, last element is latest.
+    # INVARIANT: this field is a plain dict (NOT Annotated with a reducer).
+    # LangGraph's default behaviour is whole-value overwrite, NOT dict merge.
+    # Safe because (1) stages run sequentially, (2) only the current stage's
+    # subgraph writes to stage_plans[name]. The stage_plan node in the
+    # subgraph mutates via state["stage_plans"] = {**existing, name: hist+new}.
+    #
+    # DO NOT return {"stage_plans": {...}} as a partial update from a stage —
+    # that will silently wipe other stages' entries. Same invariant as
+    # agent_memory (see agentlabx/stages/base.py::sync_agent_memory_to_state).
+    # Plan 7B²/7C introducing parallel stage execution or event-driven partial
+    # returns MUST switch to Annotated[dict, _merge_stage_plans] first.
+    stage_plans: dict[str, list[StagePlan]]
+
 
 def apply_partial_rollback(
     state: PipelineState, *, target: str, feedback: str | None
@@ -298,4 +332,5 @@ def create_initial_state(
         backtrack_attempts={},
         backtrack_cost_spent=0.0,
         backtrack_feedback=None,
+        stage_plans={},
     )
