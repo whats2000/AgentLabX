@@ -74,9 +74,12 @@ def build_topology(compiled_graph, state: dict) -> dict[str, Any]:
             "skipped": nid in skip,
         })
 
+    # LangGraph's get_graph() returns a Graph whose .edges is a plain list;
+    # unit-test mocks may expose it as a callable. Support both.
+    raw_edges = g.edges() if callable(g.edges) else g.edges
     edges: list[dict[str, Any]] = [
         {"from": e.source, "to": e.target, "kind": "sequential", "reason": None}
-        for e in g.edges()
+        for e in raw_edges
     ]
 
     # Overlay backtracks from transition_log when they're not already edges.
