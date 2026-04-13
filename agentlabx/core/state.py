@@ -90,6 +90,23 @@ class StageError(BaseModel):
     recovered: bool = False
 
 
+class AgentMemoryRecord(TypedDict):
+    working_memory: dict[str, Any]
+    notes: list[str]
+    last_active_stage: str
+    turn_count: int
+
+
+class ExperimentAttempt(TypedDict):
+    attempt_id: str
+    approach_summary: str
+    outcome: Literal["success", "failure", "inconclusive"]
+    failure_reason: str | None
+    learnings: list[str]
+    linked_hypothesis_id: str | None
+    ts: datetime
+
+
 class LitReviewResult(BaseModel):
     papers: list[dict[str, Any]]
     summary: str
@@ -176,6 +193,11 @@ class PipelineState(TypedDict):
     # Cost tracker — overwritten (CostTracker has internal mutation via add_usage)
     cost_tracker: CostTracker
 
+    # Observability (Plan 6)
+    agent_memory: dict[str, AgentMemoryRecord]
+    experiment_log: Annotated[list[ExperimentAttempt], operator.add]
+    pi_decisions: Annotated[list[dict], operator.add]
+
 
 def active_hypotheses(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
     """Return the latest hypothesis record per ID (last-write-wins by position).
@@ -235,4 +257,7 @@ def create_initial_state(
         messages=[],
         cost_tracker=CostTracker(),
         errors=[],
+        agent_memory={},
+        experiment_log=[],
+        pi_decisions=[],
     )

@@ -203,3 +203,40 @@ class TestActiveHypotheses:
         result = active_hypotheses([ha, hb, ha2])
         assert [h.id for h in result] == ["A", "B"]
         assert result[0].status == "supported"
+
+
+def test_pipeline_state_has_observability_keys():
+    from agentlabx.core.state import PipelineState, AgentMemoryRecord, ExperimentAttempt
+
+    ann = PipelineState.__annotations__
+    assert "agent_memory" in ann
+    assert "experiment_log" in ann
+    assert "pi_decisions" in ann
+
+
+def test_agent_memory_record_shape():
+    from agentlabx.core.state import AgentMemoryRecord
+
+    rec: AgentMemoryRecord = {
+        "working_memory": {"foo": "bar"},
+        "notes": ["note1"],
+        "last_active_stage": "plan_formulation",
+        "turn_count": 3,
+    }
+    assert rec["turn_count"] == 3
+
+
+def test_experiment_attempt_shape():
+    from agentlabx.core.state import ExperimentAttempt
+    from datetime import datetime
+
+    att: ExperimentAttempt = {
+        "attempt_id": "att-1",
+        "approach_summary": "CoT with 5-shot",
+        "outcome": "failure",
+        "failure_reason": "timeout",
+        "learnings": ["too slow"],
+        "linked_hypothesis_id": "H1",
+        "ts": datetime.now(),
+    }
+    assert att["outcome"] == "failure"
