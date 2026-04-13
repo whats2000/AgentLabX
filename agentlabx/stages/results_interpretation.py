@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import re
 
+from agentlabx.core.events import Event
 from agentlabx.core.state import EvidenceLink, Hypothesis, PipelineState
+from agentlabx.server.events import EventTypes
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -133,6 +135,17 @@ class ResultsInterpretationStage(BaseStage):
                 resolved_at_stage=("results_interpretation" if new_status != "active" else None),
             )
             updated_hypotheses.append(updated_hyp)
+
+            if context.event_bus is not None:
+                await context.event_bus.emit(Event(
+                    type=EventTypes.HYPOTHESIS_UPDATE,
+                    data={
+                        "hypothesis_id": hid,
+                        "new_status": new_status,
+                        "evidence_link": update.get("evidence"),
+                    },
+                    source="postdoc",
+                ))
 
         output: dict = {"interpretation": [interpretation_text]}
         if updated_hypotheses:
