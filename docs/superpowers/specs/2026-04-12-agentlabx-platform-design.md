@@ -71,7 +71,7 @@ agentlabx/
       sw_engineer.yaml
       professor.yaml
       reviewers.yaml
-      pi_agent.yaml      # Transition handler agent
+      pi_agent.yaml      # PI advisor — participating helper consulted at checkpoints (see §3.3.5)
   providers/
     llm/
       base.py            # BaseLLMProvider ABC
@@ -221,55 +221,363 @@ The pipeline is NOT a linear production line. It models how real research labs w
 |---|---|
 | Within a zone | Agents move freely — self-loop, iterate, peer handoff. No approval needed. |
 | Forward between zones | Automatic on stage completion |
-| Backward across zones | Auto mode: PI agent decides. HITL mode: human approves. Always logged. |
+| Backward across zones | Auto mode: rule-based transition handler applies partial rollback (PI advises on ambiguous targets). HITL mode: human approves with PI recommendation shown. Always logged. |
 | Targeted requests | Any stage can emit `experiment_requests` or `literature_requests` to other stages without a full backtrack (e.g., report writing says "we need one more ablation study" → feeds to experimentation as a targeted task). |
 
-### 3.2 Stage Architecture
+### 3.2 Top-Level Graph — Zones and Stages
 
-Each stage is a LangGraph subgraph with internal autonomy:
+The top-level LangGraph wires stages (each a subgraph, see §3.2.1) through a **rule-based transition handler**, not an LLM router. Stages are grouped into three zones; within-zone hops are free, between-zone hops are gated per HITL preferences.
 
+```mermaid
+flowchart LR
+    START([START]) --> LIT
+
+    subgraph DISC [DISCOVERY]
+        direction TB
+        LIT[Literature Review] --> PLAN[Plan Formulation]
+    end
+
+    subgraph IMPL [IMPLEMENTATION]
+        direction TB
+        EDA[Data Exploration] --> PREP[Data Preparation]
+        PREP --> EXP[Experimentation]
+    end
+
+    subgraph SYN [SYNTHESIS]
+        direction TB
+        INTERP[Interpretation] --> REPORT[Report Writing]
+        REPORT --> REVIEW[Peer Review]
+    end
+
+    PLAN -->|zone exit| EDA
+    EXP -->|zone exit| INTERP
+    REVIEW --> END([END])
+
+    %% Any stage may backtrack to any earlier stage — see §3.3.6 catalogue.
+    %% Shown here as a condensed reverse channel per zone boundary.
+    IMPL -. "backtrack on planning<br/>or dead-end<br/>(partial rollback §3.3.2)" .-> DISC
+    SYN  -. "backtrack on planning<br/>or dead-end<br/>(partial rollback §3.3.2)" .-> IMPL
+    SYN  -. "backtrack: literature gap" .-> DISC
+
+    classDef zone fill:#f5f7ff,stroke:#6366f1,stroke-width:1px;
+    classDef stage fill:#fff,stroke:#334155;
+    class DISC,IMPL,SYN zone;
+    class LIT,PLAN,EDA,PREP,EXP,INTERP,REPORT,REVIEW stage;
 ```
-ENTER → Agent(s) work (tools, LLM calls, dialogue) → Evaluate → Decide → EXIT
-         ↻ self-loop: iterate within stage (agent decides)
+
+Solid edges are the default forward sequence. Dotted edges condense the reverse channel — **any stage may backtrack to any earlier stage** via `StageResult.status = "backtrack"`; the transition handler applies partial rollback (§3.3.2), not a state wipe. See §3.3.6 for the per-stage trigger catalogue. `data_exploration` is retained as a distinct stage (not in pipeline-v3's illustrative mockup) to separate EDA concerns from transformation code.
+
+**Backtracks are commonly surfaced during planning, not only during work.** The most frequent realistic trigger is: a stage enters, its `stage_plan` node itemizes what needs doing (§3.2.2), and the agent realizes a prerequisite is missing — "I can't plan an experiment without a baseline method family; lit_review didn't cover reinforcement-learning variants." The stage emits `backtrack` before running any `work`. This is precisely the decision the old PI router was meant to make, but now **made by the agent who actually knows what's missing** — the one planning the stage. The transition handler still gates the backtrack with HITL and retry rules; it just isn't the one diagnosing the gap.
+
+### 3.2.1 Stage Architecture — Each Stage Is a LangGraph Subgraph
+
+Every stage is compiled as its own `StateGraph` with the following internal shape. This gives stages full autonomy to self-loop (iterate with peers, retry, consult tools) without each iteration surfacing as a top-level graph step.
+
+```mermaid
+flowchart LR
+    ENTER([ENTER]) --> PLAN["Stage Plan<br/>itemize work:<br/>done · edit · todo · removed"]
+    PLAN --> GATE{Plan outcome?}
+    GATE -->|all done or removed| FAST["Decide<br/>status=done<br/>reason=plan-empty"]
+    GATE -->|prerequisite missing<br/>can't plan| BTOUT["Decide<br/>status=backtrack<br/>target=upstream stage"]
+    GATE -->|actionable items| WORK["Agent(s) work<br/>execute plan items"]
+    WORK --> EVAL{Evaluate<br/>plan satisfied?<br/>dead-end?}
+    EVAL -->|iterate / revise plan| WORK
+    EVAL -->|ready| DECIDE["Decide<br/>emit StageResult"]
+    DECIDE --> EXIT([EXIT])
+    FAST --> EXIT
+    BTOUT --> EXIT
+
+    classDef node fill:#fff,stroke:#334155;
+    classDef term fill:#eef2ff,stroke:#6366f1;
+    classDef fast fill:#f0fdf4,stroke:#10b981;
+    classDef plan fill:#fef3c7,stroke:#d97706;
+    classDef back fill:#fef2f2,stroke:#ef4444;
+    class WORK,EVAL,DECIDE node;
+    class ENTER,EXIT term;
+    class FAST fast;
+    class PLAN,GATE plan;
+    class BTOUT back;
 ```
 
-Stage exit returns a `StageResult`:
+**Node responsibilities:**
+
+| Node | Responsibility |
+|---|---|
+| `enter` | Hydrate agent memory from `state[agent_memory]`, attach any incoming `backtrack_feedback`, pick up queued cross-stage requests. |
+| `stage_plan` | **Build a structured plan of what this stage needs to do on this entry.** Itemize the stage's contract into concrete tasks, each marked `done` (already satisfied by state), `edit` (existing artifact needs augmentation), `todo` (fresh work), or `removed` (no longer applicable). If planning itself reveals a missing prerequisite (e.g., lit didn't cover the method family this stage needs), the node may emit `StageResult(status="backtrack", next_hint=<upstream>)` without ever running `work` — this is where the old PI router's backtrack decision now lives, made by the agent who spotted the gap. See §3.2.2. |
+| `work` | Execute the plan's `todo` and `edit` items only. The plan is the agent's own task list — LLM calls, tool invocations, peer handoffs are driven by walking plan items. Idempotent per-iteration; state updates only via reducers. |
+| `evaluate` | Check the plan is satisfied and stage contract holds (e.g., experimentation requires at least one baseline; report writing requires all sections). Also detects dead-ends (dataset unavailable, performance ceiling, conflicting evidence) that should surface as `backtrack` rather than continued iteration. May revise the plan (add new items surfaced during work) and loop back to `work`, or proceed to `decide`. Optionally invoke the PI advisor for a checkpoint review (§3.3.1). |
+| `decide` | Build the `StageResult` (status + reason + feedback + optional `next_hint` + optional cross-stage requests). Flush dirty agent memory back to state. |
+| `exit` | Terminal node — surfaces `StageResult` to the top-level graph's transition handler. |
+
+The `evaluate → work` edge is the self-loop (agent may revise the plan mid-flight). The `gate → decide` edge is the bypass path taken when the plan has no actionable items. Inside a zone, multiple stages' subgraphs can peer-handoff via the top-level graph without prompting HITL checkpoints (§3.3.3).
+
+### 3.2.2 Stage Plan — Structured Per-Entry Work List
+
+Before running, every stage plans what it needs to do on this entry — the same way a human plans before implementing. The `stage_plan` node produces a **StagePlan**: a list of concrete items, each classified into one of four statuses. The `work` node then executes only what actually needs doing; items already satisfied are skipped, obsolete items are removed, and partial artifacts get edited rather than rebuilt.
+
+This single mechanism handles every entry scenario uniformly: first entry, re-entry after backtrack, re-entry after cross-stage request, re-entry with user-provided artifacts. The plan is the agent's judgement of "what is the concrete work, given everything I can see in state right now." No separate skip mode, no separate bypass flag — the plan itself carries the information.
+
+**StagePlan schema:**
+
 ```python
-class StageResult:
-    output: Any           # Stage output data
-    status: Literal["done", "backtrack", "negative_result", "request"]
-    next_hint: str | None # Suggested next stage
-    reason: str           # Why this decision
-    feedback: str | None  # Context for target stage
-    requests: list[CrossStageRequest] | None  # Targeted requests to other stages
+class StagePlanItem:
+    id: str
+    description: str                                # "Collect 3 recent papers on chain-of-thought variants"
+    status: Literal["done", "edit", "todo", "removed"]
+    source: Literal["contract", "feedback", "request", "user", "prior"]
+    existing_artifact_ref: str | None               # pointer into state when status in ("done", "edit")
+    edit_note: str | None                           # when status == "edit": what to add/revise
+    removed_reason: str | None                      # when status == "removed"
+
+class StagePlan:
+    items: list[StagePlanItem]
+    rationale: str                                  # one-paragraph agent note: why this plan
+    hash_of_consumed_inputs: str                    # lets next entry detect upstream drift
 ```
 
 **Status semantics:**
-- `done` — stage completed successfully, advance
-- `backtrack` — stage needs an earlier stage re-run with feedback
-- `negative_result` — experiment conclusively showed no significant improvement. This is a valid research outcome, not a failure. The PI agent decides: publish the negative finding, pivot the hypothesis, or try a different approach.
-- `request` — stage completed but needs targeted work from another stage (e.g., report writing needs one more ablation study from experimentation). Not a full backtrack — the requesting stage pauses and resumes when the request is fulfilled.
 
-### 3.3 PI Agent — Intelligent Transition Handler
+- **`done`** — the plan item is already satisfied by existing state (user-provided artifact OR prior run's output). Skipped by `work`. If every item in the plan is `done` (or `removed`), the gate routes straight to `decide` with `reason="plan-empty"`.
+- **`edit`** — an artifact exists but needs additions/revisions specified in `edit_note`. `work` augments the existing artifact rather than rebuilding.
+- **`todo`** — fresh work, no prior artifact. `work` runs the agent to produce it.
+- **`removed`** — a previously-planned item is no longer applicable (e.g., a prior plan called for dataset A, but the plan formulation has since pivoted to dataset B). Explicitly recorded so the history is auditable; not executed.
 
-The PI agent replaces a dumb rule engine. It is an LLM-powered research director with its own memory scope (high-level summaries, transition history, budget status — NOT implementation details).
+**Why this is not a static bypass check.** The plan is agent-judged, not a rule over flags. The agent looks at the stage's contract, current state (prior outputs, user-provided artifacts), incoming feedback, and pending requests, then decides per-item what status each piece of work should carry. Only the agent knows whether the cleaned CSV the user uploaded actually matches the plan's feature requirements — a flag-only rule would be either too eager (re-running unnecessarily) or too lax (stale artifacts).
 
-When a stage exits, the PI agent evaluates: "Given the research goals, what we've done so far, what just happened, and the budget remaining — what should the lab do next?"
+**What the plan produces at `decide`:**
 
-**PI agent can decide to:**
-- Advance to next stage (normal flow)
-- Send back to a specific stage with targeted feedback
-- Request additional iteration within current stage
-- Accept a negative result as a valid finding worth reporting
-- Pivot the active hypothesis based on accumulated evidence
-- Recommend completion
-- Flag for human review (uncertain decision)
+- If any items were `todo` or `edit` and got executed → `StageResult(status="done", output=<latest artifact>, reason=<rationale of what was done>)`.
+- If every item was `done`/`removed` (nothing to execute) → `StageResult(status="done", output=<prior or user-provided artifact>, reason="plan-empty: <why>")`.
+- **If planning itself can't produce a viable plan** (missing prerequisite — e.g., lit_review didn't cover a required method family, plan assumed data access that doesn't exist) → `StageResult(status="backtrack", next_hint=<upstream stage>, feedback=<what's missing>)` emitted directly from the planning node, `work` never runs. This covers the "I realized while planning that I need more info from an earlier stage" case — the most common realistic backtrack trigger.
+- If `evaluate` (after some `work` ran) flagged a dead-end (dataset unavailable, performance ceiling, etc.) → `StageResult(status="backtrack" | "negative_result" | "request", ...)`.
 
-**PI agent resilience:** The PI agent includes a confidence score with each decision. If confidence is below a configurable threshold, the system falls back to the default sequence rather than acting on a low-confidence routing decision. PI decision accuracy is tracked over the session (did backtracks actually improve outcomes? did "advance" decisions lead to successful completions?) for observability and future tuning.
+The transition handler's logic (§3.3) is unchanged — it only sees `StageResult`. Plan state (items + rationale) is persisted to the stage's observability stream and to `agent_memory` for the next entry's plan diff.
 
-**Override priority:** human override > hard limits (iteration caps, cost ceiling) > PI agent judgment (if confident) > default sequence fallback (if PI uncertain) > stage self-assessment.
+**Example plans per scenario:**
 
-In HITL mode, the PI agent still makes a recommendation, but the human has final say. Switching modes doesn't change the architecture.
+| Entry context | Illustrative plan items |
+|---|---|
+| First entry, user uploaded a clean CSV matching plan's features | 1 item `done` (reference user artifact) → bypass to `decide` |
+| First entry, user uploaded a raw CSV needing feature engineering | 1 item `edit` (add features X, Y to user artifact) → `work` executes |
+| Re-entry after `backtrack`: "dataset quality issues" | prior items `done`, one new `todo` ("remove rows with quality flag") → `work` executes only the new item |
+| Re-entry after `request`: "add ablation on hyperparameter K" | prior items `done`, one new `todo` ("run ablation on K") → `work` executes only the ablation |
+| Re-entry where upstream plan was revised (hash mismatch) | most prior items `edit` (need to revise under new plan) plus some `removed` (obsolete under new plan) → `work` executes |
+| Re-entry where nothing upstream changed and peer review only asked a different stage to change | all prior items `done` → bypass to `decide` with `reason="plan-empty: no drift, no incoming work"` |
+
+**StageResult schema:**
+
+```python
+class StageResult:
+    output: Any                                  # Stage output data
+    status: Literal["done", "backtrack", "negative_result", "request"]
+    next_hint: str | None                        # Suggested target (backtrack target or next stage)
+    reason: str                                  # Why this decision
+    feedback: str | None                         # Context attached to target stage (for backtrack/request)
+    requests: list[CrossStageRequest] | None     # Targeted side-channel requests (§3.3.4)
+```
+
+**Status semantics:**
+- `done` — stage completed; transition handler advances per zone-aware rules (§3.3).
+- `backtrack` — stage judges an earlier stage must re-run with feedback. Partial rollback applied (§3.3.2).
+- `negative_result` — conclusive null finding. PI advisor is consulted; the valid outcomes are publish, pivot the hypothesis, or redirect — never silently fail.
+- `request` — stage is done but has queued targeted work for another stage (e.g., report writing needs one more ablation). Does **not** rewind — see §3.3.4.
+
+### 3.3 Transition Handler + PI Advisor
+
+The top-level router is a **rule-based transition handler**, not an LLM. Its job is traffic control: read `StageResult`, apply HITL preferences and hard limits, pick the next stage. The PI is a **participating helper** — a configurable agent invoked as an advisor at checkpoints (not in the routing hot path).
+
+This reverses the previous framing of "PI as intelligent router." Real labs have a PI who reviews at checkpoints and weighs in on tough calls, not a PI who personally routes every task. The transition handler is the traffic engine; the PI is the advisor.
+
+#### 3.3.1 Transition Handler — Decision Flow
+
+```mermaid
+flowchart TD
+    RES[["StageResult from stage EXIT"]] --> H1{human_override<br/>set?}
+    H1 -->|yes| ROUTE_OVR[Route to override target<br/>clear override flag]
+    H1 -->|no| H2{iteration<br/>ceiling hit?}
+    H2 -->|yes| FORCE[Force-advance to<br/>default next; log reason]
+    H2 -->|no| H3{status?}
+
+    H3 -->|done| H4{crossing<br/>a zone?}
+    H4 -->|no, within-zone| ADV_SILENT[Advance silently<br/>to next stage]
+    H4 -->|yes| H5{HITL approval<br/>required?}
+    H5 -->|no / auto| ADV_AUTO[Advance + emit<br/>zone_transition event]
+    H5 -->|yes| PAUSE_FWD[Pause → await<br/>human approval]
+
+    H3 -->|backtrack| H6{target in<br/>same zone?}
+    H6 -->|yes| BACK_SILENT[Partial rollback<br/>§3.3.2; route to target]
+    H6 -->|no, cross-zone| H7{HITL approval<br/>for backtrack?}
+    H7 -->|no / auto| BACK_AUTO[Partial rollback<br/>+ route + log]
+    H7 -->|yes| PAUSE_BACK[Pause → await approval<br/>with feedback preview]
+
+    H3 -->|request| H8[Queue CrossStageRequest<br/>onto target's pending_requests]
+    H8 --> H9{requester<br/>blocking?}
+    H9 -->|yes| PAUSE_REQ[Pause requester,<br/>jump to target stage]
+    H9 -->|no| CONTINUE_REQ[Keep requester running;<br/>target picks up async]
+
+    H3 -->|negative_result| PI_ASK[PI advisor consulted:<br/>publish | pivot | redirect]
+    PI_ASK --> H10{recommendation}
+    H10 -->|publish| ADV_AUTO
+    H10 -->|pivot| BACK_AUTO
+    H10 -->|redirect| ROUTE_OVR
+
+    classDef decision fill:#fffbeb,stroke:#f59e0b;
+    classDef action fill:#f0fdf4,stroke:#10b981;
+    classDef pause fill:#fef2f2,stroke:#ef4444;
+    class H1,H2,H3,H4,H5,H6,H7,H9,H10 decision;
+    class ROUTE_OVR,FORCE,ADV_SILENT,ADV_AUTO,BACK_SILENT,BACK_AUTO,H8,CONTINUE_REQ,PI_ASK action;
+    class PAUSE_FWD,PAUSE_BACK,PAUSE_REQ pause;
+```
+
+**Override priority (strict order):**
+
+1. `human_override` — direct user routing (always wins when set)
+2. Hard limits — per-stage `max_iterations`, global `max_total_iterations`, cost ceiling
+3. Stage-requested `backtrack` / `request` — honoured unless blocked by limits
+4. HITL approval gate — pauses the otherwise-chosen action for cross-zone hops
+5. Default forward sequence — baseline fallback
+
+No LLM in any of these five levels. The handler is deterministic and fully loggable.
+
+#### 3.3.2 Backtrack = Partial Rollback (with Knowledge)
+
+A backtrack must not wipe what the lab has learned — real labs don't forget prior experiments when they revisit an earlier stage. The handler applies **partial rollback**:
+
+```mermaid
+flowchart LR
+    BEFORE[PipelineState<br/>before backtrack] --> OP{Partial rollback}
+
+    OP --> KEEP[PRESERVED<br/>hypotheses<br/>experiment_log<br/>experiment_results<br/>agent_memory<br/>completed_stages<br/>transition_log<br/>cost_tracker]
+    OP --> REWIND[REWOUND<br/>current_stage → target<br/>next_stage = null<br/>attach backtrack_feedback]
+    OP --> APPEND[APPENDED<br/>transition_log entry<br/>stage_iterations[target]++]
+
+    KEEP --> AFTER[State ready for<br/>target stage re-entry]
+    REWIND --> AFTER
+    APPEND --> AFTER
+
+    classDef keep fill:#f0fdf4,stroke:#10b981;
+    classDef rewind fill:#fffbeb,stroke:#f59e0b;
+    classDef append fill:#eff6ff,stroke:#3b82f6;
+    class KEEP keep;
+    class REWIND rewind;
+    class APPEND append;
+```
+
+Stage output lists (`literature_review`, `plan`, `experiment_results`, …) are **versioned append-only** — the target stage re-runs and appends a new entry rather than overwriting. The "active" version is always the latest. Previous versions remain comparable via the observability layer.
+
+#### 3.3.3 Zone-Aware Routing — Within-Zone Is Free
+
+Stages declare their zone via metadata. The handler uses this to distinguish within-zone hops from between-zone hops:
+
+| Hop | Default behaviour | HITL default |
+|---|---|---|
+| Within-zone forward | silent advance | `auto` |
+| Within-zone backtrack | silent rewind + feedback | `auto` |
+| Between-zone forward | advance + emit `zone_transition` | configurable (`notify` typical) |
+| Between-zone backtrack | partial rollback + advance | configurable (`approve` typical) |
+
+Per-stage control preferences (`auto` / `notify` / `approve` / `edit`) override these defaults. A stage set to `approve` always prompts regardless of zone; a stage set to `auto` never prompts even across zones.
+
+#### 3.3.4 Cross-Stage Requests — Side-Channel, Not Backtrack
+
+When a stage needs targeted help from another stage without undoing its own work, it emits a `CrossStageRequest` instead of a backtrack. Example: report writing realises it needs one more ablation study — it doesn't rewind itself; it queues a request onto experimentation.
+
+The transition handler appends the request to the target stage's `pending_requests`. When control returns to that target stage (on its next run, or immediately if the requester is blocking), the stage's `enter` node picks up queued requests and factors them into its work plan. Fulfilled requests move to `completed_requests` with a pointer back to the requester.
+
+#### 3.3.5 PI Advisor — Participating Helper
+
+The PI is **not** the routing engine. The PI is a ConfigAgent (YAML-configured like any other) whose memory scope is high-level summaries, transition history, and budget status. It is invoked at a narrow set of checkpoints:
+
+- **Zone transitions** — optional review at the boundary between Discovery / Implementation / Synthesis.
+- **`negative_result` status** — the handler consults the PI for publish / pivot / redirect recommendation (see the `PI_ASK` node in §3.3.1).
+- **Ambiguous backtracks** — when a stage requests backtrack without a `next_hint`, the PI suggests a target.
+- **Stage-internal `evaluate` node, opt-in** — a stage may request a PI review as part of its own evaluation.
+- **HITL `approve` prompts** — the PI provides a recommendation shown alongside the human prompt; the human still has final say.
+
+PI decisions are logged to `state[pi_decisions]` with confidence scores (already implemented in Plan 6B). If the PI's confidence falls below threshold, the handler ignores the recommendation and falls back to the default forward sequence — the PI never forces a non-default route on low confidence.
+
+**What the PI does NOT do:**
+- Route every stage transition (that's the handler's job)
+- Execute any stage's primary work (stage agents do that)
+- See implementation details (those stay in stage agents' memory scopes)
+
+#### 3.3.6 Backtrack Trigger Catalogue
+
+Real labs don't backtrack on whim — they backtrack because a concrete obstacle surfaces that earlier-stage work has to resolve. This catalogue enumerates the triggers each stage's `evaluate` node should detect. It is prescriptive: stages SHOULD be able to detect these conditions and emit a `StageResult(status="backtrack", next_hint=..., feedback=...)` rather than iterating against a wall.
+
+| Origin stage | Trigger (what `evaluate` detects) | Target (`next_hint`) | Status | Feedback content |
+|---|---|---|---|---|
+| Literature Review | Coverage thin but topic still viable | self | (self-loop, not backtrack) | Gaps to fill |
+| Literature Review | Topic already well-covered, nothing novel | `plan_formulation` | `backtrack` | Pivot suggestion |
+| Plan Formulation | Plan depends on methods not understood | `lit_review` | `backtrack` | Which methods to deepen |
+| Plan Formulation | Plan requires data access we haven't verified | `data_exploration` (forward-skip) | `request` | Data needs to confirm |
+| Data Exploration | Dataset not available / access denied | `lit_review` | `backtrack` | Look for alternative sources / public mirrors |
+| Data Exploration | Dataset too small / too biased to answer plan | `plan_formulation` | `backtrack` | Pivot hypothesis or narrow scope |
+| Data Exploration | Schema mismatch with plan assumptions | `plan_formulation` | `backtrack` | Schema reality vs plan assumptions |
+| Data Preparation | Source data has quality issues surfacing late | `data_exploration` | `backtrack` | Specific quality problems |
+| Data Preparation | Features required by plan can't be built | `plan_formulation` | `backtrack` | Feature gap + why |
+| Experimentation | Method hits performance ceiling on baselines | `lit_review` | `backtrack` | Seeking alternative method families |
+| Experimentation | Results noisy / inconclusive (can't interpret) | `data_exploration` | `request` | Diagnose variance sources |
+| Experimentation | Training infra bug — wrong artefact produced | `data_preparation` | `backtrack` | Specific pipeline defect |
+| Experimentation | Hypothesis clearly refuted | (no target) | `negative_result` | Evidence + confidence |
+| Experimentation | Need more baselines / ablations | self | (self-loop) | Missing comparisons |
+| Interpretation | Can't explain observed pattern | `lit_review` | `backtrack` | Which phenomenon needs grounding |
+| Interpretation | Missing an ablation that changes the story | `experimentation` | `request` | Specific ablation needed |
+| Interpretation | Results contradict stated hypothesis | `plan_formulation` | `backtrack` | Pivot or reframe hypothesis |
+| Report Writing | Missing citation / related work gap | `lit_review` | `request` | Specific paper / topic |
+| Report Writing | Missing figure / comparison | `experimentation` | `request` | Specific figure spec |
+| Report Writing | Finding needs re-interpretation in context | `interpretation` | `backtrack` | What to reframe |
+| Peer Review | Insufficient baselines | `experimentation` | `backtrack` | Which baselines to add |
+| Peer Review | Experiment design flaw | `experimentation` or `plan_formulation` | `backtrack` | Flaw + suggested redesign |
+| Peer Review | Literature gap | `lit_review` | `backtrack` | What's missing |
+| Peer Review | Report clarity issues | `report_writing` | `backtrack` | Specific unclear passages |
+
+**Within-zone vs cross-zone:** most Discovery-zone triggers stay in Discovery (lit ↔ plan); most Synthesis-zone triggers stay in Synthesis (interpretation ↔ report ↔ review) — these run silently under default HITL settings (§3.3.3). Cross-zone triggers (e.g., peer review → experimentation) respect HITL approval gates. This aligns the realistic trigger space with the handler's zone-aware routing rules.
+
+**Distinguishing `backtrack` from `request`:** use `backtrack` when the origin stage cannot produce a valid result without the target stage re-doing work (origin is blocked). Use `request` when the origin stage can still ship a valid result and the other stage's work is additive (origin is not blocked). Example: report writing missing a minor citation → `request`; report writing has a finding that contradicts interpretation → `backtrack`.
+
+#### 3.3.7 Retry-Counter-Aware Backtracking — Budget Governance
+
+Backtracks are real work — every rewind costs budget (tokens, tool calls, wall-clock). Without governance, a stubborn loop (experimentation → lit_review → experimentation → lit_review → …) will silently drain the session. The transition handler tracks **per-edge retry counters** and **global backtrack budget** alongside the existing total-iteration ceiling.
+
+**State added to `PipelineState`:**
+
+```python
+backtrack_attempts: dict[tuple[str, str], int]   # (origin_stage, target_stage) → count
+backtrack_cost_spent: float                      # cumulative LLM+tool cost across all backtrack-induced runs
+max_backtrack_attempts_per_edge: int             # default 2; per-edge override in stage_config
+max_backtrack_cost_fraction: float               # default 0.4 of total session budget
+```
+
+**Gate applied on every `backtrack` in the handler (inserts before `H6` in §3.3.1 decision flow):**
+
+```mermaid
+flowchart TD
+    BT[["status == backtrack<br/>origin → target"]] --> C1{"attempts(origin,target)<br/>&gt;= max_per_edge?"}
+    C1 -->|yes| ESC[Escalate:<br/>PI advisor consulted, else<br/>force-advance + flag human]
+    C1 -->|no| C2{"backtrack_cost_spent<br/>&gt;= max_cost_fraction · budget?"}
+    C2 -->|yes| ESC
+    C2 -->|no| PROCEED[Proceed to §3.3.1 H6<br/>zone check + rollback]
+    PROCEED --> INC["Increment<br/>attempts(origin,target)"]
+
+    classDef gate fill:#fffbeb,stroke:#f59e0b;
+    classDef stop fill:#fef2f2,stroke:#ef4444;
+    classDef go fill:#f0fdf4,stroke:#10b981;
+    class C1,C2 gate;
+    class ESC stop;
+    class PROCEED,INC go;
+```
+
+**Behavior:**
+
+- **Per-edge limit** stops a specific loop (e.g., experimentation → lit_review repeated). Counters are pairwise: exhausting experimentation → lit_review does not block experimentation → data_preparation.
+- **Global fraction** stops the session if backtracks collectively have eaten too much of the total budget, even when no individual edge is exhausted.
+- **Counter reset semantics:** a successful forward-advance out of the origin stage (status=done, reaching the next stage and past it) resets `backtrack_attempts[origin, target]` to zero. A subsequent failure later in the run gets a fresh allowance.
+- **Escalation, not silent failure:** when a gate trips, the handler consults the PI advisor for a recommendation (accept current result, pivot, flag human). It never silently discards the origin stage's `backtrack` request.
+- **Observability:** every gate trip emits `backtrack_limit_hit` onto the event bus with the edge, counters, and escalation outcome. The observability layer already carries these via Plan 6B's event infrastructure.
+
+**Interaction with bypass (§3.2.2):** a target stage re-entered via backtrack will still build a fresh StagePlan. If the plan turns out empty (no drift, no actionable feedback items), the target bypasses — and the backtrack counter still increments to prevent ping-pong loops where two stages keep backtracking and immediately bypassing without either changing anything.
 
 ### 3.4 Pipeline State
 
@@ -350,9 +658,9 @@ class EvidenceLink:
     interpretation: str                         # "Accuracy improved by 4.8%, supporting H1"
 ```
 
-The PI agent uses hypothesis status as structured input for routing decisions: "H1 is refuted — should we abandon this line entirely, or is there a variant worth testing?" This is far more rigorous than reading summaries.
+The PI advisor uses hypothesis status as structured input when consulted at checkpoints (§3.3.5): "H1 is refuted — should we abandon this line entirely, or is there a variant worth testing?" Far more rigorous than reading summaries. The transition handler itself does not read hypotheses — it only honours the PI's recommendation when confidence clears the fallback threshold.
 
-Plan formulation proposes initial hypotheses. Experimentation links results to hypotheses. Interpretation updates hypothesis status. The PI agent tracks which hypotheses are active when making transition decisions.
+Plan formulation proposes initial hypotheses. Experimentation links results to hypotheses. Interpretation updates hypothesis status. The PI advisor tracks which hypotheses are active when making its checkpoint recommendations.
 
 ### 3.5.1 Agent Observability Types (Plan 6)
 
@@ -489,30 +797,108 @@ Agent memory persists in two places:
 
 Every `ConfigAgent.inference()` call creates one logical *turn* with a UUID `turn_id`. LLM requests, LLM responses, and nested tool calls produced by that inference share the same `turn_id` (tool calls that internally trigger another inference get a `parent_turn_id` pointer). This is the correlation key for chat-style rendering and for filtering a single "what did this agent say?" view.
 
+### 4.4 Observability Infrastructure
+
+Two emission points correlate all turn activity via a single `turn_id`, stored in a `contextvars.ContextVar` so there's no threading the id through every function signature (and it's asyncio-safe — one task = one context):
+
+1. **Agent-level boundary.** `ConfigAgent.inference()` mints a `turn_id`, pushes a `TurnContext` onto the ContextVar, emits `agent_turn_started` (with `system_prompt_hash`, `assembled_context_keys`, `memory_scope_applied`, `is_mock`), runs the body, emits `agent_turn_completed` with aggregated tokens/cost. Hypothesis updates in the interpretation stage emit `hypothesis_update`.
+
+2. **Provider boundary.** `TracedLLMProvider` and `TracedTool` wrappers read the current `TurnContext` from the ContextVar and emit `agent_llm_request/response` and `agent_tool_call/result` around the underlying call. Same code path for every agent; no agent-level call-site changes beyond `inference()`.
+
+Every emitted event also writes an `agent_turns` row. WebSocket stream and REST history endpoint read the same table — single source of truth.
+
+`BaseLLMProvider` carries an `is_mock: bool = False` flag. `MockLLMProvider` sets `True`. The tracing wrapper reads it and stamps every emitted event and `agent_turns` row, so the UI can visually distinguish mock runs.
+
+**PI advisor observability split.** The PI advisor (§3.3.5) calls its LLM directly without pushing a `TurnContext` — `TracedLLMProvider` sees `current_turn() is None` and passes through without writing `agent_turns` rows. This is intentional: PI decisions have their own structured shape (`action`, `confidence`, `used_fallback`, `next_stage`, `reasoning`) and are observable via `GET /api/sessions/{id}/pi/history` (reads `state["pi_decisions"]`) plus the `pi_decision` WebSocket event emitted from `PIAgent._finalize`. `GET /api/sessions/{id}/agents/pi_agent/history` deliberately returns empty results — the PI's observability channel is the decision log, not the generic turn log.
+
+**Graph topology mapper.** `GET /api/sessions/{id}/graph` returns an owned shape derived from the compiled LangGraph plus runtime annotations from state:
+
+```jsonc
+{
+  "nodes": [
+    {"id": "<stage>", "type": "stage" | "transition" | "subgraph",
+     "label": "...", "zone": "discovery" | "implementation" | "synthesis",
+     "status": "idle" | "active" | "complete" | "failed" | "skipped",
+     "iteration_count": 0, "skipped": false}
+  ],
+  "edges": [
+    {"from": "<id>", "to": "<id>",
+     "kind": "sequential" | "backtrack" | "conditional",
+     "reason": "..."}
+  ],
+  "cursor": {"node_id": "...", "agent": "...", "started_at": "..."} | null,
+  "subgraphs": [{"id": "lab_meeting", "nodes": [...], "edges": [...]}]
+}
+```
+
+Implementation walks `graph.get_graph()` for base topology, overlays runtime state (`completed_stages`, `current_stage`, `stage_iterations`, `skip_stages`), extracts subgraphs via `graph.get_graph(xray=1)` (preserved nested, not flattened), and computes `cursor` from the most recent `stage_started` or `agent_turn_started` event. For Plan 7, each top-level stage's internal subgraph (§3.2.1) is also emitted so the UI can optionally drill into `stage_plan → work → evaluate → decide`.
+
 ---
 
 ## 5. Lab Meetings
 
-When a stage is stuck, the system can trigger a lab meeting — a special cross-zone collaboration subgraph.
+Lab meetings are a **callable LangGraph subgraph**, not a stage in the default sequence. The calling stage's `work` node invokes the meeting subgraph when its agent needs peer input to move forward; the meeting runs its own ENTER → Discuss → Synthesize → EXIT loop; on exit, control returns to the **same `work` node** of the calling stage, with the meeting's output (action items + summary) merged into the calling agent's context. The top-level transition handler does not see the meeting — it's a nested detour inside a stage's work, not a stage transition.
 
-### 5.1 Triggers (configurable)
+### 5.1 Semantic model
 
-- Consecutive failures (default: 3)
-- Score plateau over N rounds (default: 2)
-- Agent explicitly flags "I'm stuck"
-- Scheduled periodic checkpoints
-- Human requests meeting via UI/API
+```mermaid
+flowchart LR
+    subgraph CS ["Calling stage (e.g., experimentation)"]
+        direction LR
+        SWORK[work node<br/>agent iterating] -->|"agent requests<br/>peer discussion"| CALL[[invoke lab_meeting subgraph]]
+        CALL --> RESUME[work node<br/>resumes with meeting output]
+        RESUME --> SEVAL{evaluate}
+    end
 
-**Budget triggers are separate from stuck triggers.** A budget warning (e.g., 70% spent) does NOT trigger a lab meeting — meetings burn more budget. Instead, budget warnings shift the PI agent's decision bias toward wrapping up: prefer completing over iterating, prefer publishing negative results over exploring more hypotheses, prefer advancing to synthesis over running more experiments. This is configured via `budget_policy`, not `lab_meeting.triggers`.
+    subgraph LM ["lab_meeting subgraph"]
+        direction LR
+        LENT([ENTER<br/>problem + participants]) --> LDISC[Discuss<br/>peers contribute by scope]
+        LDISC --> LSYN[Synthesize<br/>action items + summary]
+        LSYN --> LEXIT([EXIT])
+    end
 
-### 5.2 Meeting Flow
+    CALL -.->|subgraph<br/>invocation| LENT
+    LEXIT -.->|return<br/>LabMeetingResult| RESUME
 
-1. **Problem Presentation** — stuck agent presents what they tried, what failed, and blockers (using their own memory scope)
-2. **Multi-Agent Discussion** — other agents contribute from their perspective: professor suggests high-level pivots, postdoc connects to literature, ML engineer proposes implementation alternatives
-3. **Action Items** — PI agent synthesizes discussion into concrete next steps (retry with new approach, backtrack to earlier stage, or pivot research direction)
-4. **Memory Update** — meeting summary distributed to each agent's working memory, filtered by their scope
+    classDef cs fill:#f5f7ff,stroke:#6366f1;
+    classDef lm fill:#fef3c7,stroke:#d97706;
+    class CS cs;
+    class LM lm;
+```
 
-### 5.3 Configuration
+Lab meetings are **not** in `default_sequence`, not routed by the transition handler, and don't appear as a node on the production-line graph. They appear in the UI as a drill-in overlay on the active stage's subgraph drawer when invoked (§8.2).
+
+### 5.2 Triggers (who calls the subgraph)
+
+1. **Agent-initiated (primary)** — any stage agent whose memory includes `can_request_lab_meeting: true` may emit a "request meeting" decision from the stage's `work` node. The node invokes the meeting subgraph directly.
+2. **Auto-triggers (fallback)** — stage's `evaluate` node detects a stuck condition and invokes the meeting before emitting any `backtrack`. Configurable:
+   - Consecutive `work` iterations with no progress signal (default: 3)
+   - Score plateau across N iterations (default: 2)
+   - Explicit agent self-flag ("I'm stuck, need help")
+3. **Human-initiated** — via UI, a user can invoke the meeting subgraph for the currently-active stage. Treated identically to agent-initiated.
+
+**Budget triggers are separate from stuck triggers.** A budget warning (70% spent) does NOT trigger a meeting — meetings burn more budget. Budget warnings shift the PI advisor's recommendation bias toward wrapping up (see `budget_policy` below), and may be surfaced to agents so they avoid requesting meetings. Configured via `budget_policy`, not `lab_meeting.triggers`.
+
+### 5.3 Meeting Flow (inside the subgraph)
+
+1. **ENTER — Problem Presentation.** Calling agent hands in: what was tried, what failed, current blocker. Meeting state is seeded with the calling stage's id and the requester's memory scope (summarized).
+2. **Discuss — Multi-Agent Contribution.** Other agents contribute from their own memory scopes: professor suggests high-level pivots, postdoc connects to literature, ML engineer proposes implementation alternatives. Runs for up to `max_discussion_rounds` turns.
+3. **Synthesize — Action Items.** The PI advisor (or whichever agent is configured as meeting chair) summarizes discussion into structured `action_items` + `summary`. This is the PI's advisor role (§3.3.5), not routing.
+4. **EXIT — Return.** The subgraph exits with a `LabMeetingResult`:
+   ```python
+   class LabMeetingResult:
+       action_items: list[str]                   # concrete next steps
+       summary: str                              # narrative
+       participants: list[str]                   # who contributed
+       suggested_backtrack_target: str | None    # if the meeting concludes the stage should backtrack
+       duration_ms: int
+       cost_usd: float
+   ```
+5. **Memory merge.** Each participant's working memory receives the summary, filtered by their scope. The calling stage's `work` node receives the full `LabMeetingResult` as input for its next iteration.
+
+The calling stage decides what to do with `suggested_backtrack_target`: its `evaluate` node may choose to emit `StageResult(status="backtrack", next_hint=<target>, feedback=result.summary)` — that *is* how a meeting "causes a backtrack," but the decision surfaces as a normal stage decision on the top-level graph, not as a direct meeting → transition-handler edge.
+
+### 5.4 Configuration
 
 ```yaml
 lab_meeting:
@@ -523,6 +909,7 @@ lab_meeting:
     scheduled_interval: null  # or every N iterations
   participants: auto  # or explicit agent list
   max_discussion_rounds: 5
+  chair: pi_agent              # which agent synthesizes action items at EXIT
 
 # Separate from lab meetings — budget influences PI decision bias, not meetings
 budget_policy:
@@ -530,6 +917,10 @@ budget_policy:
   critical_threshold: 0.9      # At 90% spent, PI must advance or complete
   hard_ceiling: 1.0            # Pipeline stops
 ```
+
+### 5.5 Plugin registration
+
+`LabMeetingStage` stays registered under `PluginType.STAGE` (because it's structurally a subgraph-building unit, same as other stages), but with `zone = None` and a class attribute `invocable_only: ClassVar[bool] = True`. The pipeline builder reads this flag and **excludes** such stages from the top-level graph wiring; only stages with `invocable_only = False` participate in the default sequence routing. Lab meeting is still exposed via `/api/plugins` for discoverability and configuration.
 
 ---
 
@@ -655,33 +1046,44 @@ Content fields are truncated at 8KB on the wire; full payloads retrievable from 
 - **Session List (Dashboard)** — all sessions with status (running/paused/completed), current stage, iteration count, cost
 - **Session Create** — config wizard: research topic, LLM model, pipeline config, agent selection, stage controls
 - **Session Detail** — main workspace:
-  - The center splits vertically. Top: an always-visible `GraphTopology` canvas showing the live pipeline with rich nodes (status dot, elapsed time, iteration count, current agent, per-stage control dropdown, per-stage cost). Bottom: tabs — Conversations (default), Artifacts, Experiments, Cost.
-  - The left sider carries only global controls: Pause, Resume, Cancel. Per-stage control levels live on the graph nodes, not in a parallel list.
-  - The right sider is the Agent Monitor. For the currently-focused agent it shows memory scope (read/summarize/write keys), assembled-context preview (what this agent saw on its last turn), conversation history (paginated), and scratchpad (working_memory + notes). Focus follows the latest `agent_turn_started` event unless pinned. Below the monitor: Hypotheses (unchanged), PI decision log (last N), compact Cost tracker stack below the Agent Monitor.
-  - Page footer: sticky human feedback input for sending notes to agents or redirecting
+
+  **Graph-hierarchy principle (recursive zoom into active):** the UI stacks graphs by granularity. The top canvas is always the overall production line. Directly beneath it, a graph for the **currently-active node** is rendered — and *only* when that node is active. This rule recurses: if the active node is a stage, the second tier shows the stage's internal subgraph; if inside that subgraph a `work` node invokes another subgraph (e.g., `lab_meeting`), a third tier appears attached to the invoker; when control returns, the tier collapses. Inactive branches never render their subgraphs — rendering is driven by the live cursor, not by topology.
+
+  - **Top canvas — "production line" graph.** An always-visible `GraphTopology` shows the pipeline as a clean forward flow: 8 stages grouped by zone, solid forward edges only. **Backtrack edges are deliberately NOT rendered** on this canvas — they produce a hairball and obscure the actual current state. Backtracks are conveyed by animating the active-node cursor jumping back (with a subtle reverse-sweep animation) and by a small "↩ backtrack N" badge on the origin node's history. Rich stage nodes carry: status dot, elapsed time, iteration count, current agent name, per-stage control dropdown, per-stage cost.
+  - **Active-stage subgraph drawer** (mounted directly below the production-line graph). Only visible when a stage is active — renders that stage's internal subgraph (`enter → stage_plan → gate → work → evaluate → decide`; see §3.2.1) with the current internal cursor highlighted. Collapses to a thin header when no stage is active. Lazy-rendered per active stage — the UI does not instantiate subgraphs for inactive stages.
+    - **Nested subgraph attachments on `work`.** When the active stage's `work` node invokes another subgraph (today: `lab_meeting` per §5; tomorrow: any future callable subgraph), that subgraph renders as a nested branch hanging off the `work` node — still inside the same drawer, not as a separate panel. Entering the nested subgraph animates the cursor descending into it; exiting animates the cursor returning to `work`. `LabMeetingResult` preview appears as a collapsible chip on `work` after return.
+  - **Center bottom — tabs:** Conversations (default), Artifacts, Experiments, Cost.
+  - **Left sider — Agent Monitor + global controls.** Global controls (Pause, Resume, Cancel) live at top. Below, per-agent cards showing memory scope (read/summarize/write keys), assembled-context preview (what this agent saw on its last turn), scratchpad (working_memory + notes), and current StagePlan items when this agent is driving the active stage. **No conversation history here** — history lives on the right (the conversation pane) so we don't duplicate the data across two panes. Per-stage control levels live on the graph nodes, not in a parallel list.
+  - **Right sider — Conversation pane.** Turns grouped by stage inside collapsible sections; each section is **lazy-loaded on expand** (session history can be long — hundreds of turns — so unexpanded stages hold no rendered turns in the DOM). Only the current-stage section expands by default; others render their header only until clicked. Hypotheses, PI decision log (last N), and compact Cost tracker stack below the conversation.
+  - Page footer: sticky human feedback input for sending notes to agents or redirecting.
 - **Plugin Browser** — available stages, tools, agents with descriptions and config schemas
 - **Settings** — global config: default LLM, API keys, execution backend, storage backend
 
 ### 8.3 Key Components
 
-- `GraphTopology` — @xyflow/react + elkjs auto-layout pipeline graph (replaces `PipelineGraph`)
-- `AgentActivityFeed` — real-time streaming log of agent actions via WebSocket
+- `GraphTopology` — production-line pipeline graph: forward edges only, zone groupings, animated cursor for current stage. Backtracks conveyed via cursor animation + node badges, not rendered as edges (avoids hairball).
+- `StageSubgraphDrawer` — renders the active stage's internal subgraph (`enter → stage_plan → gate → work → evaluate → decide`) directly beneath `GraphTopology`. Mounted only while a stage is active; collapses when idle. Drives off the `/graph` endpoint's `subgraphs` field. Renders nested subgraph attachments (e.g., `lab_meeting` — §5) as branches hanging off the `work` node, with descent/return cursor animation and a post-return result chip.
 - `StageOutputPanel` — versioned results viewer (compare iteration N vs N-1)
-- `ControlBar` — mode toggle, pause/resume, per-stage review preference toggles
+- `ControlBar` — global pause/resume/cancel; per-stage controls live on graph nodes, not here
 - `CostTracker` — @ant-design/plots budget visualization
 - `CheckpointModal` — HITL approval dialog with PI recommendation
 - `FeedbackInput` — human → agent messaging
 - `HypothesisTracker` — visual status of all hypotheses (active/supported/refuted/abandoned) with linked evidence
-- `ChatView` — center "Conversations" tab (`mode` prop reserved for future `lab_scene`)
-- `AgentMonitor` — right sider; per-agent tabs with auto-focus and pin
+- `ChatView` — right sider conversation pane. Turns grouped by stage into collapsible sections; **each section lazy-loads its turns on expand** (`useAgentHistory` not called until the section opens). Only the active-stage section auto-expands. `mode` prop reserved for future `lab_scene`.
+- `StageGroup` — collapsible section inside `ChatView`, one per stage; owns the lazy-load trigger
+- `AgentMonitor` — left sider; per-agent cards showing scope, context preview, memory scratchpad, active StagePlan items. **No conversation history** — lives on the right.
 - `AgentScopeCard` — read/summarize/write memory scope keys
 - `AgentContextPreview` — assembled-context snapshot for the agent's latest turn
 - `AgentMemoryCard` — working_memory + notes scratchpad viewer
-- `AgentHistoryCard` — paginated turn list filtered to this agent
+- `StagePlanCard` — current StagePlan items (Plan 7B) with status chips (done / edit / todo / removed) and rationale
 - `ExperimentsTab` — experiment run cards + prior-attempts ribbon
 - `ExperimentDetail` — one run: script, stdout, stderr, repro, refs, linked hypothesis
 - `ExperimentDiffView` — side-by-side run compare
 - `PIDecisionLog` — last N PI decisions with confidence chips
+
+**Dropped from earlier drafts:**
+- `AgentHistoryCard` — history duplicated the conversation pane; a single source of truth lives in the right-side `ChatView`.
+- `AgentActivityFeed` — real-time raw-event log; superseded by stage-grouped conversation + graph cursor animation.
 
 ---
 
@@ -715,7 +1117,27 @@ users(id, name, settings_json)
 sessions(id, user_id, topic, status, pipeline_config, created_at, updated_at)
 checkpoints(id, session_id, stage, state_blob, created_at)
 artifacts(id, session_id, type, path, metadata_json)
+agent_turns(
+  id,                      -- PK
+  session_id,              -- FK, indexed
+  turn_id,                 -- UUID, correlates request/response/tool-calls within one inference
+  parent_turn_id,          -- nullable; nested sub-turns (tool call triggering another inference)
+  agent,
+  stage,
+  kind,                    -- llm_request | llm_response | tool_call | tool_result | dialogue
+  payload_json,            -- full payload (not the 8KB-truncated wire version)
+  system_prompt_hash,
+  tokens_in, tokens_out,
+  cost_usd,
+  is_mock,
+  ts
+)
+-- Composite indexes:
+--   (session_id, agent, ts DESC)   for chat-per-agent views
+--   (session_id, stage, ts ASC)    for chat-per-stage views
 ```
+
+`agent_turns` is append-only and deliberately kept out of LangGraph checkpoint state to prevent `state_blob` growth on long sessions. Storage backends expose `append_agent_turn(turn)` and `list_agent_turns(session_id, *, agent=None, stage=None, after_ts=None, limit=200)` (async).
 
 **Multi-user upgrade path:** add auth middleware (OAuth/JWT) → populate `user_id` from token instead of "default" → add RBAC if needed. Zero schema changes.
 
@@ -823,7 +1245,7 @@ Priority: **pipeline modularity first**.
 
 ### MVP includes:
 - LangGraph pipeline with all 8 default stages as plugins (including data exploration)
-- PI agent as intelligent transition handler with confidence-based fallback
+- Rule-based transition handler (zone-aware, partial-rollback) with PI advisor consulted at checkpoints and confidence-gated recommendations
 - Hypothesis tracking as first-class pipeline state
 - Experimentation stage with enforced baselines and ablation structure
 - Reproducibility metadata auto-captured by execution backend
