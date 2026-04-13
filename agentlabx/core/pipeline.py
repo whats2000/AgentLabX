@@ -98,12 +98,25 @@ class PipelineBuilder:
 
         builder = StateGraph(PipelineState)
 
-        # Resolve stage classes and create runners with the shared context
+        # Resolve stage classes and create runners with the shared context.
+        # Invocable-only stages (§5.5) are registered but excluded from the
+        # top-level graph wiring — they are callable subgraphs invoked on demand.
         runners: dict[str, StageRunner] = {}
+        effective_sequence: list[str] = []
         for stage_name in stage_sequence:
             stage_cls = self.registry.resolve(PluginType.STAGE, stage_name)
+            if getattr(stage_cls, "invocable_only", False):
+                # Callable subgraph — not wired into the top-level graph.
+                # Invoked from stage work nodes when requested (§5.5).
+                continue
             stage_instance = stage_cls()
             runners[stage_name] = StageRunner(stage_instance, context=stage_context)
+            effective_sequence.append(stage_name)
+
+        if not effective_sequence:
+            raise ValueError(
+                "stage_sequence has no runnable (non-invocable-only) stages"
+            )
 
         # Add stage nodes
         for stage_name, runner in runners.items():
@@ -191,14 +204,14 @@ class PipelineBuilder:
         builder.add_node("transition", transition_node)
 
         # Wire edges: START → first stage
-        builder.add_edge(START, stage_sequence[0])
+        builder.add_edge(START, effective_sequence[0])
 
         # Each stage → transition
-        for stage_name in stage_sequence:
+        for stage_name in effective_sequence:
             builder.add_edge(stage_name, "transition")
 
         # Conditional edges from transition → stage or END
-        route_map: dict[str, str] = {name: name for name in stage_sequence}
+        route_map: dict[str, str] = {name: name for name in effective_sequence}
         route_map["__end__"] = END
 
         def route_after_transition(state: PipelineState) -> str:

@@ -86,6 +86,7 @@ class BaseStage(ABC):
     required_agents: list[str]
     required_tools: list[str]
     zone: ClassVar[ZoneName | None] = None
+    invocable_only: ClassVar[bool] = False  # True = callable subgraph, excluded from top-level wiring
 
     @abstractmethod
     async def run(self, state: PipelineState, context: StageContext) -> StageResult: ...

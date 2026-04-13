@@ -15,6 +15,17 @@ from agentlabx.core.zones import zone_for
 META_NODE_IDS = ("__start__", "__end__", "transition")
 
 
+def _iter_registered_stages(registry):
+    """Yield (name, class) for every stage in the registry.
+
+    Uses PluginRegistry.list_plugins(PluginType.STAGE) which returns a
+    dict[str, Any] snapshot of registered stage classes.
+    """
+    from agentlabx.core.registry import PluginType
+
+    yield from registry.list_plugins(PluginType.STAGE).items()
+
+
 def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]:
     """Return the owned graph topology shape for the given state.
 
@@ -123,11 +134,24 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
     if current:
         cursor = {"node_id": current, "agent": None, "started_at": None}
 
-    # TODO(7B): populate subgraphs from compiled stage subgraphs — Plan 7B
-    # will introduce StageSubgraphBuilder and the per-stage internal
-    # enter → stage_plan → gate → work → evaluate → decide graphs. The UI
-    # drills into these when a stage is active (spec §8.2 recursive zoom).
-    return {"nodes": nodes, "edges": edges, "cursor": cursor, "subgraphs": []}
+    # Invocable-only stages (e.g., lab_meeting, §5.5) are registered but not
+    # wired into the top-level graph. Surface them here so the frontend can
+    # discover them for the recursive subgraph drawer (spec §8.2). The
+    # nodes/edges arrays stay empty in Plan 7B; Plan 7D renders the subgraph
+    # internals from the compiled stage's get_graph() at runtime.
+    subgraphs: list[dict[str, object]] = []
+    if registry is not None:
+        for name, cls in _iter_registered_stages(registry):
+            if getattr(cls, "invocable_only", False):
+                subgraphs.append({
+                    "id": name,
+                    "kind": "invocable_only",
+                    "label": getattr(cls, "description", name),
+                    "nodes": [],
+                    "edges": [],
+                })
+
+    return {"nodes": nodes, "edges": edges, "cursor": cursor, "subgraphs": subgraphs}
 
 
 def _pretty(node_id: str) -> str:
