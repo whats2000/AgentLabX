@@ -28,6 +28,8 @@ def resolve_agent(
     model: str = "claude-sonnet-4-6",
     cost_tracker: Any = None,
     state: dict | None = None,
+    event_bus: Any = None,
+    storage: Any = None,
 ) -> BaseAgent:
     """Resolve an agent from the registry and instantiate it.
 
@@ -42,6 +44,9 @@ def resolve_agent(
     When state is provided, the agent's memory is hydrated from
     state["agent_memory"][name] (if that key exists), so the agent resumes
     from its last persisted state rather than starting fresh.
+
+    When event_bus and storage are provided, they are forwarded to ConfigAgent
+    so inference() emits agent_turn_started / agent_turn_completed events.
     """
     entry = registry.resolve(PluginType.AGENT, name)
 
@@ -51,6 +56,8 @@ def resolve_agent(
             llm_provider=llm_provider,
             model=model,
             cost_tracker=cost_tracker,
+            event_bus=event_bus,
+            storage=storage,
         )
     elif isinstance(entry, type) and issubclass(entry, BaseAgent):
         agent = entry()
@@ -145,6 +152,8 @@ def resolve_agents_for_stage(
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
             state=state,
+            event_bus=context.event_bus,
+            storage=context.storage,
         )
         for name in agent_names
     }

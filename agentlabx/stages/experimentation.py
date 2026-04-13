@@ -36,6 +36,8 @@ class ExperimentationStage(BaseStage):
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
             state=state,
+            event_bus=context.event_bus,
+            storage=context.storage,
         )
         code_executor = resolve_tool(registry, "code_executor", event_bus=context.event_bus, storage=context.storage)
 

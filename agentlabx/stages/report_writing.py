@@ -31,6 +31,8 @@ class ReportWritingStage(BaseStage):
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
             state=state,
+            event_bus=context.event_bus,
+            storage=context.storage,
         )
         phd = resolve_agent(
             registry,
@@ -38,6 +40,8 @@ class ReportWritingStage(BaseStage):
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
             state=state,
+            event_bus=context.event_bus,
+            storage=context.storage,
         )
 
         # Step 1: Professor drafts outline

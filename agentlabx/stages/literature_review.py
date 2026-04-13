@@ -32,6 +32,8 @@ class LiteratureReviewStage(BaseStage):
             llm_provider=context.llm_provider,
             cost_tracker=context.cost_tracker,
             state=state,
+            event_bus=context.event_bus,
+            storage=context.storage,
         )
         arxiv_tool = resolve_tool(registry, "arxiv_search", event_bus=context.event_bus, storage=context.storage)
 
