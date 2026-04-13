@@ -105,16 +105,86 @@ class PipelineBuilder:
         transition_handler = TransitionHandler(preferences=self.preferences)
 
         def transition_node(state: PipelineState) -> dict[str, Any]:
-            """Run transition logic: decide next stage, update tracking fields."""
+            """Route to next stage; maintain counters, log, partial rollback."""
+            from datetime import datetime
+
+            from agentlabx.core.state import (
+                StageError,
+                Transition,
+                apply_partial_rollback,
+            )
+
             decision = transition_handler.decide(state)
             current = state.get("current_stage", "")
             update: dict[str, Any] = {
                 "next_stage": decision.next_stage,
                 "human_override": None,
             }
+
             # completed_stages is a reducer (operator.add) field — append current
             if current:
                 update["completed_stages"] = [current]
+
+            if decision.action == "backtrack" and decision.next_stage:
+                # Partial rollback: rewind current_stage + keep feedback; all
+                # other state (hypotheses, experiment_log, etc.) preserved.
+                rollback = apply_partial_rollback(
+                    state,
+                    target=decision.next_stage,
+                    feedback=state.get("backtrack_feedback"),
+                )
+                update.update(rollback)
+
+                # Per-edge counter increment
+                edge_key = f"{current}->{decision.next_stage}"
+                attempts = dict(state.get("backtrack_attempts", {}))
+                attempts[edge_key] = attempts.get(edge_key, 0) + 1
+                update["backtrack_attempts"] = attempts
+
+            elif decision.action in ("advance", "forced_advance") and current:
+                # Forward advance: clear any stale feedback, reset counters
+                # for edges originating at the now-completed stage.
+                update["backtrack_feedback"] = None
+                attempts = dict(state.get("backtrack_attempts", {}))
+                stale = [k for k in attempts if k.startswith(f"{current}->")]
+                for k in stale:
+                    attempts.pop(k, None)
+                if stale:
+                    update["backtrack_attempts"] = attempts
+
+            elif decision.action == "backtrack_limit_exceeded":
+                # Handler already computed a concrete fallback; apply it +
+                # log an error explaining the escalation.
+                update["backtrack_feedback"] = None
+                update["errors"] = [
+                    StageError(
+                        stage=current,
+                        error_type="backtrack_limit_exceeded",
+                        message=decision.reason,
+                        timestamp=datetime.now(),
+                        recovered=False,
+                    )
+                ]
+
+            # transition_log: append one entry per transition (except complete).
+            if decision.action != "complete" and current and decision.next_stage:
+                triggered_by_map = {
+                    "human_override": "human",
+                    "forced_advance": "system",
+                    "backtrack_limit_exceeded": "system",
+                    "advance": "agent",
+                    "backtrack": "agent",
+                }
+                update["transition_log"] = [
+                    Transition(
+                        from_stage=current,
+                        to_stage=decision.next_stage,
+                        reason=decision.reason,
+                        triggered_by=triggered_by_map.get(decision.action, "system"),
+                        timestamp=datetime.now(),
+                    )
+                ]
+
             return update
 
         builder.add_node("transition", transition_node)
