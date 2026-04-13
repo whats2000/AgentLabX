@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 
 from agentlabx.core.state import CrossStageRequest, PipelineState
+
+if TYPE_CHECKING:
+    from agentlabx.agents.base import BaseAgent
+
+
+def sync_agent_memory_to_state(state: dict, agents: dict[str, "BaseAgent"]) -> None:
+    """Write each dirty agent's snapshot into state[agent_memory][name]. Clears dirty flags.
+
+    Args:
+        state: The pipeline state dict to update.
+        agents: A dict mapping agent names to BaseAgent instances.
+    """
+    memory = state.setdefault("agent_memory", {})
+    for name, agent in agents.items():
+        if getattr(agent, "dirty", False):
+            memory[name] = agent.snapshot_memory()
+            agent.dirty = False
 
 
 class StageContext(BaseModel):
