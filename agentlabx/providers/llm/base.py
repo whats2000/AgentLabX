@@ -19,6 +19,7 @@ class BaseLLMProvider(ABC):
     # Plugin metadata — subclasses override. Surfaced by /api/plugins.
     name: str = "llm_provider"
     description: str = ""
+    is_mock: bool = False
 
     @abstractmethod
     async def query(

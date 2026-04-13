@@ -16,6 +16,7 @@ class MockLLMProvider(BaseLLMProvider):
         "Scripted responses for tests and --mock-llm local dev. "
         "Zero cost, zero network — returns canned strings in call order."
     )
+    is_mock: bool = True
 
     def __init__(self, responses: list[str] | None = None) -> None:
         self._responses: deque[str] = deque(responses or [])
