@@ -240,3 +240,24 @@ def test_experiment_attempt_shape():
         "ts": datetime.now(),
     }
     assert att["outcome"] == "failure"
+
+
+def test_initial_state_has_backtrack_tracking_fields():
+    state = create_initial_state(
+        session_id="s1", user_id="u1", research_topic="t"
+    )
+    assert state["backtrack_attempts"] == {}
+    assert state["backtrack_cost_spent"] == 0.0
+    assert state["backtrack_feedback"] is None
+
+
+def test_backtrack_attempts_uses_edge_string_keys():
+    # "origin->target" string keys (tuple keys aren't JSON-serializable,
+    # and LangGraph's checkpointer requires JSON-safe state).
+    state = create_initial_state(
+        session_id="s1", user_id="u1", research_topic="t"
+    )
+    state["backtrack_attempts"]["experimentation->literature_review"] = 2
+    assert (
+        state["backtrack_attempts"]["experimentation->literature_review"] == 2
+    )

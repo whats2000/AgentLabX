@@ -202,6 +202,13 @@ class PipelineState(TypedDict):
     experiment_log: Annotated[list[ExperimentAttempt], operator.add]
     pi_decisions: Annotated[list[dict], operator.add]
 
+    # Backtrack governance (Plan 7A)
+    # Keys are "origin_stage->target_stage" strings; tuple keys aren't
+    # JSON-serializable and LangGraph's checkpointer needs JSON-safe state.
+    backtrack_attempts: dict[str, int]
+    backtrack_cost_spent: float
+    backtrack_feedback: str | None
+
 
 def active_hypotheses(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
     """Return the latest hypothesis record per ID (last-write-wins by position).
@@ -264,4 +271,7 @@ def create_initial_state(
         agent_memory={},
         experiment_log=[],
         pi_decisions=[],
+        backtrack_attempts={},
+        backtrack_cost_spent=0.0,
+        backtrack_feedback=None,
     )
