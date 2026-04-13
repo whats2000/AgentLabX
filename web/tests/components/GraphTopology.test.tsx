@@ -51,7 +51,7 @@ describe("GraphTopology", () => {
     }));
   });
 
-  it("renders one node per topology node", async () => {
+  it("renders stage node labels for all topology nodes", async () => {
     renderIt();
     expect(await screen.findByText("Plan Formulation")).toBeInTheDocument();
     expect(screen.getByText("Literature Review")).toBeInTheDocument();
@@ -67,5 +67,12 @@ describe("GraphTopology", () => {
   it("shows iteration count on active node", async () => {
     renderIt();
     expect(await screen.findByText(/iter 2/i)).toBeInTheDocument();
+  });
+
+  it("renders zone group labels for present zones", async () => {
+    renderIt();
+    // Zone group nodes render their zone name as uppercase label
+    expect(await screen.findByText("discovery")).toBeInTheDocument();
+    expect(screen.getByText("synthesis")).toBeInTheDocument();
   });
 });

@@ -70,7 +70,6 @@ export default function SessionDetailPage() {
     );
   }
 
-  // Outer flex column: graph canvas on top, tabs+siders below, sticky feedback at bottom.
   return (
     <div
       style={{
@@ -83,7 +82,7 @@ export default function SessionDetailPage() {
       {/* Header — topic + session_id + status badge */}
       <div
         style={{
-          marginBottom: 16,
+          marginBottom: 12,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
@@ -101,16 +100,37 @@ export default function SessionDetailPage() {
         <StatusBadge status={session.status} />
       </div>
 
-      {/* Graph canvas — always visible */}
-      <div style={{ marginBottom: 16 }}>
-        <Card variant="borderless" styles={{ body: { padding: 8 } }}>
-          <GraphTopology sessionId={sessionId} />
-        </Card>
+      {/* Controls strip — horizontal */}
+      <div
+        style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: "#fff",
+          border: "1px solid #efefef",
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+        }}
+      >
+        <ControlBar sessionId={sessionId} layout="horizontal" />
       </div>
 
-      {/* Main 3-column layout — Layout is its own row-flex; no Card wrapper.
-          Wrapping AntD Layout in a flex Card collapses .ant-card-body to its
-          children's intrinsic min-width (squashing Content to a tube). */}
+      {/* Graph canvas — always visible */}
+      <div style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #efefef",
+            borderRadius: 8,
+            padding: 8,
+          }}
+        >
+          <GraphTopology sessionId={sessionId} />
+        </div>
+      </div>
+
+      {/* 3-column work area: AgentMonitor | Tabs+detail | Chat */}
       <Layout
         style={{
           background: "transparent",
@@ -122,8 +142,9 @@ export default function SessionDetailPage() {
           overflow: "hidden",
         }}
       >
+        {/* LEFT — Agent Monitor */}
         <Sider
-          width={200}
+          width={280}
           theme="light"
           style={{
             background: "#ffffff",
@@ -131,10 +152,11 @@ export default function SessionDetailPage() {
             overflowY: "auto",
           }}
         >
-          <SectionHeader>Controls</SectionHeader>
-          <ControlBar sessionId={sessionId} />
+          <SectionHeader>Agent Monitor</SectionHeader>
+          <AgentMonitor sessionId={sessionId} />
         </Sider>
 
+        {/* CENTER — Tabs: Artifacts / Experiments / Cost + stacked panels */}
         <Content
           style={{
             background: "#ffffff",
@@ -149,11 +171,6 @@ export default function SessionDetailPage() {
             onChange={(k) => setDetailTab(k as typeof detailTab)}
             type="line"
             items={[
-              {
-                key: "conversations",
-                label: "Conversations",
-                children: <ChatView sessionId={sessionId} />,
-              },
               {
                 key: "artifacts",
                 label: "Artifacts",
@@ -171,10 +188,23 @@ export default function SessionDetailPage() {
               },
             ]}
           />
+          <div style={{ marginTop: 16 }}>
+            <SectionHeader>Hypotheses</SectionHeader>
+            <HypothesisTracker sessionId={sessionId} />
+            <div style={{ borderTop: "1px solid #efefef", marginTop: 12 }} />
+            <SectionHeader>Cross-stage requests</SectionHeader>
+            <CrossStageRequestsPanel sessionId={sessionId} />
+            <div style={{ borderTop: "1px solid #efefef", marginTop: 12 }} />
+            <SectionHeader>PI decisions</SectionHeader>
+            <div style={{ padding: "0 12px 12px" }}>
+              <PIDecisionLog sessionId={sessionId} />
+            </div>
+          </div>
         </Content>
 
+        {/* RIGHT — Conversation (OpenWebUI-style always-visible chat) */}
         <Sider
-          width={320}
+          width={400}
           theme="light"
           style={{
             background: "#ffffff",
@@ -182,22 +212,8 @@ export default function SessionDetailPage() {
             overflowY: "auto",
           }}
         >
-          <SectionHeader>Agent Monitor</SectionHeader>
-          <AgentMonitor sessionId={sessionId} />
-          <div style={{ borderTop: "1px solid #efefef" }} />
-          <SectionHeader>Hypotheses</SectionHeader>
-          <HypothesisTracker sessionId={sessionId} />
-          <div style={{ borderTop: "1px solid #efefef" }} />
-          <SectionHeader>Cross-stage requests</SectionHeader>
-          <CrossStageRequestsPanel sessionId={sessionId} />
-          <div style={{ borderTop: "1px solid #efefef" }} />
-          <SectionHeader>PI decisions</SectionHeader>
-          <div style={{ padding: "0 12px 12px" }}>
-            <PIDecisionLog sessionId={sessionId} />
-          </div>
-          <div style={{ borderTop: "1px solid #efefef" }} />
-          <SectionHeader>Cost</SectionHeader>
-          <CostTracker sessionId={sessionId} compact />
+          <SectionHeader>Conversation</SectionHeader>
+          <ChatView sessionId={sessionId} />
         </Sider>
       </Layout>
 
@@ -206,11 +222,11 @@ export default function SessionDetailPage() {
         style={{
           position: "sticky",
           bottom: 0,
-          marginTop: 16,
+          marginTop: 12,
           background: "#ffffff",
           border: "1px solid #efefef",
-          borderRadius: 12,
-          padding: 12,
+          borderRadius: 8,
+          padding: 10,
         }}
       >
         <FeedbackInput sessionId={sessionId} />

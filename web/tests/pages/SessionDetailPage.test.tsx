@@ -51,7 +51,6 @@ vi.mock("../../src/components/session/ChatView", () => ({
 vi.mock("../../src/components/session/ExperimentsTab", () => ({
   ExperimentsTab: () => <div data-testid="experiments-tab" />,
 }));
-
 vi.mock("../../src/components/session/CostGauge", () => ({
   CostGauge: () => <div data-testid="cost-gauge" />,
 }));
@@ -94,15 +93,17 @@ describe("SessionDetailPage", () => {
     renderAt("sess-x");
     expect(await screen.findByText("My research")).toBeInTheDocument();
     expect(screen.getAllByText(/sess-x/).length).toBeGreaterThan(0);
-    // Status appears both in topbar (Running) and ControlBar status row
+    // Status appears in ControlBar horizontal strip
     expect(screen.getAllByText(/Running/i).length).toBeGreaterThan(0);
-    // Graph canvas stub is always rendered above the tabs
+    // Graph canvas stub is always rendered above the controls strip
     expect(screen.getByTestId("graph-topology")).toBeInTheDocument();
-    // Cost sider renders "Total cost" label
-    expect(screen.getAllByText(/Total cost/i).length).toBeGreaterThan(0);
+    // AgentMonitor is in the LEFT sider
+    expect(screen.getByTestId("agent-monitor")).toBeInTheDocument();
+    // ChatView (conversation) is in the RIGHT sider
+    expect(screen.getByTestId("chat-view")).toBeInTheDocument();
   });
 
-  it("shows the conversations tab by default", async () => {
+  it("shows Artifacts tab by default (Conversations tab removed)", async () => {
     mockedApi.getSession.mockResolvedValue({
       session_id: "sess-x",
       user_id: "alice",
@@ -113,10 +114,30 @@ describe("SessionDetailPage", () => {
     });
     renderAt("sess-x");
     await screen.findByText("T");
-    // The Conversations tab header is always rendered
-    expect(
-      screen.getByRole("tab", { name: /Conversations/i }),
-    ).toBeInTheDocument();
+    // Center tabs are Artifacts / Experiments / Cost — no Conversations
+    expect(screen.getByRole("tab", { name: /Artifacts/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Experiments/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Cost/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Conversations/i })).toBeNull();
+  });
+
+  it("shows Conversation section header in right sider", async () => {
+    mockedApi.getSession.mockResolvedValue({
+      session_id: "sess-x",
+      user_id: "alice",
+      research_topic: "T",
+      status: "running",
+      preferences: {},
+      config_overrides: {},
+    });
+    renderAt("sess-x");
+    await screen.findByText("T");
+    // "Conversation" is the SectionHeader label above the right-sider ChatView
+    expect(screen.getByText(/Conversation/i)).toBeInTheDocument();
+    // AgentMonitor section header is in the left sider
+    expect(screen.getByText(/Agent Monitor/i)).toBeInTheDocument();
+    // Hypotheses section is in the center content area
+    expect(screen.getByText(/Hypotheses/i)).toBeInTheDocument();
   });
 
   it("shows an error alert when the session fetch fails", async () => {

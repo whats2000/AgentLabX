@@ -8,7 +8,31 @@ import { create } from "zustand";
  * React Router URL params respectively, not here.
  */
 
-export type DetailTab = "conversations" | "artifacts" | "experiments" | "cost";
+export type DetailTab =
+  | "conversation"
+  | "artifacts"
+  | "experiments"
+  | "cost"
+  | "hypotheses"
+  | "requests"
+  | "pi";
+
+const VALID_TABS = new Set<string>([
+  "conversation",
+  "artifacts",
+  "experiments",
+  "cost",
+  "hypotheses",
+  "requests",
+  "pi",
+]);
+
+/** Normalize stale persisted tab values to a valid DetailTab. */
+function normalizeTab(tab: string): DetailTab {
+  if (tab === "conversations") return "conversation";
+  if (VALID_TABS.has(tab)) return tab as DetailTab;
+  return "conversation";
+}
 
 interface UIState {
   sidebarCollapsed: boolean;
@@ -23,12 +47,14 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarCollapsed: false,
-  detailTab: "conversations",
+  detailTab: "conversation",
   sessionListFilter: "",
 
   setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setDetailTab: (detailTab) => set({ detailTab }),
+  setDetailTab: (tab) => {
+    set({ detailTab: normalizeTab(tab as string) });
+  },
   setSessionListFilter: (sessionListFilter) => set({ sessionListFilter }),
 }));

@@ -5,7 +5,7 @@ describe("uiStore", () => {
   beforeEach(() => {
     useUIStore.setState({
       sidebarCollapsed: false,
-      detailTab: "conversations",
+      detailTab: "artifacts",
       sessionListFilter: "",
     });
   });

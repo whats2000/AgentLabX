@@ -29,6 +29,8 @@ type Mode = "auto" | "hitl";
 
 interface Props {
   sessionId: string;
+  /** "vertical" (default) stacks controls in a column; "horizontal" renders inline. */
+  layout?: "vertical" | "horizontal";
 }
 
 const SECTION_LABEL_STYLE: React.CSSProperties = {
@@ -37,7 +39,7 @@ const SECTION_LABEL_STYLE: React.CSSProperties = {
   letterSpacing: 0.05,
 };
 
-export function ControlBar({ sessionId }: Props) {
+export function ControlBar({ sessionId, layout = "vertical" }: Props) {
   const { data: session } = useSession(sessionId);
   const [redirectOpen, setRedirectOpen] = useState(false);
 
@@ -61,7 +63,6 @@ export function ControlBar({ sessionId }: Props) {
       <Button
         type="primary"
         icon={<PlayCircleOutlined />}
-        block
         loading={startMutation.isPending}
         onClick={async () => {
           try {
@@ -78,7 +79,6 @@ export function ControlBar({ sessionId }: Props) {
     primaryAction = (
       <Button
         icon={<PauseCircleOutlined />}
-        block
         loading={pauseMutation.isPending}
         onClick={async () => {
           try {
@@ -96,7 +96,6 @@ export function ControlBar({ sessionId }: Props) {
       <Button
         type="primary"
         icon={<RedoOutlined />}
-        block
         loading={resumeMutation.isPending}
         onClick={async () => {
           try {
@@ -111,7 +110,7 @@ export function ControlBar({ sessionId }: Props) {
     );
   } else {
     primaryAction = (
-      <Button block disabled>
+      <Button disabled>
         {status === "completed" ? "Completed" : "Failed"}
       </Button>
     );
@@ -119,6 +118,64 @@ export function ControlBar({ sessionId }: Props) {
 
   const isTerminal = status === "completed" || status === "failed";
 
+  if (layout === "horizontal") {
+    return (
+      <Space wrap align="center" size={16}>
+        <StatusBadge status={status} />
+        {primaryAction}
+        <Space align="center" size={4}>
+          <Text type="secondary" style={SECTION_LABEL_STYLE}>
+            Mode
+          </Text>
+          <Segmented
+            size="small"
+            value={mode}
+            disabled={isTerminal}
+            onChange={(value) => updatePrefs.mutate({ mode: value as Mode })}
+            options={[
+              { label: "Auto", value: "auto" },
+              { label: "HITL", value: "hitl" },
+            ]}
+          />
+        </Space>
+        <Space align="center" size={4}>
+          <Text type="secondary" style={SECTION_LABEL_STYLE}>
+            Backtrack
+          </Text>
+          <Segmented
+            size="small"
+            value={backtrackControl}
+            disabled={isTerminal}
+            onChange={(value) =>
+              updatePrefs.mutate({
+                backtrack_control: value as BacktrackControl,
+              })
+            }
+            options={[
+              { label: "Auto", value: "auto" },
+              { label: "Notify", value: "notify" },
+              { label: "Approve", value: "approve" },
+            ]}
+          />
+        </Space>
+        <Button
+          type="text"
+          icon={<ForwardOutlined />}
+          disabled={status !== "running"}
+          onClick={() => setRedirectOpen(true)}
+        >
+          Redirect...
+        </Button>
+        <RedirectModal
+          sessionId={sessionId}
+          open={redirectOpen}
+          onClose={() => setRedirectOpen(false)}
+        />
+      </Space>
+    );
+  }
+
+  // Vertical layout (default — original behavior)
   return (
     <div style={{ padding: 12 }}>
       <div
