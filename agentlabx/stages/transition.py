@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agentlabx.agents.pi_agent import ConsultKind, PIAgent
 from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import PipelineState
 from agentlabx.core.zones import cross_zone
@@ -44,8 +45,10 @@ class TransitionHandler:
     def __init__(
         self,
         preferences: SessionPreferences | None = None,
+        pi_advisor: PIAgent | None = None,
     ) -> None:
         self.preferences = preferences or SessionPreferences()
+        self.pi_advisor = pi_advisor
 
     def decide(self, state: PipelineState) -> TransitionDecision:
         """Return a TransitionDecision based on current pipeline state."""
@@ -182,6 +185,59 @@ class TransitionHandler:
             action="complete",
             reason="Reached end of default_sequence",
             needs_approval=False,
+        )
+
+    async def decide_async(self, state: PipelineState) -> TransitionDecision:
+        """Async variant that consults the PI advisor on escalation paths.
+
+        When pi_advisor is None (default), behaviour is identical to sync
+        decide() — zero overhead, zero semantic change from Plan 7A.
+
+        When pi_advisor is set AND the rule decision is
+        "backtrack_limit_exceeded", the advisor is consulted via
+        ConsultKind.BACKTRACK_LIMIT. If advice is confident (used_fallback is
+        False and next_stage is not None), the advice's next_stage overrides
+        the rule-based fallback target. Otherwise the rule-based decision is
+        returned unchanged.
+
+        Other action types (advance, backtrack, forced_advance, complete,
+        human_override) never consult the advisor — that's the transition
+        handler's job (spec §3.3.5: PI is an advisor, NOT a router).
+        """
+        rule_decision = self.decide(state)
+
+        if self.pi_advisor is None:
+            return rule_decision
+
+        if rule_decision.action != "backtrack_limit_exceeded":
+            return rule_decision
+
+        current = state.get("current_stage", "")
+        target = state.get("next_stage")  # the backtrack target the stage requested
+        edge_key = f"{current}->{target}"
+        attempts = state.get("backtrack_attempts", {}).get(edge_key, 0)
+        max_attempts = self.preferences.max_backtrack_attempts_per_edge
+
+        advice = await self.pi_advisor.consult_escalation(
+            ConsultKind.BACKTRACK_LIMIT,
+            state,
+            context={
+                "origin": current,
+                "target": target,
+                "attempts": attempts,
+                "max_attempts": max_attempts,
+                "rule_fallback": rule_decision.next_stage,
+            },
+        )
+
+        if advice.used_fallback or advice.next_stage is None:
+            return rule_decision
+
+        return TransitionDecision(
+            next_stage=advice.next_stage,
+            action="backtrack_limit_exceeded",
+            reason=f"PI advisor: {advice.reasoning}",
+            needs_approval=True,
         )
 
     # ── Internal helpers ──────────────────────────────────────────────────────
