@@ -317,5 +317,5 @@ def test_apply_partial_rollback_preserves_hypotheses_and_experiment_log():
         "backtrack_feedback",
     }
     assert update["current_stage"] == "literature_review"
-    assert update["next_stage"] is None
+    assert update["next_stage"] == "literature_review"
     assert update["backtrack_feedback"] == "Missing RL methods"

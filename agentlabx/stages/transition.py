@@ -119,7 +119,7 @@ class TransitionHandler:
                 # Handler owns the fallback — compute next_in_sequence here
                 # so transition_node just applies the decision.
                 fallback = self._next_in_sequence(
-                    current_stage, default_sequence, completed_stages
+                    current_stage, default_sequence
                 )
                 return TransitionDecision(
                     next_stage=fallback,
@@ -133,7 +133,7 @@ class TransitionHandler:
             if at_stage_limit:
                 # Stage is exhausted — skip the hint, advance in sequence instead
                 forced_next = self._next_in_sequence(
-                    current_stage, default_sequence, completed_stages
+                    current_stage, default_sequence
                 )
                 return TransitionDecision(
                     next_stage=forced_next,
@@ -162,7 +162,7 @@ class TransitionHandler:
             )
 
         # ── Priority 6: no hint — advance to next stage in sequence ─────────
-        next_in_seq = self._next_in_sequence(current_stage, default_sequence, completed_stages)
+        next_in_seq = self._next_in_sequence(current_stage, default_sequence)
         if next_in_seq is not None:
             needs_approval = self._check_approval(
                 action="advance",
@@ -204,7 +204,6 @@ class TransitionHandler:
         self,
         current: str,
         sequence: list[str],
-        completed: list[str],  # kept for signature stability (still used by callers) but unused here
     ) -> str | None:
         """Return the stage immediately after `current` in the sequence, or None if at end.
 
@@ -236,6 +235,12 @@ class TransitionHandler:
         on either side, so backtracks involving it always trigger approval.
         """
         sc = self.preferences.stage_controls.get(stage)
+        # Both "approve" and "edit" pause for HITL approval, but the frontend
+        # must render different UX (yes/no dialog vs edit-output form). Plan 7D
+        # will surface this distinction through the CheckpointModal; for now
+        # needs_approval=True is a sufficient router signal.
+        # TODO(7D): propagate the specific control mode (approve vs edit) so
+        # the CheckpointModal can pick the right form.
         if sc in ("approve", "edit"):
             return True
         if sc == "auto":

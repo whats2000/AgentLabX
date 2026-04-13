@@ -134,11 +134,8 @@ class PipelineBuilder:
                     feedback=state.get("backtrack_feedback"),
                 )
                 update.update(rollback)
-                # apply_partial_rollback returns next_stage=None per §3.3.2
-                # (clear the just-completed stage's stale hint); we then set
-                # next_stage to the routing target so LangGraph's conditional
-                # edge sends execution there.
-                update["next_stage"] = decision.next_stage
+                # (no manual next_stage overwrite needed — the helper returns
+                # next_stage=target so routing flows correctly.)
 
                 edge_key = f"{current}->{decision.next_stage}"
                 attempts = dict(state.get("backtrack_attempts", {}))

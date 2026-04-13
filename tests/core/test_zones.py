@@ -48,3 +48,29 @@ def test_cross_zone_none_zone_is_conservative_true():
 def test_cross_zone_unknown_stage_is_true():
     # Conservative: unknown origin/target is treated as cross-zone
     assert cross_zone("unknown", "literature_review") is True
+
+
+def test_fallback_zones_match_every_registered_stage(registry):
+    """Adding a new stage and forgetting to update _FALLBACK_ZONES would
+    silently produce None for registry-less callers. This test catches it."""
+    from agentlabx.core.registry import PluginType
+    from agentlabx.core.zones import _FALLBACK_ZONES
+
+    for name, expected in _FALLBACK_ZONES.items():
+        cls = registry.resolve(PluginType.STAGE, name)
+        assert cls.zone == expected, (
+            f"class {cls.__name__}.zone={cls.zone!r} but "
+            f"_FALLBACK_ZONES[{name!r}]={expected!r}"
+        )
+
+
+def test_fallback_zones_covers_every_registered_stage(registry):
+    """Every registered stage must have an entry in _FALLBACK_ZONES."""
+    from agentlabx.core.registry import PluginType
+    from agentlabx.core.zones import _FALLBACK_ZONES
+    from agentlabx.plugins._builtin import _BUILTIN_STAGES
+
+    for cls in _BUILTIN_STAGES:
+        assert cls.name in _FALLBACK_ZONES, (
+            f"registered stage {cls.name!r} missing from _FALLBACK_ZONES"
+        )

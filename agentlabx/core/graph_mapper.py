@@ -123,6 +123,10 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
     if current:
         cursor = {"node_id": current, "agent": None, "started_at": None}
 
+    # TODO(7B): populate subgraphs from compiled stage subgraphs — Plan 7B
+    # will introduce StageSubgraphBuilder and the per-stage internal
+    # enter → stage_plan → gate → work → evaluate → decide graphs. The UI
+    # drills into these when a stage is active (spec §8.2 recursive zoom).
     return {"nodes": nodes, "edges": edges, "cursor": cursor, "subgraphs": []}
 
 

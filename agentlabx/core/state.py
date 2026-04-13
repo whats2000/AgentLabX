@@ -213,19 +213,23 @@ class PipelineState(TypedDict):
 def apply_partial_rollback(
     state: PipelineState, *, target: str, feedback: str | None
 ) -> dict[str, Any]:
-    """Return a partial state update rewinding `current_stage` to `target`.
+    """Return a partial state update rewinding current_stage to `target`.
 
     Deliberately returns only the three keys to overwrite. LangGraph's
     node-return merge semantics leave every other field untouched —
     hypotheses, experiment_log, experiment_results, completed_stages,
     cost_tracker, and agent_memory are preserved.
 
+    The returned `next_stage` IS the routing destination (the target). Callers
+    in a LangGraph node should merge this update as-is; the subsequent
+    conditional router reads `next_stage` to route to the target's stage node.
+
     Real labs don't forget what they've learned when they revisit an earlier
     stage (spec §3.3.2).
     """
     return {
         "current_stage": target,
-        "next_stage": None,
+        "next_stage": target,
         "backtrack_feedback": feedback,
     }
 
