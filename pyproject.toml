@@ -49,6 +49,9 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live_harness: marks tests that require a live LLM provider (deselect with '-m \"not live_harness\"')",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlabx"]

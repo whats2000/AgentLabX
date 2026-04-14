@@ -23,6 +23,7 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+tests/harness/runs/
 
 # OS
 Thumbs.db
