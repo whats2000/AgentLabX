@@ -444,6 +444,19 @@ async def get_agent_history(
     )
 
 
+def _validate_stage_name(stage_name: str, context) -> None:
+    """Raise HTTPException(404) if stage_name isn't a registered stage.
+
+    Client typos should produce a clear 404 rather than silent empty renders.
+    """
+    registered = context.registry.list_plugins(PluginType.STAGE)
+    if stage_name not in registered:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Stage '{stage_name}' is not registered",
+        )
+
+
 @router.get("/{session_id}/stages/{stage_name}/history", response_model=HistoryOut)
 async def get_stage_history(
     session_id: str,
@@ -466,6 +479,7 @@ async def get_stage_history(
         context.session_manager.get_session(session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    _validate_stage_name(stage_name, context)
 
     after = datetime.fromisoformat(after_ts) if after_ts else None
     rows = await context.storage.list_agent_turns(
@@ -546,6 +560,7 @@ async def get_stage_plans(session_id: str, stage_name: str, request: Request):
         context.session_manager.get_session(session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    _validate_stage_name(stage_name, context)
     state = await _require_state(request, session_id)
     stage_plans = (state.get("stage_plans") or {}).get(stage_name, [])
     return {"stage_name": stage_name, "plans": stage_plans}

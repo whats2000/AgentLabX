@@ -34,3 +34,13 @@ def test_stage_plans_endpoint_empty_for_unstarted_session(client):
 def test_stage_plans_endpoint_404_on_unknown_session(client):
     r = client.get("/api/sessions/nonexistent/stage_plans/literature_review")
     assert r.status_code == 404
+
+
+def test_stage_plans_unknown_stage_returns_404(client):
+    r = client.post("/api/sessions", json={"topic": "t", "user_id": "default"})
+    assert r.status_code == 201
+    sid = r.json()["session_id"]
+
+    r2 = client.get(f"/api/sessions/{sid}/stage_plans/not_a_stage")
+    assert r2.status_code == 404
+    assert "not_a_stage" in r2.json().get("detail", "")
