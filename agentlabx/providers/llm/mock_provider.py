@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from typing import Any
 
@@ -18,8 +19,13 @@ class MockLLMProvider(BaseLLMProvider):
     )
     is_mock: bool = True
 
-    def __init__(self, responses: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        responses: list[str] | None = None,
+        artificial_delay_seconds: float = 0.0,
+    ) -> None:
         self._responses: deque[str] = deque(responses or [])
+        self._artificial_delay_seconds = max(0.0, float(artificial_delay_seconds))
         self.calls: list[dict[str, Any]] = []
 
     async def query(
@@ -38,6 +44,9 @@ class MockLLMProvider(BaseLLMProvider):
                 "temperature": temperature,
             }
         )
+
+        if self._artificial_delay_seconds > 0:
+            await asyncio.sleep(self._artificial_delay_seconds)
 
         if self._responses:
             content = self._responses.popleft()

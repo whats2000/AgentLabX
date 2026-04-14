@@ -116,7 +116,11 @@ async def build_app_context(
     registry.register(PluginType.TOOL, "code_executor", code_executor)
 
     # LLM provider: mock for CI/local dev, LiteLLM for production
-    llm_provider: BaseLLMProvider = MockLLMProvider() if use_mock_llm else LiteLLMProvider()
+    llm_provider: BaseLLMProvider = (
+        MockLLMProvider(artificial_delay_seconds=1.0)
+        if use_mock_llm
+        else LiteLLMProvider()
+    )
     registry.register(PluginType.LLM_PROVIDER, llm_provider.name, llm_provider)
 
     # Code agent — registered as a class so consumers can instantiate with

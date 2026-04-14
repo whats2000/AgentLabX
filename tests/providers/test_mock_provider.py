@@ -31,3 +31,19 @@ class TestMockLLMProvider:
         await provider.query(model="mock", prompt="second")
         assert len(provider.calls) == 2
         assert provider.calls[0]["prompt"] == "first"
+
+    async def test_artificial_delay_invokes_sleep(self, monkeypatch):
+        seen: list[float] = []
+
+        async def _fake_sleep(seconds: float):
+            seen.append(seconds)
+
+        monkeypatch.setattr(
+            "agentlabx.providers.llm.mock_provider.asyncio.sleep",
+            _fake_sleep,
+        )
+
+        provider = MockLLMProvider(responses=["ok"], artificial_delay_seconds=1.0)
+        await provider.query(model="mock", prompt="first")
+
+        assert seen == [1.0]
