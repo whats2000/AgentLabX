@@ -39,16 +39,34 @@ class HarnessSession:
 
     @property
     def state(self) -> dict[str, Any]:
-        """Return a dict containing at minimum research_topic.
+        """Return session-level fields synchronously.
 
-        Full LangGraph state lives in the checkpoint DB; for harness purposes
-        we surface the session-level fields that the tests actually assert on.
+        Full LangGraph state lives in the checkpoint DB and requires an async
+        call. Use ``await get_state()`` when pipeline fields (artifacts,
+        stage_plans, etc.) are needed. This sync property is kept for
+        boot-test compatibility.
         """
         return {
-            "research_topic": self.session.research_topic,
+            "research_topic": getattr(self.session, "research_topic", ""),
             "session_id": self.session.session_id,
-            "user_id": self.session.user_id,
+            "user_id": getattr(self.session, "user_id", ""),
         }
+
+    async def get_state(self) -> dict[str, Any]:
+        """Return full LangGraph pipeline state merged with Session-level fields.
+
+        Async accessor used by Plan 8 spine tests to snapshot state at station
+        boundaries. Pipeline state keys take precedence over Session fields so
+        callers always see the most up-to-date values.
+        """
+        session_fields = self.state
+        try:
+            pipeline_state = await self.executor.get_pipeline_state(self.session_id)
+        except Exception:
+            pipeline_state = {}
+        merged = dict(session_fields)
+        merged.update(pipeline_state)
+        return merged
 
     async def emit_synthetic_event(self, event: dict[str, Any]) -> None:
         """Append a synthetic event directly to the collector list."""

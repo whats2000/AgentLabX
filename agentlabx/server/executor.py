@@ -389,6 +389,24 @@ class PipelineExecutor:
         config = {"configurable": {"thread_id": running.thread_id}}
         await running.graph.aupdate_state(config, {"human_override": target_stage})
 
+    async def get_pipeline_state(self, session_id: str) -> dict:
+        """Return the current LangGraph state for a running session as a dict.
+
+        Used by harness tests to snapshot pipeline state at station boundaries.
+        Returns {} if the session is not running or no checkpoint exists yet.
+        """
+        running = self._running.get(session_id)
+        if running is None:
+            return {}
+        config = {"configurable": {"thread_id": session_id}}
+        try:
+            snapshot = await running.graph.aget_state(config)
+        except Exception:
+            logger.debug("get_pipeline_state: aget_state failed for %s", session_id)
+            return {}
+        values = snapshot.values if snapshot is not None else {}
+        return dict(values) if values else {}
+
     async def cancel_session(self, session_id: str) -> None:
         """Cancel the running task and remove the entry."""
         running = self._running.get(session_id)
