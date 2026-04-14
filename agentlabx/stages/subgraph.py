@@ -23,6 +23,33 @@ from agentlabx.stages.base import (
 )
 
 
+async def _emit_internal_node_changed(s: "_SubgraphState", node_name: str) -> None:
+    """Emit STAGE_INTERNAL_NODE_CHANGED event when a subgraph node activates.
+
+    Plan 7E A1: drives the live cursor ring in StageSubgraphDrawer. Without
+    this, LangGraph's in-place state mutations in node bodies don't stream
+    to the frontend (subgraph runs atomically from the parent's perspective).
+    """
+    ctx = s.get("context")
+    bus = ctx.event_bus if ctx is not None else None
+    if bus is None:
+        return
+    from agentlabx.core.event_types import EventTypes
+    from agentlabx.core.events import Event
+
+    await bus.emit(
+        Event(
+            type=EventTypes.STAGE_INTERNAL_NODE_CHANGED,
+            data={
+                "internal_node": node_name,
+                "stage": s["state"].get("current_stage"),
+                "session_id": s["state"].get("session_id"),
+            },
+            source=s["state"].get("current_stage", "subgraph"),
+        )
+    )
+
+
 class _SubgraphState(TypedDict, total=False):
     """Working state for a single stage's subgraph execution.
 
@@ -55,14 +82,16 @@ class StageSubgraphBuilder:
     def compile(self, stage: BaseStage) -> Any:
         builder: StateGraph = StateGraph(_SubgraphState)
 
-        def enter_node(s: _SubgraphState) -> dict[str, Any]:
+        async def enter_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "enter"
+            await _emit_internal_node_changed(s, "enter")
             # Placeholder — reserved for memory hydration on re-entry (Plan 7C+).
             # Feedback pickup is handled in stage_plan, not here.
-            return {}
+            return {"current_stage_internal_node": "enter"}
 
         async def plan_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "stage_plan"
+            await _emit_internal_node_changed(s, "stage_plan")
             feedback = s["state"].get("backtrack_feedback")
             plan = stage.build_plan(s["state"], feedback=feedback)
             # Persist the plan on state for observability (versioned per entry).
@@ -74,7 +103,7 @@ class StageSubgraphBuilder:
             history.append(plan)
             plans[stage.name] = history
             s["state"]["stage_plans"] = plans
-            return {"plan": plan}
+            return {"plan": plan, "current_stage_internal_node": "stage_plan"}
 
         def gate_node(s: _SubgraphState) -> str:
             """Route: no actionable items → decide (bypass); else → work."""
@@ -89,20 +118,23 @@ class StageSubgraphBuilder:
 
         async def work_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "work"
+            await _emit_internal_node_changed(s, "work")
             execution = await stage.execute_plan(
                 s["state"], s["plan"], s["context"]
             )
-            return {"execution": execution}
+            return {"execution": execution, "current_stage_internal_node": "work"}
 
-        def evaluate_node(s: _SubgraphState) -> dict[str, Any]:
+        async def evaluate_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "evaluate"
+            await _emit_internal_node_changed(s, "evaluate")
             evaluation = stage.evaluate(
                 s["state"], plan=s["plan"], execution=s["execution"]
             )
-            return {"evaluation": evaluation}
+            return {"evaluation": evaluation, "current_stage_internal_node": "evaluate"}
 
-        def decide_node(s: _SubgraphState) -> dict[str, Any]:
+        async def decide_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "decide"
+            await _emit_internal_node_changed(s, "decide")
             execution = s.get("execution")
             evaluation = s.get("evaluation")
             if execution is None:
@@ -122,7 +154,10 @@ class StageSubgraphBuilder:
                 execution=execution,
                 evaluation=evaluation,
             )
-            return {"stage_result": result}
+            return {
+                "stage_result": result,
+                "current_stage_internal_node": "decide",
+            }
 
         builder.add_node("enter", enter_node)
         builder.add_node("stage_plan", plan_node)

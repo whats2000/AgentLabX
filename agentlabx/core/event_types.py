@@ -31,6 +31,9 @@ class EventTypes:
     HYPOTHESIS_UPDATE = "hypothesis_update"
     CHECKPOINT_REACHED = "checkpoint_reached"
 
+    # Stage subgraph observability (Plan 7E A1)
+    STAGE_INTERNAL_NODE_CHANGED = "stage_internal_node_changed"
+
     # Observability
     COST_UPDATE = "cost_update"
     ERROR = "error"

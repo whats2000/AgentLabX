@@ -94,6 +94,17 @@ class StageRunner:
             if updated_stage_plans is not None:
                 update["stage_plans"] = updated_stage_plans
 
+            # Propagate current_stage_internal_node (same pattern as stage_plans).
+            # Ensures /graph endpoint consumers see the final subgraph node state.
+            # The cursor ring is driven by the stage_internal_node_changed
+            # WebSocket events (not this field), but polling consumers and the
+            # /graph endpoint need the live value until the stage exits.
+            updated_internal_node = subgraph_result.get("state", {}).get(
+                "current_stage_internal_node"
+            )
+            if updated_internal_node is not None:
+                update["current_stage_internal_node"] = updated_internal_node
+
             # Merge stage output — this is how literature_review, plan, hypotheses,
             # review, etc. flow back into state. Reducer annotations on PipelineState
             # handle appending for list fields.

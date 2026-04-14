@@ -111,6 +111,7 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
     ["hypotheses", sid],
   ],
   cost_update: (sid) => [["cost", sid]],
+  stage_internal_node_changed: (sid) => [["graph", sid]],
 };
 
 /**
