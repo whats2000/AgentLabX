@@ -31,7 +31,7 @@ class MockLLMProvider(BaseLLMProvider):
     async def query(
         self,
         *,
-        model: str,
+        model: str | None,
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,

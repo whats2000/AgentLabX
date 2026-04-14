@@ -59,6 +59,11 @@ class StageContext(BaseModel):
     - paused_event: asyncio.Event — set=running, cleared=paused. StageRunner
       awaits this between on_enter and stage.run for cooperative pause.
       None = no pause support (default).
+    - model: LLM model identifier to use for all agents in this stage context.
+      Sourced from session config_overrides["llm"]["default_model"] or
+      AppSettings().llm.default_model. None → ConfigAgent uses its own default
+      (Plan 8 B2 fix — prevents hardcoded Anthropic fallback when Gemini is
+      configured via AGENTLABX_LLM__DEFAULT_MODEL env var).
     """
 
     settings: Any = None
@@ -68,6 +73,7 @@ class StageContext(BaseModel):
     llm_provider: Any = None
     cost_tracker: Any = None
     paused_event: Any = None
+    model: str | None = None
     model_config = {"arbitrary_types_allowed": True}
 
 

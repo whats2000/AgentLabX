@@ -11,7 +11,7 @@ class LLMResponse(BaseModel):
     content: str
     tokens_in: int
     tokens_out: int
-    model: str
+    model: str | None = None
     cost: float
 
 
@@ -23,5 +23,5 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def query(
-        self, *, model: str, prompt: str, system_prompt: str = "", temperature: float = 0.0
+        self, *, model: str | None, prompt: str, system_prompt: str = "", temperature: float = 0.0
     ) -> LLMResponse: ...

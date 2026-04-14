@@ -187,6 +187,13 @@ class PipelineExecutor:
         paused_event = asyncio.Event()
         paused_event.set()
 
+        # Resolve model: session override > global settings > None
+        from agentlabx.core.config import Settings
+
+        _session_model = session.config_overrides.get("llm", {}).get("default_model")
+        _settings_model = Settings().llm.default_model
+        resolved_model: str | None = _session_model or _settings_model or None
+
         # Build stage context with pause event wired in
         stage_context = StageContext(
             settings={},
@@ -196,6 +203,7 @@ class PipelineExecutor:
             llm_provider=traced_llm_provider,
             cost_tracker=cost_tracker,
             paused_event=paused_event,
+            model=resolved_model,
         )
 
         # Subscribe single forwarder per session (Fix G) — WS handler does not

@@ -43,11 +43,14 @@ class LiteLLMProvider(BaseLLMProvider):
     async def query(
         self,
         *,
-        model: str,
+        model: str | None,
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
     ) -> LLMResponse:
+        if model is None:
+            msg = "model must be a non-None string for LiteLLMProvider"
+            raise ValueError(msg)
         messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
