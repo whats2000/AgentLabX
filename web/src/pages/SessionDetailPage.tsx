@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Layout, Drawer, Button, Col, Row, Tabs, Typography, Alert, Skeleton, Card, Badge } from "antd";
+import { Layout, Drawer, Button, Col, Row, Tabs, Typography, Alert, Skeleton, Card } from "antd";
 import { useParams, Link } from "react-router-dom";
 import { MenuUnfoldOutlined } from "@ant-design/icons";
 import { useSession } from "../hooks/useSession";

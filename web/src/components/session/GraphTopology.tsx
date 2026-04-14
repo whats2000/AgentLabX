@@ -9,7 +9,8 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
+import ELK from "elkjs/lib/elk.bundled.js";
+import type { ElkNode } from "elkjs/lib/elk-api";
 import { Skeleton, Empty } from "antd";
 import { useGraph } from "../../hooks/useGraph";
 import { useSession } from "../../hooks/useSession";
@@ -135,7 +136,7 @@ async function layoutWithElk(topo: Topo) {
   const compacted = compactEdges(topo.edges);
 
   // Build ELK children: zone group parents + meta nodes at top level
-  const elkChildren: object[] = [];
+  const elkChildren: ElkNode[] = [];
 
   for (const zone of ZONE_ORDER) {
     const members = byZone[zone];

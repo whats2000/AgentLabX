@@ -38,3 +38,6 @@ data/
 # Code Agents
 .claude
 .cursor
+
+# Temporary files
+_tmp*

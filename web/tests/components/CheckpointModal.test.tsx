@@ -43,7 +43,7 @@ function wrapper(qc = makeQC()) {
 }
 
 describe("CheckpointModal", () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: { mockRestore: () => void };
 
   beforeEach(() => {
     useWSStore.setState({ events: {} });

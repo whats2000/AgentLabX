@@ -301,7 +301,7 @@ describe("GraphTopology cursor-reverse-sweep", () => {
     // Cursor jumps back to "lit" (backtrack: exp → lit)
     const topology2: TopoType = {
       ...topology1,
-      cursor: { ...topology1.cursor, node_id: "lit" },
+      cursor: { ...topology1.cursor!, node_id: "lit" },
     };
     rerender(
       <QueryClientProvider client={makeQc()}>
