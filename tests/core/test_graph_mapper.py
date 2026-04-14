@@ -1,4 +1,6 @@
 # tests/core/test_graph_mapper.py
+from datetime import UTC, datetime
+
 import pytest
 from agentlabx.core.graph_mapper import build_topology
 
@@ -113,6 +115,33 @@ def test_topology_overlays_backtrack_from_transition_log():
         "transition_log": [
             {"from_stage": "plan_formulation", "to_stage": "literature_review",
              "reason": "need more papers"}
+        ],
+    }
+    topo = build_topology(_C(), state)
+    backtrack = [e for e in topo["edges"] if e["kind"] == "backtrack"]
+    assert len(backtrack) == 1
+    assert backtrack[0]["from"] == "plan_formulation"
+    assert backtrack[0]["to"] == "literature_review"
+    assert "more papers" in (backtrack[0].get("reason") or "")
+
+
+def test_topology_overlays_backtrack_from_transition_model():
+    """Transition model entries in transition_log are accepted."""
+    from agentlabx.core.state import Transition
+
+    state = {
+        "current_stage": "plan_formulation",
+        "completed_stages": ["literature_review", "plan_formulation"],
+        "stage_iterations": {},
+        "stage_config": {},
+        "transition_log": [
+            Transition(
+                from_stage="plan_formulation",
+                to_stage="literature_review",
+                reason="need more papers",
+                triggered_by="agent",
+                timestamp=datetime.now(UTC),
+            )
         ],
     }
     topo = build_topology(_C(), state)

@@ -1,0 +1,169 @@
+"""Harness session bootstrap. Wraps the production PipelineExecutor for
+harness use, with an event collector that mirrors the session's event bus into
+a list accessible to tests.
+
+Two boot modes:
+- boot_mock(): MockLLMProvider. Fast unit-test mode for the harness itself.
+- boot_live(): LiteLLMProvider reading AGENTLABX_LLM__DEFAULT_MODEL from env.
+  Requires provider API key; gated by live_harness marker.
+"""
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from typing import Any
+
+from agentlabx.core.events import Event
+from agentlabx.core.session import Session, SessionManager
+from agentlabx.providers.llm.litellm_provider import LiteLLMProvider
+from agentlabx.providers.llm.mock_provider import MockLLMProvider
+from agentlabx.server.deps import build_default_registry
+from agentlabx.server.executor import PipelineExecutor
+
+
+class HarnessSession:
+    def __init__(
+        self,
+        *,
+        executor: PipelineExecutor,
+        session_manager: SessionManager,
+        session: Session,
+    ) -> None:
+        self.executor = executor
+        self.session_manager = session_manager
+        self.session = session
+        self.session_id = session.session_id
+        self.event_bus = session.event_bus
+        self.events: list[dict[str, Any]] = []
+        self._mirror_task: asyncio.Task | None = None
+
+    @property
+    def state(self) -> dict[str, Any]:
+        """Return a dict containing at minimum research_topic.
+
+        Full LangGraph state lives in the checkpoint DB; for harness purposes
+        we surface the session-level fields that the tests actually assert on.
+        """
+        return {
+            "research_topic": self.session.research_topic,
+            "session_id": self.session.session_id,
+            "user_id": self.session.user_id,
+        }
+
+    async def emit_synthetic_event(self, event: dict[str, Any]) -> None:
+        """Append a synthetic event directly to the collector list."""
+        self.events.append(event)
+
+    async def _on_bus_event(self, event: Event) -> None:
+        """Handler subscribed to the session's event bus; mirrors into self.events."""
+        self.events.append(
+            {
+                "type": event.type,
+                "data": event.data,
+                "source": event.source,
+                "timestamp": event.timestamp.isoformat(),
+            }
+        )
+
+    def _start_mirror(self) -> None:
+        """Subscribe the mirror handler to the session event bus."""
+        self.event_bus.subscribe("*", self._on_bus_event)
+
+    def _stop_mirror(self) -> None:
+        """Unsubscribe the mirror handler from the session event bus."""
+        self.event_bus.unsubscribe("*", self._on_bus_event)
+
+    @classmethod
+    async def _build_executor(
+        cls, *, llm_provider: Any, tmp_db: str = ":memory:"
+    ) -> tuple[PipelineExecutor, SessionManager]:
+        registry = build_default_registry()
+        session_manager = SessionManager()
+        executor = PipelineExecutor(
+            registry=registry,
+            session_manager=session_manager,
+            llm_provider=llm_provider,
+            checkpoint_db_path=tmp_db,
+        )
+        await executor.initialize()
+        return executor, session_manager
+
+    @classmethod
+    @contextlib.asynccontextmanager
+    async def boot_mock(cls, *, topic: str = "test topic"):
+        """Boot a HarnessSession backed by MockLLMProvider (no network calls)."""
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            tmp_db = f.name
+
+        try:
+            executor, manager = await cls._build_executor(
+                llm_provider=MockLLMProvider(), tmp_db=tmp_db
+            )
+            try:
+                session = manager.create_session(
+                    user_id="harness",
+                    research_topic=topic,
+                )
+                await executor.start_session(session)
+                h = cls(executor=executor, session_manager=manager, session=session)
+                h._start_mirror()
+                try:
+                    yield h
+                finally:
+                    h._stop_mirror()
+                    try:
+                        await executor.cancel_session(session.session_id)
+                    except Exception:
+                        pass
+            finally:
+                await executor.close()
+        finally:
+            try:
+                os.unlink(tmp_db)
+            except OSError:
+                pass
+
+    @classmethod
+    @contextlib.asynccontextmanager
+    async def boot_live(cls, *, topic: str = "live test topic"):
+        """Boot a HarnessSession backed by LiteLLMProvider.
+
+        Requires a valid API key in the environment. Gate behind
+        @pytest.mark.live_harness.
+        """
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            tmp_db = f.name
+
+        try:
+            executor, manager = await cls._build_executor(
+                llm_provider=LiteLLMProvider(), tmp_db=tmp_db
+            )
+            try:
+                session = manager.create_session(
+                    user_id="harness",
+                    research_topic=topic,
+                )
+                await executor.start_session(session)
+                h = cls(executor=executor, session_manager=manager, session=session)
+                h._start_mirror()
+                try:
+                    yield h
+                finally:
+                    h._stop_mirror()
+                    try:
+                        await executor.cancel_session(session.session_id)
+                    except Exception:
+                        pass
+            finally:
+                await executor.close()
+        finally:
+            try:
+                os.unlink(tmp_db)
+            except OSError:
+                pass
