@@ -12,12 +12,15 @@
 2. **Inner graph is on-demand.** User clicks the active stage's node in the main graph → inner subgraph panel opens beneath the main strip. Click again → closes.
 3. **Meeting graph is on-demand.** Only reachable when a callable subgraph (currently `lab_meeting`) is running AND the inner graph is open. User clicks the WORK node in the inner graph → meeting panel opens next to the inner panel. Click again → closes.
 4. **Cursor marker in every visible graph.** Main shows active stage; inner shows active internal node; meeting shows active meeting step. Same visual vocabulary (🔵 blue ring + pulse) so the user scans any tier the same way.
+5. **No hardcoded topology.** All graph structure — top-level stages, inner stage subgraphs, meeting subgraphs — is extracted from the compiled LangGraph via `compiled.get_graph(xray=...)` at runtime, or derived from session configuration. The frontend renders whatever nodes/edges the API returns. A plan that adds a new internal node (e.g., a `retrieve_context` step before `stage_plan`) or renames one (e.g., `work` → `execute`) produces an updated topology automatically — no UI change required. Users who customise stage structure (future capability) get the updated graph for free.
 
 ---
 
 ## Figure 1 — Main graph (always visible)
 
 `🔵` = live cursor. `▾` = click-to-drill-in affordance (only on the active stage). Zones grouped as dashed containers; routing still happens at stage level.
+
+All nodes + forward edges are extracted from `compiled.get_graph()`. Backtrack edges come from `state["backtrack_attempts"]` — one dashed amber curve per non-zero entry, labelled with the attempt count. Drawn directly origin→target; no `transition` hub.
 
 ```mermaid
 flowchart LR
@@ -32,7 +35,7 @@ flowchart LR
     subgraph IMPLEMENTATION["⚙️ Implementation"]
         EDA["Data Exploration<br/>✓ done · $0.05"]
         PREP["Data Preparation<br/>✓ done · $0.04"]
-        EXP["🔵 Experimentation ▾<br/>▶ running · 2 iter ↩1<br/>ml_engineer · $0.23"]
+        EXP["🔵 Experimentation ▾<br/>▶ running · 2 iter · ml_engineer · $0.23"]
         EDA --> PREP
         PREP --> EXP
     end
@@ -49,6 +52,10 @@ flowchart LR
     EXP --> INTERP
     REVIEW --> END([⏹])
 
+    EXP -. "↩ 1" .-> LIT
+    INTERP -. "↩ 1" .-> PLAN
+    REVIEW -. "↩ 2" .-> EXP
+
     classDef done fill:#f0fdf4,stroke:#10b981
     classDef active fill:#e0f2fe,stroke:#0284c7,stroke-width:3px
     classDef pending fill:#fafafa,stroke:#d4d4d4,stroke-dasharray:4 4
@@ -59,15 +66,142 @@ flowchart LR
 
 **Visual rules:**
 
-- **Forward edges only.** Backtrack count `↩ 1` on EXP's label is the sole indicator of a backtrack; no reverse edge is drawn.
-- **Cursor animation on backtrack.** When the cursor jumps backward, a brief orange glow sweeps through intermediate stages. CSS keyframe on React Flow nodes.
+- **Forward edges solid, backtrack edges dashed + amber, labelled with attempt count.** Count source: `state["backtrack_attempts"]["origin->target"]`. Edges appear on first backtrack; count updates each re-trigger.
+- **Cursor animation on backtrack.** When the cursor jumps backward, a brief orange glow sweeps along the matching dashed edge. CSS keyframe + SVG stroke animation on React Flow edge.
 - **Non-active stages are not clickable.** Only `🔵` + `▾` is interactive; idle/done/pending stages show no hover affordance.
+- **Crowding behaviour.** When total backtrack edges > 8, labels demote to hover tooltips (edges still render, just unlabelled). No collapse toggle — see density stress-tests below.
+
+### Backtrack density stress-tests
+
+**Scenario A — typical session (3 backtracks):** already rendered in Figure 1 above. Readable.
+
+**Scenario B — struggling session (8 backtracks):**
+
+```mermaid
+flowchart LR
+    START([▶]) --> LIT
+    LIT[Literature Review] --> PLAN[Plan Formulation]
+    PLAN --> EDA[Data Exploration]
+    EDA --> PREP[Data Preparation]
+    PREP --> EXP[Experimentation]
+    EXP --> INTERP[Interpretation]
+    INTERP --> REPORT[Report Writing]
+    REPORT --> REVIEW[Peer Review]
+    REVIEW --> END([⏹])
+
+    EXP -. "↩ 2" .-> LIT
+    EXP -. "↩ 1" .-> PREP
+    INTERP -. "↩ 1" .-> PLAN
+    INTERP -. "↩ 2" .-> EXP
+    REVIEW -. "↩ 3" .-> EXP
+    REVIEW -. "↩ 1" .-> LIT
+    REPORT -. "↩ 1" .-> INTERP
+    PLAN -. "↩ 1" .-> LIT
+
+    classDef stage fill:#fafafa,stroke:#525252
+    class LIT,PLAN,EDA,PREP,EXP,INTERP,REPORT,REVIEW stage
+```
+
+**Scenario C — pathological (15 backtracks):**
+
+```mermaid
+flowchart LR
+    START([▶]) --> LIT
+    LIT[Literature Review] --> PLAN[Plan Formulation]
+    PLAN --> EDA[Data Exploration]
+    EDA --> PREP[Data Preparation]
+    PREP --> EXP[Experimentation]
+    EXP --> INTERP[Interpretation]
+    INTERP --> REPORT[Report Writing]
+    REPORT --> REVIEW[Peer Review]
+    REVIEW --> END([⏹])
+
+    EXP -. "↩ 2" .-> LIT
+    EXP -. "↩ 3" .-> PLAN
+    EXP -. "↩ 1" .-> PREP
+    INTERP -. "↩ 2" .-> PLAN
+    INTERP -. "↩ 3" .-> EXP
+    INTERP -. "↩ 1" .-> EDA
+    REVIEW -. "↩ 4" .-> EXP
+    REVIEW -. "↩ 2" .-> LIT
+    REVIEW -. "↩ 1" .-> REPORT
+    REVIEW -. "↩ 1" .-> INTERP
+    REPORT -. "↩ 2" .-> INTERP
+    REPORT -. "↩ 1" .-> EXP
+    PLAN -. "↩ 2" .-> LIT
+    PREP -. "↩ 1" .-> EDA
+    EDA -. "↩ 1" .-> LIT
+
+    classDef stage fill:#fafafa,stroke:#525252
+    class LIT,PLAN,EDA,PREP,EXP,INTERP,REPORT,REVIEW stage
+```
+
+**Scenario D — ALL theoretical backtracks (28 edges, unlabelled):**
+
+The upper bound. Every stage at position N backtracks to every earlier stage.
+
+```mermaid
+flowchart LR
+    START([▶]) --> LIT
+    LIT[Literature Review] --> PLAN[Plan Formulation]
+    PLAN --> EDA[Data Exploration]
+    EDA --> PREP[Data Preparation]
+    PREP --> EXP[Experimentation]
+    EXP --> INTERP[Interpretation]
+    INTERP --> REPORT[Report Writing]
+    REPORT --> REVIEW[Peer Review]
+    REVIEW --> END([⏹])
+
+    PLAN -. "↩" .-> LIT
+
+    EDA -. "↩" .-> LIT
+    EDA -. "↩" .-> PLAN
+
+    PREP -. "↩" .-> LIT
+    PREP -. "↩" .-> PLAN
+    PREP -. "↩" .-> EDA
+
+    EXP -. "↩" .-> LIT
+    EXP -. "↩" .-> PLAN
+    EXP -. "↩" .-> EDA
+    EXP -. "↩" .-> PREP
+
+    INTERP -. "↩" .-> LIT
+    INTERP -. "↩" .-> PLAN
+    INTERP -. "↩" .-> EDA
+    INTERP -. "↩" .-> PREP
+    INTERP -. "↩" .-> EXP
+
+    REPORT -. "↩" .-> LIT
+    REPORT -. "↩" .-> PLAN
+    REPORT -. "↩" .-> EDA
+    REPORT -. "↩" .-> PREP
+    REPORT -. "↩" .-> EXP
+    REPORT -. "↩" .-> INTERP
+
+    REVIEW -. "↩" .-> LIT
+    REVIEW -. "↩" .-> PLAN
+    REVIEW -. "↩" .-> EDA
+    REVIEW -. "↩" .-> PREP
+    REVIEW -. "↩" .-> EXP
+    REVIEW -. "↩" .-> INTERP
+    REVIEW -. "↩" .-> REPORT
+
+    classDef stage fill:#fafafa,stroke:#525252
+    class LIT,PLAN,EDA,PREP,EXP,INTERP,REPORT,REVIEW stage
+```
+
+**Observations from the renders:**
+
+- Even at 28 edges the forward spine remains visible — mermaid auto-routes edges above/below.
+- Readability breaks when edges carry *labels* at high density, not when edges exist.
+- Conclusion: render every actual backtrack edge; demote labels to hover tooltips when total exceeds 8. No collapse toggle.
 
 ---
 
 ## Figure 2 — Inner graph (opens on click; mirrors `StageSubgraphBuilder` output)
 
-Opens beneath the main strip when the user clicks the active stage. Same 5-node shape for every stage — only the cursor moves. `▾` appears on WORK only when a nested subgraph (lab_meeting) is currently running.
+Opens beneath the main strip when the user clicks the active stage. **Extracted at runtime from the stage's compiled subgraph** via `compiled.get_graph(xray=1)` — never hardcoded. Today that produces the 5-node shape shown below (the shape `StageSubgraphBuilder` emits); if a future plan customises a stage's internal topology, the drawer automatically reflects the new shape without a UI change. `▾` appears on WORK only when a nested subgraph (lab_meeting) is currently running.
 
 ```mermaid
 flowchart LR
@@ -94,7 +228,7 @@ flowchart LR
 
 ## Figure 3 — Meeting graph (opens on click; cursor visible)
 
-Meeting-specific 3-node shape. Opens beside the inner graph when user clicks WORK (while meeting is live). `DISCUSS` carries the participant list + round count.
+Opens beside the inner graph when user clicks WORK (while meeting is live). Meeting-specific shape. **Also extracted at runtime** from `lab_meeting`'s compiled subgraph — same `get_graph(xray=1)` pattern as Figure 2, just applied to the callable subgraph. The 3-node shape below is what the current meeting implementation produces; a future plan that adds e.g. a `vote` node will surface it automatically.
 
 ```mermaid
 flowchart LR
@@ -175,7 +309,48 @@ Two-panel (Option A) wrapper with the graphs stacked at the top. Inner + meeting
 
 ## API requirements (derived from the figures)
 
-- `GET /api/sessions/{id}/graph` returns `cursor: { node_id, internal_node, meeting_node, agent, started_at }` — three cursor fields, `internal_node` and `meeting_node` may each be `null`.
+All topology is extracted from LangGraph, never hardcoded (Principle 5).
+
+`GET /api/sessions/{id}/graph` returns:
+
+```jsonc
+{
+  "nodes": [/* top-level stages, from compiled.get_graph() */],
+  "edges": [
+    /* forward edges from compiled.get_graph() */
+    /* backtrack edges synthesised from state["backtrack_attempts"]: */
+    {
+      "from": "experimentation",
+      "to": "literature_review",
+      "kind": "backtrack",
+      "attempts": 1
+    }
+  ],
+  "cursor": {
+    "node_id": "experimentation",      // active top-level stage
+    "internal_node": "work",           // active node inside stage's subgraph
+    "meeting_node": null,              // active node inside meeting subgraph (when running)
+    "agent": "ml_engineer",
+    "started_at": "2026-04-14T10:20:00Z"
+  },
+  "subgraphs": [
+    {
+      "id": "experimentation",
+      "kind": "stage_subgraph",
+      "nodes": [/* from compiled.stage_subgraph.get_graph(xray=1) */],
+      "edges": [/* ... */]
+    },
+    {
+      "id": "lab_meeting",
+      "kind": "invocable_only",        // meeting, only present when running
+      "nodes": [/* from compiled.lab_meeting_subgraph.get_graph(xray=1) */],
+      "edges": [/* ... */]
+    }
+  ]
+}
+```
+
+- Stage subgraph entries in `subgraphs` are populated **only for the currently active stage** (avoids shipping N subgraph blobs per request when only one is visible at a time). Plan 7B T2 already populated invocable-only subgraphs in the array with empty nodes/edges; this enriches them with real topology when the stage is live.
 - `GET /api/sessions/{id}/stage_plans/{stage}` returns `{ stage_name, plans: [...] }` — versioned list; the panel uses the latest entry's `items` to derive the `"3 items · 1 done · 2 todo"` summary.
 - WebSocket events `stage_started` / `stage_completed` invalidate `["graph"]` + `["stage-plans"]` keys (already wired in Plan 6 + Plan 7B).
 
@@ -191,4 +366,10 @@ Two-panel (Option A) wrapper with the graphs stacked at the top. Inner + meeting
 
 4. **Keyboard affordance.** `Enter` / `Space` on focused active stage toggles inner panel. `Enter` on WORK toggles meeting panel. Default focus goes to active stage when page loads.
 
-If all three figures + the composed layout + behaviour matrix look right, I'll revise Plan 7D to pin them as the implementation target for T3/T4 (plus a new T4a for the click-state machine and cursor plumbing). If anything is off, flag on this doc directly — commit + view in preview, comment, then I'll iterate.
+If all three figures + the composed layout + behaviour matrix look right, Plan 7D will be revised to pin them as the implementation target. Changes landing in the plan:
+
+- **T1 (backend):** `graph_mapper` extracts stage subgraphs (when active) and lab_meeting subgraph (when running) via `get_graph(xray=1)`; adds `cursor.internal_node` + `cursor.meeting_node`; synthesises backtrack edges from `state["backtrack_attempts"]` into `edges` with `kind: "backtrack"`.
+- **T3 (frontend):** `GraphTopology` renders forward edges (solid) + backtrack edges (dashed amber with count label) directly from the topology — no filtering. Crowding safeguard: if >6 backtrack edges, collapse to a single "↩ N backtracks" toggle.
+- **T4 (frontend):** `StageSubgraphDrawer` renders whatever `subgraphs[id=active_stage]` returns — no hardcoded 5-node template. Same `StageNode`-style cursor marker semantics.
+- **T4a (new — frontend):** `LabMeetingOverlay` renders `subgraphs[id=lab_meeting]` when `cursor.meeting_node != null` AND user has clicked the WORK node in the inner drawer.
+- Plus cursor-plumbing + click-state machine for on-demand panels.
