@@ -29,7 +29,20 @@ export function StageNode({ node, control, onControlChange, isActive, isSweeping
     <div
       data-testid={`stage-node-${node.id}`}
       data-status={node.status}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? () => onStageClick(node.id) : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onStageClick(node.id);
+              }
+            }
+          : undefined
+      }
+      aria-label={clickable ? `Toggle subgraph panel for ${node.label ?? node.id}` : undefined}
       className={[
         isActive ? "stage-node-active" : "",
         isSweeping ? "cursor-reverse-sweep" : "",

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StageSubgraphDrawer } from "../../src/components/session/StageSubgraphDrawer";
 import type { GraphSubgraph } from "../../src/types/domain";
@@ -158,5 +158,46 @@ describe("StageSubgraphDrawer", () => {
     ) as HTMLElement[];
     const ids = nodeEls.map((el) => el.getAttribute("data-internal-node"));
     expect(ids).toEqual(["enter", "stage_plan", "work", "evaluate", "decide"]);
+  });
+
+  it("WORK node has keyboard affordance when meeting is active", async () => {
+    const onWorkClick = vi.fn();
+    render(
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={stageSubgraph}
+        cursorInternalNode="work"
+        meetingActive={true}
+        onWorkClick={onWorkClick}
+      />,
+    );
+    const workNode = screen.getByRole("button", { name: /Toggle work subgraph/i });
+
+    // role=button + tabIndex accessible
+    expect(workNode).toHaveAttribute("role", "button");
+    expect(workNode).toHaveAttribute("tabIndex", "0");
+
+    // Enter key fires onWorkClick
+    fireEvent.keyDown(workNode, { key: "Enter" });
+    expect(onWorkClick).toHaveBeenCalledTimes(1);
+
+    // Space key also fires onWorkClick
+    fireEvent.keyDown(workNode, { key: " " });
+    expect(onWorkClick).toHaveBeenCalledTimes(2);
+  });
+
+  it("WORK node has no keyboard role when meeting is inactive", () => {
+    const { container } = render(
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={stageSubgraph}
+        cursorInternalNode="work"
+        meetingActive={false}
+        onWorkClick={() => {}}
+      />,
+    );
+    const workNode = container.querySelector("[data-internal-node='work']") as HTMLElement;
+    expect(workNode).not.toHaveAttribute("role", "button");
+    expect(workNode).not.toHaveAttribute("tabIndex");
   });
 });

@@ -70,7 +70,20 @@ export function StageSubgraphDrawer({
               <div
                 data-internal-node={id}
                 className={isActive ? "active" : ""}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
                 onClick={clickable ? onWorkClick : undefined}
+                onKeyDown={
+                  clickable
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onWorkClick();
+                        }
+                      }
+                    : undefined
+                }
+                aria-label={clickable ? "Toggle work subgraph (meeting)" : undefined}
                 style={{
                   padding: "6px 14px",
                   borderRadius: 6,
