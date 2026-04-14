@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from agentlabx.core.state import Hypothesis, PipelineState, ResearchPlan
+from agentlabx.core.state import Hypothesis, PipelineState, ResearchPlan, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -17,11 +17,80 @@ PLAN_JSON_FORMAT = (
 
 
 class PlanFormulationStage(BaseStage):
+    """Plan 7E B1 migration: build_plan itemises research goals + methodology
+    + hypotheses + optional feedback-driven work; execute_plan stays at the
+    default (delegates to legacy .run()), so plan items are OBSERVABILITY-ONLY
+    in 7E. A future plan will migrate execute_plan to iterate over plan.items.
+    """
+
     name = "plan_formulation"
     zone = "discovery"
     description = "Postdoc and PhD student collaborate to formulate the research plan."
     required_agents = ["postdoc", "phd_student"]
     required_tools = []
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        topic = state.get("research_topic", "")
+        prior = state.get("plan", [])
+        has_prior = bool(prior) and not feedback
+
+        goals_status = "done" if has_prior else "todo"
+        items: list[StagePlanItem] = [
+            StagePlanItem(
+                id="plan:goals",
+                description=f"Define research goals for: {topic}",
+                status=goals_status,
+                source="prior" if has_prior else "contract",
+                existing_artifact_ref="plan[-1]" if has_prior else None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="plan:methodology",
+                description="Specify methodology and approach",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="plan:hypotheses",
+                description="Propose initial hypotheses",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+        ]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="plan:feedback-driven",
+                    description=f"Revise plan: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        rationale = f"Plan formulation for '{topic}'"
+        if feedback:
+            rationale += " (revising under feedback)"
+        elif has_prior:
+            rationale += " (prior plan exists; extending)"
+
+        return StagePlan(
+            items=items,
+            rationale=rationale,
+            hash_of_consumed_inputs=topic,
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry
