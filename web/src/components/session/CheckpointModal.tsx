@@ -3,6 +3,7 @@ import { Alert, Button, Modal, Space, Typography, message } from "antd";
 import {
   CheckOutlined,
   CloseOutlined,
+  EditOutlined,
   ForwardOutlined,
 } from "@ant-design/icons";
 import { useWSStore } from "../../stores/wsStore";
@@ -24,6 +25,7 @@ interface CheckpointPayload {
   stage?: string;
   pi_recommendation?: string;
   output?: string;
+  control_mode?: string;
   [k: string]: unknown;
 }
 
@@ -122,6 +124,10 @@ export function CheckpointModal({ sessionId }: Props) {
   const stage = latestCheckpoint?.data?.stage ?? "unknown";
   const piRec = latestCheckpoint?.data?.pi_recommendation;
   const output = latestCheckpoint?.data?.output;
+  const controlMode = latestCheckpoint?.data?.control_mode;
+  // Show Edit button only when the stage's control mode is "edit".
+  // When control_mode is "approve" or unset, the modal is approve/reject only.
+  const showEditButton = controlMode === "edit";
 
   return (
     <>
@@ -204,6 +210,18 @@ export function CheckpointModal({ sessionId }: Props) {
             >
               Redirect
             </Button>
+            {showEditButton && (
+              <Button
+                icon={<EditOutlined />}
+                onClick={() => {
+                  message.info("Edit mode is not yet implemented.");
+                }}
+                loading={submitting}
+                disabled={submitting}
+              >
+                Edit
+              </Button>
+            )}
             <Button
               icon={<CloseOutlined />}
               onClick={() => sendAction({ action: "reject" })}

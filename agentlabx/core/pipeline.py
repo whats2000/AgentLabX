@@ -152,6 +152,7 @@ class PipelineBuilder:
                 current_stage = state.get("current_stage", "")
                 pi_decisions: list[dict] = state.get("pi_decisions") or []
                 latest_pi = pi_decisions[-1] if pi_decisions else None
+                control_mode = self.preferences.get_stage_control(current_stage) if current_stage else None
                 await effective_event_bus.emit(
                     Event(
                         type=EventTypes.CHECKPOINT_REACHED,
@@ -159,6 +160,7 @@ class PipelineBuilder:
                             "stage": current_stage,
                             "next_stage": decision.next_stage,
                             "reason": decision.reason,
+                            "control_mode": control_mode,  # "approve" | "edit" | "notify" | "auto" | None
                             "pi_recommendation": (
                                 latest_pi.get("reasoning") if latest_pi else None
                             ),

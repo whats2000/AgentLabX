@@ -119,23 +119,65 @@ describe("CheckpointModal", () => {
     });
   });
 
-  it("edit button is absent (dead editing state removed in Plan 7E A2 fixes)", async () => {
+  it("hides the Edit button when control_mode is 'approve'", async () => {
     useWSStore.setState({
       events: {
         "sess-1": [
           {
             type: "checkpoint_reached",
-            data: { stage: "experimentation", output: "original" },
+            data: { stage: "experimentation", output: "original", control_mode: "approve" },
             timestamp: "t2",
           },
         ],
       },
     });
     renderModal();
-    // The Edit button was removed (dead editing state deleted). Only Approve,
-    // Reject, and Redirect are present. Verify the Edit button is gone.
+    // control_mode="approve" is binary approve/reject — no Edit button.
     expect(screen.queryByRole("button", { name: /Edit/i })).not.toBeInTheDocument();
     // Core action buttons are still present.
+    expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reject/i })).toBeInTheDocument();
+  });
+
+  it("hides the Edit button when control_mode is absent (default approve UX)", async () => {
+    useWSStore.setState({
+      events: {
+        "sess-1": [
+          {
+            type: "checkpoint_reached",
+            data: { stage: "experimentation", output: "original" },
+            timestamp: "t2b",
+          },
+        ],
+      },
+    });
+    renderModal();
+    // No control_mode set → default approve/reject only, no Edit.
+    expect(screen.queryByRole("button", { name: /Edit/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reject/i })).toBeInTheDocument();
+  });
+
+  it("shows the Edit button when control_mode is 'edit'", async () => {
+    const user = userEvent.setup();
+    useWSStore.setState({
+      events: {
+        "sess-1": [
+          {
+            type: "checkpoint_reached",
+            data: { stage: "experimentation", output: "original", control_mode: "edit" },
+            timestamp: "t3",
+          },
+        ],
+      },
+    });
+    renderModal();
+    // control_mode="edit" → Edit button is present.
+    const editBtn = screen.getByRole("button", { name: /Edit/i });
+    expect(editBtn).toBeInTheDocument();
+    // Clicking it shows a "not yet implemented" info message (no crash).
+    await user.click(editBtn);
+    // Core action buttons remain.
     expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reject/i })).toBeInTheDocument();
   });

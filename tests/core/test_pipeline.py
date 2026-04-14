@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
+from agentlabx.core.event_types import EventTypes
+from agentlabx.core.events import Event, EventBus
 from agentlabx.core.pipeline import PipelineBuilder
 from agentlabx.core.registry import PluginRegistry
+from agentlabx.core.session import SessionPreferences
 from agentlabx.core.state import create_initial_state
 from agentlabx.plugins._builtin import register_builtin_plugins
+from agentlabx.stages import runner as runner_mod
+from agentlabx.stages.base import StageContext
 
 
 @pytest.fixture()
@@ -144,3 +151,177 @@ class TestPipelineBuilderProviderWiring:
         # If the graph ran, the custom context was accepted. The settings marker
         # is just proof we passed the object we meant to.
         assert custom_ctx.settings["marker"] == "custom"
+
+
+class TestCheckpointReachedControlMode:
+    """checkpoint_reached event carries control_mode from stage_controls (Plan 7E C1)."""
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_reached_event_includes_control_mode_approve(
+        self, registry, monkeypatch
+    ):
+        """When stage_controls[X]='approve', checkpoint event data has control_mode='approve'."""
+        events: list[Event] = []
+        bus = EventBus()
+
+        async def collector(e: Event) -> None:
+            events.append(e)
+
+        bus.subscribe("*", collector)
+
+        async def fake_run(self, state):
+            name = self.stage.name
+            update = {
+                "current_stage": name,
+                "stage_iterations": {
+                    **state.get("stage_iterations", {}),
+                    name: state.get("stage_iterations", {}).get(name, 0) + 1,
+                },
+                "total_iterations": state.get("total_iterations", 0) + 1,
+            }
+            if name == "experimentation":
+                # Always backtrack to trigger the limit escalation → needs_approval=True
+                update["next_stage"] = "literature_review"
+                update["backtrack_feedback"] = "need more lit"
+                return update
+            update["next_stage"] = None
+            return update
+
+        monkeypatch.setattr(runner_mod.StageRunner, "run", fake_run)
+
+        paused_event = asyncio.Event()
+        paused_event.set()  # start unpaused
+
+        stage_context = StageContext(
+            settings={},
+            event_bus=bus,
+            registry=registry,
+            llm_provider=None,
+            cost_tracker=None,
+            paused_event=paused_event,
+        )
+
+        # Configure stage_controls: literature_review has "approve"
+        prefs = SessionPreferences(max_backtrack_attempts_per_edge=1)
+        prefs.stage_controls["literature_review"] = "approve"
+
+        seq = ["literature_review", "experimentation"]
+        graph = PipelineBuilder(
+            registry=registry, preferences=prefs
+        ).build(stage_sequence=seq, stage_context=stage_context)
+
+        state = create_initial_state(
+            session_id="s1",
+            user_id="u1",
+            research_topic="t",
+            default_sequence=seq,
+            max_total_iterations=15,
+        )
+
+        # Release the pause gate once cleared so ainvoke can complete
+        async def release_after_pause():
+            for _ in range(200):
+                await asyncio.sleep(0.05)
+                if not paused_event.is_set():
+                    paused_event.set()
+                    return
+
+        release_task = asyncio.create_task(release_after_pause())
+        await graph.ainvoke(state, config={"configurable": {"thread_id": "t-c1-approve"}})
+        await release_task
+
+        # Find the checkpoint_reached event
+        checkpoint_events = [
+            e for e in events if e.type == EventTypes.CHECKPOINT_REACHED
+        ]
+        assert checkpoint_events, (
+            f"No checkpoint_reached event fired; events: {[e.type for e in events]}"
+        )
+
+        event_data = checkpoint_events[0].data
+        assert event_data.get("control_mode") == "approve", (
+            f"Expected control_mode='approve' in event data; got: {event_data}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_reached_event_includes_control_mode_edit(
+        self, registry, monkeypatch
+    ):
+        """When stage_controls[X]='edit', checkpoint event data has control_mode='edit'."""
+        events: list[Event] = []
+        bus = EventBus()
+
+        async def collector(e: Event) -> None:
+            events.append(e)
+
+        bus.subscribe("*", collector)
+
+        async def fake_run(self, state):
+            name = self.stage.name
+            update = {
+                "current_stage": name,
+                "stage_iterations": {
+                    **state.get("stage_iterations", {}),
+                    name: state.get("stage_iterations", {}).get(name, 0) + 1,
+                },
+                "total_iterations": state.get("total_iterations", 0) + 1,
+            }
+            if name == "experimentation":
+                update["next_stage"] = "literature_review"
+                update["backtrack_feedback"] = "need more lit"
+                return update
+            update["next_stage"] = None
+            return update
+
+        monkeypatch.setattr(runner_mod.StageRunner, "run", fake_run)
+
+        paused_event = asyncio.Event()
+        paused_event.set()
+
+        stage_context = StageContext(
+            settings={},
+            event_bus=bus,
+            registry=registry,
+            llm_provider=None,
+            cost_tracker=None,
+            paused_event=paused_event,
+        )
+
+        prefs = SessionPreferences(max_backtrack_attempts_per_edge=1)
+        prefs.stage_controls["literature_review"] = "edit"
+
+        seq = ["literature_review", "experimentation"]
+        graph = PipelineBuilder(
+            registry=registry, preferences=prefs
+        ).build(stage_sequence=seq, stage_context=stage_context)
+
+        state = create_initial_state(
+            session_id="s2",
+            user_id="u1",
+            research_topic="t",
+            default_sequence=seq,
+            max_total_iterations=15,
+        )
+
+        async def release_after_pause():
+            for _ in range(200):
+                await asyncio.sleep(0.05)
+                if not paused_event.is_set():
+                    paused_event.set()
+                    return
+
+        release_task = asyncio.create_task(release_after_pause())
+        await graph.ainvoke(state, config={"configurable": {"thread_id": "t-c1-edit"}})
+        await release_task
+
+        checkpoint_events = [
+            e for e in events if e.type == EventTypes.CHECKPOINT_REACHED
+        ]
+        assert checkpoint_events, (
+            f"No checkpoint_reached event fired; events: {[e.type for e in events]}"
+        )
+
+        event_data = checkpoint_events[0].data
+        assert event_data.get("control_mode") == "edit", (
+            f"Expected control_mode='edit' in event data; got: {event_data}"
+        )
