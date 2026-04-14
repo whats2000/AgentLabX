@@ -1,4 +1,4 @@
-"""Tests for PIAgent LLM wiring — updated for Plan 7C advisor API."""
+"""PIAgent LLM wiring tests — real provider path + memory-scope assembly."""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-"""PIAgent — updated for Plan 7C advisor API.
+"""PIAgent — advisor-API unit tests.
 
-Plan 6B tests that validated the TransitionHandler-wrapping path and
-PIDecision shape are replaced here with advisor-API equivalents.
+Covers consult_escalation(), the JSON parsing fallback chain, and the
+persistence + event-emission seam in _finalize. Older TransitionHandler-
+wrapping tests lived here and have been replaced by advisor-API equivalents;
 _parse_decision robustness tests are retained (same method, same behaviour).
 """
 from __future__ import annotations

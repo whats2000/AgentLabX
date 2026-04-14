@@ -88,7 +88,7 @@ async def test_pipeline_run_populates_stage_plans_for_each_executed_stage(
 
 @pytest.mark.asyncio
 async def test_backtrack_still_works_through_subgraph_stages(registry, monkeypatch):
-    """A stage emitting backtrack still flows through the Plan 7A rollback + counter path."""
+    """A stage emitting status=backtrack from inside its subgraph still triggers partial rollback + counter increment via the transition handler."""
     calls: dict[str, int] = {
         "literature_review": 0,
         "plan_formulation": 0,

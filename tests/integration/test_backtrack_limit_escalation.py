@@ -136,7 +136,7 @@ async def test_backtrack_limit_exceeded_consults_advisor_and_uses_advice(
 async def test_backtrack_limit_exceeded_no_advisor_falls_back_to_rule(
     registry, monkeypatch
 ):
-    """When no advisor is configured, rule-based fallback is used (Plan 7A parity)."""
+    """When no advisor is configured, rule-based _next_in_sequence fallback is used."""
     from agentlabx.stages.base import StageResult
     from agentlabx.stages.literature_review import LiteratureReviewStage
     from agentlabx.stages.plan_formulation import PlanFormulationStage
