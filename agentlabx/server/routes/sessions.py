@@ -371,6 +371,54 @@ async def get_agent_history(
     )
 
 
+@router.get("/{session_id}/stages/{stage_name}/history", response_model=HistoryOut)
+async def get_stage_history(
+    session_id: str,
+    stage_name: str,
+    request: Request,
+    limit: int = 200,
+    after_ts: str | None = None,
+):
+    """Return agent turns for a specific stage, aggregated across all agents.
+
+    Used by ChatView's stage-grouped collapsible sections (Plan 7D T6) —
+    when a user expands a stage panel, this returns all turns for that stage
+    in chronological order, suitable for rendering as a conversation thread.
+
+    Response: {"turns": [TurnOut, ...]} — same shape as
+    /agents/{name}/history for frontend consistency.
+    """
+    context = request.app.state.context
+    try:
+        context.session_manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    after = datetime.fromisoformat(after_ts) if after_ts else None
+    rows = await context.storage.list_agent_turns(
+        session_id, agent=None, stage=stage_name, after_ts=after, limit=limit
+    )
+    return HistoryOut(
+        turns=[
+            TurnOut(
+                turn_id=r.turn_id,
+                parent_turn_id=r.parent_turn_id,
+                agent=r.agent,
+                stage=r.stage,
+                kind=r.kind,
+                payload=r.payload,
+                system_prompt_hash=r.system_prompt_hash,
+                tokens_in=r.tokens_in,
+                tokens_out=r.tokens_out,
+                cost_usd=r.cost_usd,
+                is_mock=r.is_mock,
+                ts=r.ts.isoformat() if r.ts else "",
+            )
+            for r in rows
+        ]
+    )
+
+
 @router.get("/{session_id}/agents/{name}/memory")
 async def get_agent_memory(session_id: str, name: str, request: Request):
     """Return agent memory record from state, or empty defaults if not present."""
