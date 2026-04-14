@@ -29,6 +29,13 @@ def _iter_registered_stages(registry):
     yield from registry.list_plugins(PluginType.STAGE).items()
 
 
+def _field(obj: Any, key: str, default: Any = None) -> Any:
+    """Read a field from either dict-like or object-like values."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]:
     """Return the owned graph topology shape for the given state.
 
@@ -95,8 +102,8 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
 
     # Overlay backtracks from transition_log when they're not already edges.
     for t in state.get("transition_log") or []:
-        s = t.get("from_stage")
-        d = t.get("to_stage")
+        s = _field(t, "from_stage")
+        d = _field(t, "to_stage")
         if not s or not d:
             continue
         if _edge_idx(edges, s, d) == -1:
@@ -105,7 +112,7 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
                     "from": s,
                     "to": d,
                     "kind": "backtrack",
-                    "reason": t.get("reason"),
+                    "reason": _field(t, "reason"),
                 }
             )
 
