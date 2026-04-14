@@ -47,6 +47,73 @@ async def executor(registry, tmp_path):
 
 
 class TestPipelineExecutor:
+    async def test_start_session_sets_computed_recursion_limit(self, executor, monkeypatch):
+        captured: dict[str, object] = {}
+
+        class _DummyGraph:
+            async def ainvoke(self, initial_state, config):
+                captured["initial_state"] = initial_state
+                captured["config"] = config
+                return {}
+
+        monkeypatch.setattr(
+            "agentlabx.server.executor.PipelineBuilder.build",
+            lambda self, **kwargs: _DummyGraph(),
+        )
+
+        session = Session(
+            session_id="sess-rec-limit",
+            user_id="u1",
+            research_topic="test",
+            config_overrides={
+                "pipeline": {
+                    "default_sequence": ["literature_review", "plan_formulation"],
+                    "max_total_iterations": 60,
+                }
+            },
+        )
+        executor.session_manager._sessions[session.session_id] = session
+        running = await executor.start_session(session)
+
+        await asyncio.wait_for(running.task, timeout=5.0)
+
+        cfg = captured["config"]
+        assert isinstance(cfg, dict)
+        assert cfg["recursion_limit"] == 480
+
+        state = captured["initial_state"]
+        assert state["max_total_iterations"] == 60
+
+    async def test_start_session_honors_recursion_limit_override(self, executor, monkeypatch):
+        captured: dict[str, object] = {}
+
+        class _DummyGraph:
+            async def ainvoke(self, initial_state, config):
+                captured["config"] = config
+                return {}
+
+        monkeypatch.setattr(
+            "agentlabx.server.executor.PipelineBuilder.build",
+            lambda self, **kwargs: _DummyGraph(),
+        )
+
+        session = Session(
+            session_id="sess-rec-override",
+            user_id="u1",
+            research_topic="test",
+            config_overrides={
+                "execution": {"recursion_limit": 777},
+            },
+        )
+        executor.session_manager._sessions[session.session_id] = session
+        running = await executor.start_session(session)
+
+        await asyncio.wait_for(running.task, timeout=5.0)
+
+        cfg = captured["config"]
+        assert isinstance(cfg, dict)
+        assert cfg["recursion_limit"] == 777
+
     async def test_initialize_creates_checkpoint_db(self, registry, tmp_path):
         db_path = tmp_path / "cp.db"
         ex = PipelineExecutor(

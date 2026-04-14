@@ -35,6 +35,19 @@ from agentlabx.stages.base import StageContext
 logger = logging.getLogger(__name__)
 
 
+def _compute_recursion_limit(*, stage_count: int, max_total_iterations: int) -> int:
+    """Return a safe LangGraph recursion_limit for pipeline execution.
+
+    LangGraph counts internal node traversals, not just high-level stage loops.
+    A full cycle usually crosses stage + transition nodes and may enter subgraphs,
+    so using max_total_iterations directly is too small in practice.
+    """
+    safe_stage_count = max(1, int(stage_count))
+    safe_max_total = max(1, int(max_total_iterations))
+    # 8x is conservative for stage + transition + subgraph hops.
+    return max(25, safe_stage_count * 8, safe_max_total * 8)
+
+
 class RunningSession:
     """In-memory handle for a session with a live asyncio task."""
 
@@ -135,9 +148,23 @@ class PipelineExecutor:
         from agentlabx.core.config import PipelineConfig
 
         pipeline_overrides = session.config_overrides.get("pipeline", {})
+        execution_overrides = session.config_overrides.get("execution", {})
         default_sequence = (
             pipeline_overrides.get("default_sequence") or PipelineConfig().default_sequence
         )
+        max_total_iterations = int(
+            pipeline_overrides.get("max_total_iterations")
+            or PipelineConfig().max_total_iterations
+        )
+
+        configured_recursion_limit = execution_overrides.get("recursion_limit")
+        if configured_recursion_limit is not None:
+            recursion_limit = max(25, int(configured_recursion_limit))
+        else:
+            recursion_limit = _compute_recursion_limit(
+                stage_count=len(default_sequence),
+                max_total_iterations=max_total_iterations,
+            )
 
         event_bus = session.event_bus  # Fix B: reuse session-owned bus
         cost_tracker = CostTracker()
@@ -230,9 +257,13 @@ class PipelineExecutor:
             user_id=session.user_id,
             research_topic=session.research_topic,
             default_sequence=default_sequence,
+            max_total_iterations=max_total_iterations,
         )
         thread_id = session.session_id
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": recursion_limit,
+        }
 
         session_manager = self.session_manager
 
