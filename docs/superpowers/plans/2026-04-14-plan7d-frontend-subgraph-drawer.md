@@ -1,20 +1,24 @@
-# Plan 7D: Frontend — Production-Line Graph + Recursive Subgraph Drawer + PI Advice Surfacing
+# Plan 7D: Frontend — Production-Line Graph + On-Demand Subgraph Drawers + PI Advice Surfacing
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Companion layout preview:** `docs/superpowers/specs/2026-04-14-plan7d-layout-preview.md` — render in Markdown preview for the Mermaid figures this plan implements.
 
-**Goal:** Retrofit the Session Detail page to match spec §8.2 — top canvas is a clean "production line" graph (forward edges + zone grouping, NO backtrack edges rendered), directly beneath it an active-stage subgraph drawer renders the currently-executing stage's internal nodes (`enter → stage_plan → gate → work → evaluate → decide`), and when `work` invokes a nested subgraph (`lab_meeting`) a third tier attaches. ChatView on the right side-panel groups conversation turns by stage with lazy-loaded collapsible sections. Agent Monitor lives on the left (no conversation duplication). `CheckpointModal` consumes `decision.needs_approval` and surfaces the latest PI advice when an escalation triggers.
+**Goal:** Retrofit the Session Detail page to the Option A layout (chat hero + collapsible right drawer) with an always-visible production-line graph on top, plus two on-demand subgraph panels that open when the user clicks the active stage (inner subgraph) and the WORK node of the inner subgraph while a meeting is running (meeting subgraph). `CheckpointModal` consumes `decision.needs_approval` and surfaces the latest PI advice when an escalation triggers.
 
-**Architecture:** The frontend recursion rule is: always render the overall production line; render a sub-tier graph ONLY for the currently-active node; recurse down when that node itself invokes a nested subgraph. Inactive branches are never instantiated. All tiers read from the existing `/api/sessions/{id}/graph` endpoint (which already emits invocable-only stages in `subgraphs`, per Plan 7B T2) plus the new `/api/sessions/{id}/stage_plans/{stage}` endpoint added in T1 here. `GraphTopology` component stays on `@xyflow/react` but drops zone-hub edges and backtrack overlays — backtrack visual is a cursor-jump animation + small "↩ N" badge on the stage node's history.
+**Architecture:** Frontend recursion rule (spec §8.2 principle 5): all graph topology is **extracted from LangGraph** at runtime via `compiled.get_graph()` / `get_graph(xray=1)` — never hardcoded. The `/api/sessions/{id}/graph` endpoint returns top-level nodes/edges + an enriched `subgraphs` array populated with the active stage's compiled subgraph (when a stage is running) and the meeting's compiled subgraph (when a meeting is invoked). A stage's internal shape (Plan 7B T4: `enter → stage_plan → gate → work → evaluate → decide`, acyclic) is produced by `StageSubgraphBuilder` and read by the frontend as-is; if a future plan adds a node, the UI reflects it without code changes. Backtrack edges are synthesised from `state["backtrack_attempts"]` and rendered as dashed amber curves with attempt-count labels; labels demote to hover tooltips when total backtrack edges exceed 8.
 
 **Tech Stack:** React 19, TypeScript 5.5, Vite 6, Ant Design 5, @xyflow/react + elkjs for layout, TanStack Query 5, Zustand 5, Vitest + React Testing Library.
 
 **Pre-production principle:** AgentLabX has not shipped. Plan 7D makes breaking visual/layout changes — update tests when behaviour changes, no backwards-compat scaffolding.
 
-**Spec sections implemented:** §8.2 Session Detail (graph-hierarchy principle, production-line top canvas, active-stage subgraph drawer, nested subgraph attachments), §8.3 component list (drops `AgentHistoryCard`, adds `StageSubgraphDrawer`, `StagePlanCard`; reframes `ChatView` to stage-grouped lazy-load).
+**Spec sections implemented:** §8.2 Session Detail (graph-hierarchy principle, production-line top canvas, on-demand subgraph drawers, PI advice surfacing), §8.3 component list (drops `AgentHistoryCard`, adds `StageSubgraphDrawer`, `LabMeetingOverlay`, `StagePlanCard`; reframes `ChatView` to stage-grouped lazy-load).
 
-**Companion spec:** `docs/superpowers/specs/2026-04-12-agentlabx-platform-design.md` §8.2, §8.3.
+**Companion documents:**
+- `docs/superpowers/specs/2026-04-12-agentlabx-platform-design.md` §3.2.1 (stage subgraph shape), §8.2 (frontend layout), §8.3 (component list)
+- `docs/superpowers/specs/2026-04-14-plan7d-layout-preview.md` (Mermaid figures + composed layout + density stress-tests)
 
-**Existing WIP to reconcile:** Commit `6f5bfa2` contains frontend explorations predating this plan — ChatView refactor toward stage-grouped turns, ControlBar slim-down, new components `AgentTurnBubble`, `ToolCallAnnotation`, `ZoneNode`. Evaluate each against the new design (T8 explicitly handles this).
+**Existing WIP to reconcile:** Commit `6f5bfa2` contains frontend explorations predating this plan — ChatView refactor toward stage-grouped turns, ControlBar slim-down, new components `AgentTurnBubble`, `ToolCallAnnotation`, `ZoneNode`. Evaluate each against the new design (T9 explicitly handles this).
 
 **Out of scope (later plans):**
 - Pixel-art RPG `lab_scene` conversation renderer — reserved `ChatView.mode` prop; no implementation.
@@ -25,19 +29,28 @@
 
 ## Design decisions pinned before implementation
 
-Three seams worth explicit calls.
+Four seams with explicit calls from the layout-preview review.
 
-**1. `StageSubgraphDrawer` renders the canonical 5-node shape from a hardcoded template, NOT from an API call.**
+**1. Layout: Option A — chat hero + right drawer.**
 
-Every stage's subgraph has the same topology: `enter → stage_plan → gate → work → evaluate → decide`. Stages differ in their hook implementations (T3/T6 from Plan 7B), not their graph shape. The drawer renders a static React Flow graph with those 5 nodes; the "active node" cursor is driven by the `current_stage_internal_node` field read from graph topology (new in T1), or falls back to animating the whole drawer to match `/api/sessions/{id}` state. The drawer is NOT generated per-stage from a server-returned subgraph description — that would be over-engineering for identical shapes.
+Header → always-visible graph strip (main + optional inner + optional meeting) → chat fills remaining main area → collapsible 320px drawer on the right carries all secondary tabs (Agent Monitor, Stage Plan, Hypotheses, PI Decisions, Cost, Artifacts, Experiments). The three-panel layout is dropped: the left "Agent Monitor" sider is consolidated into the right drawer, freeing the entire main column for chat. Feedback input stays sticky at the bottom.
 
-**2. Nested-subgraph rendering (e.g., `lab_meeting` invoked from `work`) is a modal/overlay anchored to the `work` node in the drawer, NOT a third tier stacked below.**
+**2. Subgraph drawers are on-demand (click to open), not auto-visible.**
 
-When `lab_meeting` fires, the frontend receives a `stage_started` event with `stage="lab_meeting"` and a `parent_stage` field (new — added in T1). The drawer visually anchors a small nested graph to the `work` node (via React Flow's native sub-rendering or a Popover overlay). On exit, the overlay fades out, leaving a collapsible `LabMeetingResult` chip on the `work` node. This keeps the recursion rule (active node → its graph) visually clean without cascading the whole layout downward.
+- Inner subgraph: user clicks the active stage's node in the main graph → inner panel opens beneath the main strip. Click again → closes.
+- Meeting subgraph: only reachable when a callable subgraph (currently `lab_meeting`) is running AND inner is open. User clicks the WORK node in the inner panel → meeting panel opens next to inner. Click again → closes.
+- When both inner and meeting are open, they share a horizontal row (~50/50 split). When only inner is open, it takes full width of the subgraph row.
+- Default state: both closed. Graph strip collapses to just the main graph.
 
-**3. Backtracks are animated, never drawn as edges.**
+**3. No hardcoded topology.**
 
-When the cursor jumps backward (e.g., experimentation → literature_review via backtrack), the production-line graph plays a reverse-sweep cursor animation across the zones. The origin stage gets a subtle "↩ N" badge where N is `backtrack_attempts[origin→target]` (already exposed on topology edges per Plan 7A T9, but we DON'T render those edges as lines). This is intentional: backtrack edges produced a hairball under the old layout (pre-Plan 7).
+All graph structure — top-level stages, inner stage subgraphs, meeting subgraphs — comes from `/api/sessions/{id}/graph` which extracts via `compiled.get_graph()` / `compiled.get_graph(xray=1)`. The frontend renders whatever nodes/edges the API returns. A plan that adds a new internal node or renames one produces an updated graph automatically; no UI change required. This reverses the earlier (stale) plan that proposed a hardcoded 5-node template in `StageSubgraphDrawer`.
+
+**4. Backtracks are rendered as edges, not hidden.**
+
+Each non-zero entry in `state["backtrack_attempts"]` becomes one dashed amber curve drawn directly origin → target, labelled with the attempt count. When total backtrack edges exceed 8, labels demote to hover tooltips (edges still render). No collapse toggle — the density stress-tests in the layout preview show even 28 edges remain parseable when the forward spine stays visible. This reverses the earlier (stale) plan that proposed dropping backtrack edges entirely.
+
+**Cursor plumbing:** `/graph` response's `cursor` object carries three fields — `node_id` (active top-level stage), `internal_node` (active node inside stage's subgraph, e.g. "work"), `meeting_node` (active node inside meeting subgraph when running). All three drive a blue-ring `🔵` marker in their respective tiers.
 
 ---
 
@@ -45,42 +58,49 @@ When the cursor jumps backward (e.g., experimentation → literature_review via 
 
 | File | Purpose | Create / Modify |
 |---|---|---|
-| `agentlabx/server/routes/sessions.py` | Add `GET /api/sessions/{id}/stage_plans/{stage}` endpoint; expose `current_stage_internal_node` + `parent_stage` in topology/state | Modify |
-| `agentlabx/core/graph_mapper.py` | Include `current_stage_internal_node` in topology cursor when available (read from a new `state` field populated by `StageRunner`) | Modify |
-| `agentlabx/core/state.py` | Add `current_stage_internal_node: str \| None` (e.g., "work", "evaluate") | Modify |
-| `agentlabx/stages/runner.py` / `subgraph.py` | Emit stage-internal events + write `current_stage_internal_node` on each subgraph node transition | Modify |
+| `agentlabx/core/state.py` | Add `current_stage_internal_node: str \| None` + `current_meeting_node: str \| None` (written by subgraph nodes) | Modify |
+| `agentlabx/stages/subgraph.py` | Each of the 5 subgraph node functions writes its own name to `state["current_stage_internal_node"]`; `decide_node` clears it on exit | Modify |
+| `agentlabx/stages/lab_meeting.py` (future: once implemented) | Meeting subgraph's nodes write `state["current_meeting_node"]` | Modify — flag for later if lab_meeting body isn't implemented yet |
+| `agentlabx/core/graph_mapper.py` | Extract active stage's subgraph + meeting's subgraph via `compiled.get_graph(xray=1)`; populate `subgraphs[]` with real nodes/edges; synthesise backtrack edges from `state["backtrack_attempts"]`; add `internal_node` + `meeting_node` to cursor | Modify |
+| `agentlabx/server/routes/sessions.py` | Add `GET /api/sessions/{id}/stage_plans/{stage}` endpoint | Modify |
+| `web/src/types/graph.ts` (if not present) | TypeScript types mirroring the `/graph` response shape | Create or modify |
 | `web/src/hooks/useStagePlans.ts` | New TanStack Query hook for `/stage_plans/{stage}` | Create |
-| `web/src/components/session/GraphTopology.tsx` | Drop backtrack-edge rendering; add cursor-jump animation on backtrack; add "↩ N" badge component | Modify |
-| `web/src/components/session/StageNode.tsx` | Existing; add elapsed-time counter + live-cost chip; confirm per-stage control dropdown stays | Modify |
-| `web/src/components/session/StageSubgraphDrawer.tsx` | New — static 5-node subgraph below production line, only mounted when a stage is active | Create |
-| `web/src/components/session/StagePlanCard.tsx` | New — renders `StagePlan.items[]` with status chips (done/edit/todo/removed) + rationale | Create |
-| `web/src/components/session/LabMeetingOverlay.tsx` | New — nested subgraph attachment for invocable stages fired from `work` | Create |
-| `web/src/components/session/ChatView.tsx` | Reshape into stage-grouped collapsible sections; lazy-load turns per section | Modify |
-| `web/src/components/session/StageGroup.tsx` | Existing; adapt to lazy-load semantics; auto-expand only active stage | Modify |
-| `web/src/components/session/AgentMonitor.tsx` | Drop `AgentHistoryCard` composition; add `StagePlanCard` composition when viewing the active stage's agents | Modify |
-| `web/src/components/session/AgentHistoryCard.tsx` | Remove entirely (duplicated by ChatView) | Delete |
+| `web/src/hooks/useGraph.ts` | Update return type to include enriched `subgraphs[]` + new cursor fields | Modify |
+| `web/src/hooks/useWebSocket.ts` | Invalidate `["stage-plans", sessionId]` on `stage_started` / `stage_completed` | Modify |
+| `web/src/components/session/GraphTopology.tsx` | Render forward edges + backtrack edges (dashed amber) with attempt-count labels; demote labels to tooltips when total > 8; active stage node clickable; cursor marker on active stage | Modify |
+| `web/src/components/session/StageNode.tsx` | Existing; add click affordance `▾` on active stage; keep existing status/iter/cost/control chips | Modify |
+| `web/src/components/session/StageSubgraphDrawer.tsx` | New — renders the active stage's subgraph from `topology.subgraphs[id=currentStage]`; cursor marker on `cursor.internal_node`; WORK node clickable when meeting is running | Create |
+| `web/src/components/session/LabMeetingOverlay.tsx` | New — renders the meeting subgraph from `topology.subgraphs[id=lab_meeting]`; cursor marker on `cursor.meeting_node`; shown side-by-side with `StageSubgraphDrawer` when meeting is open | Create |
+| `web/src/components/session/StagePlanCard.tsx` | New — renders latest `StagePlan.items[]` with status chips + rationale | Create |
+| `web/src/components/session/ChatView.tsx` | Reshape into stage-grouped collapsible sections; only active-stage auto-expands; turns lazy-load per section on expand | Modify |
+| `web/src/components/session/StageGroup.tsx` | Adapt to lazy-load semantics (don't call `useAgentHistory` until expanded) | Modify |
+| `web/src/components/session/AgentMonitor.tsx` | Drop `AgentHistoryCard` composition; add `StagePlanCard` composition when viewing an agent belonging to the active stage | Modify |
+| `web/src/components/session/AgentHistoryCard.tsx` | Delete — duplicated by ChatView per §8.2 | Delete |
 | `web/src/components/session/CheckpointModal.tsx` | Read `decision.needs_approval` + latest `pi_decisions` entry; show PI advice + distinct `approve` vs `edit` UX | Modify |
-| `web/src/pages/SessionDetailPage.tsx` | Apply the layout principle: top = GraphTopology + StageSubgraphDrawer; left sider = Controls + AgentMonitor; right sider = ChatView; sticky footer = FeedbackInput | Modify |
-| `web/src/components/session/ZoneNode.tsx` | Evaluate: keep if it helps production-line zone grouping, otherwise delete | Modify or Delete |
-| `web/tests/components/GraphTopology.test.tsx` | Assert backtrack edges NOT rendered; backtrack badge appears on origin stage | Modify |
-| `web/tests/components/StageSubgraphDrawer.test.tsx` | New — renders only when active stage set; shows 5 nodes; cursor follows internal-node state | Create |
-| `web/tests/components/StagePlanCard.test.tsx` | New — renders items with status chips | Create |
-| `web/tests/components/ChatView.test.tsx` | Update — stage-grouped collapsibles; only active expanded; turns lazy-load on expand | Modify |
-| `web/tests/components/CheckpointModal.test.tsx` | Update — shows PI advice when `pi_decisions` has a recent entry with confidence ≥ threshold | Modify |
-| `web/tests/pages/SessionDetailPage.test.tsx` | Update — layout assertion matches §8.2 (production line top, drawer below when active, left AgentMonitor, right ChatView) | Modify |
+| `web/src/pages/SessionDetailPage.tsx` | Apply Option A layout: header + graph strip (main + optional inner + optional meeting) + chat main area + right drawer + sticky feedback | Modify |
+| `web/src/stores/uiStore.ts` | Track open/closed state of inner and meeting panels + right-drawer active tab | Modify |
+| `web/src/components/session/ZoneNode.tsx` | Evaluate vs new GraphTopology needs; keep if it helps zone grouping visually, else delete | Modify or Delete |
+| `web/tests/components/GraphTopology.test.tsx` | Backtrack edges rendered; labels demoted past 8; click on active stage fires toggle | Modify |
+| `web/tests/components/StageSubgraphDrawer.test.tsx` | Renders from topology.subgraphs[activeStage]; cursor on internal_node | Create |
+| `web/tests/components/LabMeetingOverlay.test.tsx` | Renders when meeting_node != null; cursor on meeting_node; closes on re-click | Create |
+| `web/tests/components/StagePlanCard.test.tsx` | Status chips + rationale rendering | Create |
+| `web/tests/components/ChatView.test.tsx` | Stage-grouped collapsibles; lazy-load on expand | Modify |
+| `web/tests/components/CheckpointModal.test.tsx` | PI advice surfaces when pi_decisions has recent high-confidence entry | Modify |
+| `web/tests/pages/SessionDetailPage.test.tsx` | Option A layout assertions | Modify |
+| `tests/server/routes/test_stage_plans_endpoint.py` | Backend endpoint contract | Create |
 
 ---
 
-## Task 1: Backend — `stage_plans` endpoint + subgraph-internal cursor
+## Task 1: Backend — subgraph extraction, cursor fields, stage_plans endpoint
 
 **Files:**
-- Modify: `agentlabx/core/state.py` (+ `current_stage_internal_node`)
-- Modify: `agentlabx/stages/subgraph.py` (write the field on each node)
-- Modify: `agentlabx/core/graph_mapper.py` (expose in cursor)
+- Modify: `agentlabx/core/state.py` (+ `current_stage_internal_node`, `current_meeting_node`)
+- Modify: `agentlabx/stages/subgraph.py` (each node writes its name; decide clears)
+- Modify: `agentlabx/core/graph_mapper.py` (extract subgraphs + synthesize backtrack edges + extend cursor)
 - Modify: `agentlabx/server/routes/sessions.py` (+ stage_plans endpoint)
 - Create: `tests/server/routes/test_stage_plans_endpoint.py`
 
-- [ ] **Step 1: Write failing endpoint test**
+### Step 1: Write failing endpoint test
 
 Create `tests/server/routes/test_stage_plans_endpoint.py`:
 
@@ -88,6 +108,7 @@ Create `tests/server/routes/test_stage_plans_endpoint.py`:
 """GET /api/sessions/{id}/stage_plans/{stage} returns StagePlan history."""
 from __future__ import annotations
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -96,7 +117,6 @@ from agentlabx.server.app import create_app
 
 @pytest.fixture
 def client(tmp_path):
-    import os
     os.environ["AGENTLABX_STORAGE__DATABASE_URL"] = (
         f"sqlite+aiosqlite:///{tmp_path / 'sp.db'}"
     )
@@ -108,11 +128,8 @@ def client(tmp_path):
     os.environ.pop("AGENTLABX_STORAGE__ARTIFACTS_PATH", None)
 
 
-def test_stage_plans_endpoint_returns_empty_list_for_unstarted_session(client):
-    r = client.post(
-        "/api/sessions",
-        json={"topic": "t", "user_id": "default", "config": {}},
-    )
+def test_stage_plans_endpoint_empty_for_unstarted_session(client):
+    r = client.post("/api/sessions", json={"topic": "t", "user_id": "default"})
     assert r.status_code == 201
     sid = r.json()["session_id"]
 
@@ -121,21 +138,14 @@ def test_stage_plans_endpoint_returns_empty_list_for_unstarted_session(client):
     assert r2.json() == {"stage_name": "literature_review", "plans": []}
 
 
-def test_stage_plans_endpoint_returns_404_on_unknown_session(client):
+def test_stage_plans_endpoint_404_on_unknown_session(client):
     r = client.get("/api/sessions/nonexistent/stage_plans/literature_review")
     assert r.status_code == 404
 ```
 
-- [ ] **Step 2: Run — verify fail**
+### Step 2: Add the endpoint
 
-```
-uv run pytest tests/server/routes/test_stage_plans_endpoint.py -v
-```
-Expected: FAIL (endpoint missing).
-
-- [ ] **Step 3: Add the endpoint**
-
-In `agentlabx/server/routes/sessions.py`, add:
+In `agentlabx/server/routes/sessions.py` (match existing route patterns for imports and dependencies):
 
 ```python
 @router.get("/sessions/{session_id}/stage_plans/{stage_name}")
@@ -144,102 +154,100 @@ async def get_stage_plans(
     stage_name: str,
     context: AppContext = Depends(get_app_context),
 ) -> dict:
-    """Return the versioned StagePlan history for a stage within a session.
-
-    Response shape:
-      {
-        "stage_name": "literature_review",
-        "plans": [  # oldest → newest
-          {
-            "items": [...],
-            "rationale": "...",
-            "hash_of_consumed_inputs": "..."
-          },
-          ...
-        ]
-      }
-    """
     session = context.session_manager.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-
     state = session.state or {}
     stage_plans = (state.get("stage_plans") or {}).get(stage_name, [])
-    return {
-        "stage_name": stage_name,
-        "plans": stage_plans,
-    }
+    return {"stage_name": stage_name, "plans": stage_plans}
 ```
 
-Adapt `AppContext`, `session_manager.get_session`, and `Depends` to the existing codebase conventions (check another route for the pattern).
+Verify: `uv run pytest tests/server/routes/test_stage_plans_endpoint.py -v` passes.
 
-- [ ] **Step 4: Add `current_stage_internal_node` to state**
+### Step 3: Add cursor fields to PipelineState
 
-In `agentlabx/core/state.py`, inside `PipelineState`, add:
+In `agentlabx/core/state.py` inside `PipelineState`:
 
 ```python
-    # Currently executing internal node of the active stage's subgraph
-    # (e.g., "enter", "stage_plan", "work", "evaluate", "decide"). None when
-    # the pipeline is between stages. Populated by the StageSubgraphBuilder's
-    # nodes via state mutation; consumed by graph_mapper's cursor.
+    # Active subgraph internal-node cursor (Plan 7D)
+    # Populated by StageSubgraphBuilder nodes via state mutation; cleared by
+    # decide_node on stage exit. Consumed by graph_mapper's cursor.
     current_stage_internal_node: str | None
+    current_meeting_node: str | None
 ```
 
 Initialize to `None` in `create_initial_state`.
 
-- [ ] **Step 5: Subgraph nodes write `current_stage_internal_node`**
+### Step 4: Subgraph nodes write the cursor
 
-In `agentlabx/stages/subgraph.py`, each of the 5 node functions (`enter_node`, `plan_node`, `work_node`, `evaluate_node`, `decide_node`) should write its own name to `state["current_stage_internal_node"]`:
+In `agentlabx/stages/subgraph.py`, each node function writes its name BEFORE doing its work. Because the subgraph runs atomically from the parent's perspective (no per-node checkpointing), the user observes these transitions via live WebSocket events from `StageRunner`, not via LangGraph checkpoints. The written values persist into the state dict and flow to `graph_mapper`.
 
 ```python
+async def enter_node(s: _SubgraphState) -> dict[str, Any]:
+    s["state"]["current_stage_internal_node"] = "enter"
+    return {}
+
 async def plan_node(s: _SubgraphState) -> dict[str, Any]:
     s["state"]["current_stage_internal_node"] = "stage_plan"
     # ... existing body
+
+async def work_node(s: _SubgraphState) -> dict[str, Any]:
+    s["state"]["current_stage_internal_node"] = "work"
+    # ... existing body
+
+def evaluate_node(s: _SubgraphState) -> dict[str, Any]:
+    s["state"]["current_stage_internal_node"] = "evaluate"
+    # ... existing body
+
+def decide_node(s: _SubgraphState) -> dict[str, Any]:
+    s["state"]["current_stage_internal_node"] = "decide"
+    # ... existing body
+    # at end (before returning):
+    # leave it as "decide" — StageRunner will blank it on stage completion
 ```
 
-Apply the same pattern to each of the 5 nodes. The final `decide_node` should set it to `None` at the end (stage is exiting).
-
-- [ ] **Step 6: Expose in graph_mapper cursor**
-
-In `agentlabx/core/graph_mapper.py`, the cursor section in `build_topology`:
+In `agentlabx/stages/runner.py` at the end of `run()` (after subgraph invocation completes):
 
 ```python
-    current_stage = state.get("current_stage")
-    internal_node = state.get("current_stage_internal_node")
-    cursor = None
-    if current_stage:
-        cursor = {
-            "node_id": current_stage,
-            "internal_node": internal_node,  # NEW
-            "agent": None,  # set by most-recent agent_turn_started event in future
-            "started_at": None,
-        }
+    # Clear internal-node cursor now that the subgraph has exited.
+    update["current_stage_internal_node"] = None
 ```
 
-- [ ] **Step 7: Run endpoint + topology tests**
+### Step 5: Extract subgraphs + synthesize backtrack edges in graph_mapper
 
-```
-uv run pytest tests/server/routes/test_stage_plans_endpoint.py tests/core/test_graph_mapper.py -v
-```
-Expected: pass.
+In `agentlabx/core/graph_mapper.py`, rework `build_topology` to:
 
-- [ ] **Step 8: Commit**
+1. Read top-level nodes/edges from `compiled_graph.get_graph()` (existing behaviour).
+2. For the currently-active stage (`state["current_stage"]`), extract its compiled subgraph via `compiled_graph.get_graph(xray=1)` — this returns a dict-like structure with nested subgraph entries. Find the entry whose id matches the active stage; populate its `nodes` and `edges` in the returned `subgraphs[]` array.
+3. For any running meeting (detect via `state["current_meeting_node"] is not None` or via registered invocable-only stages in the registry), extract its subgraph similarly.
+4. Synthesize backtrack edges from `state["backtrack_attempts"]` — one edge per entry with `kind: "backtrack"` and `attempts` populated.
+5. Populate `cursor.internal_node` from `state["current_stage_internal_node"]` and `cursor.meeting_node` from `state["current_meeting_node"]`.
+
+The registry-less fallback path (for tests without a registry) skips subgraph extraction; returns empty `subgraphs[]`. The xray=1 extraction needs LangGraph's actual graph-walking API — confirm method signatures against current LangGraph version (check `compiled_graph.get_graph(xray=1).nodes` structure; some versions return a `Graph` object with `.nodes`/`.edges` attrs, others return a dict). Adapt to whichever shape the installed version produces.
+
+Add unit tests in `tests/core/test_graph_mapper.py`:
+
+- `test_graph_topology_includes_cursor_internal_node_when_state_has_it`
+- `test_graph_topology_extracts_active_stage_subgraph`
+- `test_graph_topology_synthesizes_backtrack_edges_from_state`
+
+### Step 6: Commit
 
 ```bash
-git add agentlabx/ tests/server/routes/test_stage_plans_endpoint.py
-git commit -m "feat(api): stage_plans endpoint + subgraph-internal cursor (Plan 7D T1)"
+git add agentlabx/core/state.py agentlabx/stages/subgraph.py agentlabx/stages/runner.py agentlabx/core/graph_mapper.py agentlabx/server/routes/sessions.py tests/server/routes/test_stage_plans_endpoint.py tests/core/test_graph_mapper.py
+git commit -m "feat(api): stage_plans endpoint + subgraph extraction + cursor plumbing (Plan 7D T1)"
 ```
 
 ---
 
-## Task 2: Frontend hook — `useStagePlans`
+## Task 2: Frontend hook — `useStagePlans` + graph-cache invalidation
 
 **Files:**
 - Create: `web/src/hooks/useStagePlans.ts`
-- Modify: `web/src/hooks/useWebSocket.ts` (invalidate on `stage_started` event)
+- Modify: `web/src/hooks/useWebSocket.ts`
 - Create: `web/tests/hooks/useStagePlans.test.tsx`
 
-- [ ] **Step 1: Write failing test**
+### Step 1: Write failing test
 
 Create `web/tests/hooks/useStagePlans.test.tsx`:
 
@@ -279,7 +287,7 @@ describe("useStagePlans", () => {
         },
       ],
     };
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockResponse),
     } as Response);
@@ -291,357 +299,356 @@ describe("useStagePlans", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockResponse);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/api/sessions/sess-1/stage_plans/literature_review"),
-      expect.any(Object),
-    );
   });
 });
 ```
 
-- [ ] **Step 2: Run — verify fail**
+### Step 2: Implement `useStagePlans`
 
-```
-cd web && npm test -- useStagePlans
-```
+Mirror the pattern of `web/src/hooks/usePIHistory.ts` (or similar Plan 6 hook). Query key: `["stage-plans", sessionId, stageName]`. URL: `/api/sessions/{sessionId}/stage_plans/{stageName}`.
 
-- [ ] **Step 3: Implement `useStagePlans`**
+### Step 3: WS invalidation
 
-Create `web/src/hooks/useStagePlans.ts` matching the pattern of other hooks in `web/src/hooks/` (e.g., `useCost.ts`, `usePIHistory.ts`). Use `useQuery` keyed on `["stage-plans", sessionId, stageName]`, fetch `${API_BASE}/api/sessions/${sessionId}/stage_plans/${stageName}`, return the JSON response as-is.
-
-- [ ] **Step 4: Wire cache invalidation**
-
-In `web/src/hooks/useWebSocket.ts`, the event handler invalidates TanStack keys on `stage_started` / `stage_completed`. Add:
+In `web/src/hooks/useWebSocket.ts` add `stage-plans` to the keys invalidated on `stage_started` / `stage_completed`:
 
 ```typescript
-case "stage_started":
-case "stage_completed":
-  queryClient.invalidateQueries({ queryKey: ["stage-plans", sessionId] });
-  // ... (existing invalidations stay)
-  break;
+stage_started: (sid) => [["graph", sid], ["stage-plans", sid]],
+stage_completed: (sid) => [
+  ["graph", sid],
+  ["experiments", sid],
+  ["session", sid],
+  ["artifacts", sid],
+  ["transitions", sid],
+  ["hypotheses", sid],
+  ["stage-plans", sid],
+],
 ```
 
-Use the partial-key form so any stage's `useStagePlans` rerenders.
-
-- [ ] **Step 5: Run tests**
-
-```
-cd web && npm test -- useStagePlans useWebSocket
-```
-
-- [ ] **Step 6: Commit**
+### Step 4: Run tests + commit
 
 ```bash
-git add web/
-git commit -m "feat(web): useStagePlans hook + WS invalidation (Plan 7D T2)"
+cd web && npm test -- useStagePlans useWebSocket
+cd .. && git add web/ && git commit -m "feat(web): useStagePlans hook + WS invalidation (Plan 7D T2)"
 ```
 
 ---
 
-## Task 3: `GraphTopology` — drop backtrack edges + cursor animation + backtrack badge
+## Task 3: `GraphTopology` — render forward + backtrack edges + clickable active stage
 
 **Files:**
 - Modify: `web/src/components/session/GraphTopology.tsx`
-- Modify: `web/src/components/session/StageNode.tsx` (add backtrack badge)
+- Modify: `web/src/components/session/StageNode.tsx`
 - Modify: `web/tests/components/GraphTopology.test.tsx`
 
-- [ ] **Step 1: Update GraphTopology test** to assert backtrack edges are NOT rendered
+### Step 1: Update GraphTopology test
 
 ```typescript
-it("does not render backtrack edges as visible lines", () => {
+it("renders forward edges solid and backtrack edges dashed with labels", () => {
   const topology = {
     nodes: [
-      { id: "lit", type: "stage", label: "Literature", zone: "discovery" },
-      { id: "exp", type: "stage", label: "Experiment", zone: "implementation" },
+      { id: "lit", type: "stage", label: "Lit", zone: "discovery" },
+      { id: "exp", type: "stage", label: "Exp", zone: "implementation" },
     ],
     edges: [
       { from: "lit", to: "exp", kind: "sequential" },
       { from: "exp", to: "lit", kind: "backtrack", attempts: 2 },
     ],
-    cursor: { node_id: "exp", internal_node: null },
+    cursor: { node_id: "exp", internal_node: null, meeting_node: null },
     subgraphs: [],
   };
   const { container } = render(<GraphTopology topology={topology} />);
-  // Forward edge present, backtrack edge absent from the rendered edges
   const edges = container.querySelectorAll(".react-flow__edge");
-  expect(edges.length).toBe(1);
-  // Backtrack origin node has a badge with attempts count
-  expect(container.textContent).toContain("↩ 2");
+  expect(edges.length).toBe(2);  // both rendered
+  expect(container.textContent).toContain("↩ 2");  // label visible at low density
+});
+
+it("demotes backtrack labels to tooltips when count > 8", () => {
+  const makeBacktracks = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      from: "exp",
+      to: "lit",
+      kind: "backtrack",
+      attempts: i + 1,
+    }));
+  const topology = {
+    nodes: [/* ... 2 stage nodes */],
+    edges: [/* 1 forward */, ...makeBacktracks(9)],
+    cursor: { node_id: "exp", internal_node: null, meeting_node: null },
+    subgraphs: [],
+  };
+  const { container } = render(<GraphTopology topology={topology} />);
+  // 9 backtrack edges: no label text visible
+  expect(container.textContent).not.toContain("↩ 9");
+  // edges still in DOM
+  expect(container.querySelectorAll(".react-flow__edge").length).toBe(10);
+});
+
+it("clicking the active stage fires onStageClick", async () => {
+  const onStageClick = vi.fn();
+  const topology = {
+    nodes: [{ id: "exp", type: "stage", label: "Exp", zone: "implementation" }],
+    edges: [],
+    cursor: { node_id: "exp", internal_node: "work", meeting_node: null },
+    subgraphs: [],
+  };
+  const { getByText } = render(
+    <GraphTopology topology={topology} onStageClick={onStageClick} />,
+  );
+  await userEvent.click(getByText("Exp"));
+  expect(onStageClick).toHaveBeenCalledWith("exp");
 });
 ```
 
-- [ ] **Step 2: Update `GraphTopology` to filter backtrack edges + render cursor animation**
+### Step 2: Update `GraphTopology.tsx`
 
-In `GraphTopology.tsx`, when mapping `topology.edges` to React Flow edges:
+- Keep forward edges as solid React Flow edges (existing behaviour).
+- Render backtrack edges as dashed amber edges. When `backtrackCount > 8`, set `label: ""` and add a tooltip/title.
+- Pass `onStageClick` down to `StageNode` for the active stage.
+- Cursor ring: apply `active` class to the node whose id === `cursor.node_id`.
 
-```typescript
-const visibleEdges = topology.edges.filter((e) => e.kind !== "backtrack");
-```
-
-Keep the backtrack edges accessible separately so `StageNode` can render a badge when its `id` matches a backtrack origin. Pass `backtrackCounts: Record<string, number>` derived from the filtered-out edges into the node data:
-
-```typescript
-const backtrackCounts: Record<string, number> = {};
-for (const e of topology.edges.filter((e) => e.kind === "backtrack")) {
-  backtrackCounts[e.from] = (backtrackCounts[e.from] ?? 0) + (e.attempts ?? 1);
-}
-```
-
-Merge into node `data` so `StageNode` can read it.
-
-- [ ] **Step 3: `StageNode` renders backtrack badge**
-
-Add to `StageNode.tsx`:
+Compute `backtrackCount = topology.edges.filter(e => e.kind === "backtrack").length`. Apply label-demote threshold in the edge mapping:
 
 ```typescript
-{data.backtrackCount > 0 && (
-  <Tag color="orange" style={{ fontSize: 10 }}>
-    ↩ {data.backtrackCount}
-  </Tag>
-)}
+const DEMOTE_THRESHOLD = 8;
+const backtrackEdges = topology.edges.filter((e) => e.kind === "backtrack");
+const demoteLabels = backtrackEdges.length > DEMOTE_THRESHOLD;
+
+const rfEdges = topology.edges.map((e, i) => ({
+  id: `e${i}`,
+  source: e.from,
+  target: e.to,
+  style:
+    e.kind === "backtrack"
+      ? { stroke: "#d97706", strokeDasharray: "5 5" }
+      : undefined,
+  label: e.kind === "backtrack" && !demoteLabels ? `↩ ${e.attempts}` : undefined,
+  labelStyle: { fontSize: 10, fill: "#d97706" },
+  // tooltip for demoted label — React Flow's label prop doesn't carry a title;
+  // use data.title and render via a custom edge component if needed.
+  data: {
+    title: e.kind === "backtrack" ? `Backtrack: ${e.attempts} attempt(s)` : undefined,
+  },
+}));
 ```
 
-Place alongside the existing status dot / iter tag / cost chip.
+### Step 3: Update `StageNode.tsx` for click affordance
 
-- [ ] **Step 4: Cursor animation on backtrack**
+Add `onStageClick` prop. When active (i.e., `cursor.node_id === node.id`), show `▾` glyph + cursor ring. Entire node clickable via `onClick={() => onStageClick?.(node.id)}`.
 
-This is a best-effort UX polish. When the `cursor.node_id` jumps backward (previous render showed `experimentation`, new render shows `literature_review`), play a brief reverse-sweep animation. Simplest: add a CSS keyframe class `.cursor-reverse-sweep` that highlights the intermediate nodes briefly. Implementation: track the previous cursor in component state; if new cursor.node_id appears earlier in the sequence than previous, apply the class to nodes between previous and new for 600ms.
-
-Skip this in T3 if it balloons — mark as TODO, it's polish. The badge is the load-bearing part.
-
-- [ ] **Step 5: Run tests**
-
-```
-cd web && npm test -- GraphTopology StageNode
-```
-
-- [ ] **Step 6: Commit**
+### Step 4: Run tests + commit
 
 ```bash
-git add web/
-git commit -m "feat(web): GraphTopology drops backtrack edges + StageNode badge (Plan 7D T3)"
+cd web && npm test -- GraphTopology StageNode
+cd .. && git add web/ && git commit -m "feat(web): GraphTopology renders backtrack edges + label demote + click affordance (Plan 7D T3)"
 ```
 
 ---
 
-## Task 4: `StageSubgraphDrawer` — active-stage internal-node view
+## Task 4: `StageSubgraphDrawer` — dynamic topology from `/graph` subgraphs[]
 
 **Files:**
 - Create: `web/src/components/session/StageSubgraphDrawer.tsx`
 - Create: `web/tests/components/StageSubgraphDrawer.test.tsx`
 
-- [ ] **Step 1: Write failing test**
+### Step 1: Write failing test
 
 ```typescript
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { StageSubgraphDrawer } from "../../src/components/session/StageSubgraphDrawer";
 
+const mockSubgraph = {
+  id: "experimentation",
+  kind: "stage_subgraph",
+  nodes: [
+    { id: "enter", type: "internal" },
+    { id: "stage_plan", type: "internal" },
+    { id: "work", type: "internal" },
+    { id: "evaluate", type: "internal" },
+    { id: "decide", type: "internal" },
+  ],
+  edges: [
+    { from: "enter", to: "stage_plan" },
+    { from: "stage_plan", to: "work" },
+    { from: "stage_plan", to: "decide" },
+    { from: "work", to: "evaluate" },
+    { from: "evaluate", to: "decide" },
+  ],
+};
+
 describe("StageSubgraphDrawer", () => {
-  it("renders nothing when no active stage", () => {
-    const { container } = render(<StageSubgraphDrawer activeStage={null} internalNode={null} />);
+  it("renders nothing when closed", () => {
+    const { container } = render(
+      <StageSubgraphDrawer
+        activeStage={null}
+        subgraph={null}
+        cursorInternalNode={null}
+        meetingActive={false}
+        onWorkClick={() => {}}
+      />,
+    );
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders 5 internal nodes when a stage is active", () => {
+  it("renders nodes from topology subgraph when open", () => {
     const { getByText } = render(
-      <StageSubgraphDrawer activeStage="literature_review" internalNode="work" />,
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={mockSubgraph}
+        cursorInternalNode="work"
+        meetingActive={false}
+        onWorkClick={() => {}}
+      />,
     );
-    ["ENTER", "PLAN", "WORK", "EVALUATE", "DECIDE"].forEach((label) => {
-      expect(getByText(label)).toBeInTheDocument();
+    ["enter", "stage_plan", "work", "evaluate", "decide"].forEach((nodeId) => {
+      expect(getByText(new RegExp(nodeId, "i"))).toBeInTheDocument();
     });
   });
 
-  it("highlights the internalNode currently active", () => {
+  it("highlights the cursorInternalNode", () => {
     const { container } = render(
-      <StageSubgraphDrawer activeStage="literature_review" internalNode="evaluate" />,
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={mockSubgraph}
+        cursorInternalNode="evaluate"
+        meetingActive={false}
+        onWorkClick={() => {}}
+      />,
     );
-    const highlighted = container.querySelector("[data-internal-node='evaluate'].active");
-    expect(highlighted).not.toBeNull();
+    const active = container.querySelector("[data-internal-node='evaluate'].active");
+    expect(active).not.toBeNull();
+  });
+
+  it("WORK node is clickable when meetingActive=true", async () => {
+    const onWorkClick = vi.fn();
+    const { getByText } = render(
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={mockSubgraph}
+        cursorInternalNode="work"
+        meetingActive={true}
+        onWorkClick={onWorkClick}
+      />,
+    );
+    await userEvent.click(getByText(/work/i));
+    expect(onWorkClick).toHaveBeenCalled();
   });
 });
 ```
 
-- [ ] **Step 2: Run — verify fail**
-
-- [ ] **Step 3: Implement `StageSubgraphDrawer`**
+### Step 2: Implement
 
 ```typescript
 import React from "react";
 import { Card } from "antd";
+import type { GraphSubgraph } from "../../types/graph";
 
 interface Props {
   activeStage: string | null;
-  internalNode: string | null;  // "enter" | "stage_plan" | "work" | "evaluate" | "decide" | null
+  subgraph: GraphSubgraph | null;
+  cursorInternalNode: string | null;
+  meetingActive: boolean;
+  onWorkClick: () => void;
 }
 
-const NODES = [
-  { id: "enter", label: "ENTER" },
-  { id: "stage_plan", label: "PLAN" },
-  { id: "work", label: "WORK" },
-  { id: "evaluate", label: "EVALUATE" },
-  { id: "decide", label: "DECIDE" },
-];
-
-export function StageSubgraphDrawer({ activeStage, internalNode }: Props) {
-  if (!activeStage) return null;
+export function StageSubgraphDrawer({
+  activeStage,
+  subgraph,
+  cursorInternalNode,
+  meetingActive,
+  onWorkClick,
+}: Props) {
+  if (!activeStage || !subgraph) return null;
 
   return (
-    <Card
-      size="small"
-      title={`Inside ${activeStage}`}
-      style={{ marginTop: 12 }}
-    >
-      <div
-        style={{
-          display: "flex",
-          gap: 24,
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "8px 16px",
-        }}
-      >
-        {NODES.map((n, i) => (
-          <React.Fragment key={n.id}>
-            <div
-              data-internal-node={n.id}
-              className={internalNode === n.id ? "active" : ""}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 6,
-                border: "1px solid",
-                borderColor: internalNode === n.id ? "#1677ff" : "#d9d9d9",
-                background: internalNode === n.id ? "#e6f4ff" : "transparent",
-                fontWeight: internalNode === n.id ? 600 : 400,
-                fontSize: 12,
-              }}
-            >
-              {n.label}
-            </div>
-            {i < NODES.length - 1 && <span style={{ color: "#bfbfbf" }}>→</span>}
-          </React.Fragment>
-        ))}
+    <Card size="small" title={`Inside ${activeStage}`} style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 24, alignItems: "center", padding: "8px 16px" }}>
+        {subgraph.nodes.map((n, i) => {
+          const isActive = cursorInternalNode === n.id;
+          const isWork = n.id === "work";
+          const clickable = isWork && meetingActive;
+          return (
+            <React.Fragment key={n.id}>
+              <div
+                data-internal-node={n.id}
+                className={isActive ? "active" : ""}
+                onClick={clickable ? onWorkClick : undefined}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: "1px solid",
+                  borderColor: isActive ? "#1677ff" : "#d9d9d9",
+                  background: isActive ? "#e6f4ff" : "transparent",
+                  fontWeight: isActive ? 600 : 400,
+                  fontSize: 12,
+                  cursor: clickable ? "pointer" : "default",
+                }}
+              >
+                {n.id.toUpperCase()}{clickable ? " ▾" : ""}
+              </div>
+              {i < subgraph.nodes.length - 1 && <span style={{ color: "#bfbfbf" }}>→</span>}
+            </React.Fragment>
+          );
+        })}
       </div>
     </Card>
   );
 }
 ```
 
-Inline-styled component is acceptable here — it's ~40 lines and stylistically self-contained. A more elaborate React Flow rendering can come later if we need pan/zoom.
+Note: this renders nodes in the order they appear in `subgraph.nodes`. For more sophisticated layouts (e.g., if a future subgraph has branching), switch to React Flow with the topology's edges. For the current 5-node linear shape (Plan 7B T4), a flat flex row is sufficient.
 
-- [ ] **Step 4: Run tests**
-
-```
-cd web && npm test -- StageSubgraphDrawer
-```
-
-- [ ] **Step 5: Commit**
+### Step 3: Run tests + commit
 
 ```bash
-git add web/
-git commit -m "feat(web): StageSubgraphDrawer renders active stage internal nodes (Plan 7D T4)"
+cd web && npm test -- StageSubgraphDrawer
+cd .. && git add web/ && git commit -m "feat(web): StageSubgraphDrawer renders dynamic topology from /graph (Plan 7D T4)"
 ```
 
 ---
 
-## Task 5: `StagePlanCard` — render StagePlan items with status chips
+## Task 4a: `LabMeetingOverlay` — meeting subgraph, opens next to inner
+
+**Files:**
+- Create: `web/src/components/session/LabMeetingOverlay.tsx`
+- Create: `web/tests/components/LabMeetingOverlay.test.tsx`
+
+Structurally similar to `StageSubgraphDrawer`: renders nodes from `topology.subgraphs[id="lab_meeting"]`; cursor from `cursor.meeting_node`; no `▾` (no further nesting today).
+
+### Step 1: Write failing test + Step 2: Implement
+
+Follow the same pattern as T4. The component's Props:
+
+```typescript
+interface Props {
+  subgraph: GraphSubgraph | null;
+  cursorMeetingNode: string | null;
+}
+```
+
+Rendering visibility is controlled by the parent (`SessionDetailPage`) — this component just renders what it's given.
+
+### Step 3: Run tests + commit
+
+```bash
+git commit -m "feat(web): LabMeetingOverlay renders meeting subgraph (Plan 7D T4a)"
+```
+
+---
+
+## Task 5: `StagePlanCard` — status chips + rationale
 
 **Files:**
 - Create: `web/src/components/session/StagePlanCard.tsx`
 - Create: `web/tests/components/StagePlanCard.test.tsx`
 
-- [ ] **Step 1: Write failing test**
+Same contract as the earlier draft. Renders a `StagePlan` with ant-design `Tag`s color-coded per status (`done=green`, `edit=orange`, `todo=blue`, `removed=default`). Shows `rationale` as a secondary paragraph above the item list.
 
-```typescript
-import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
-import { StagePlanCard } from "../../src/components/session/StagePlanCard";
-
-const samplePlan = {
-  items: [
-    { id: "i1", description: "Survey topic", status: "done", source: "prior", existing_artifact_ref: "lit_review[0]", edit_note: null, removed_reason: null },
-    { id: "i2", description: "Gather papers", status: "todo", source: "contract", existing_artifact_ref: null, edit_note: null, removed_reason: null },
-    { id: "i3", description: "Address feedback", status: "edit", source: "feedback", existing_artifact_ref: "lit_review[0]", edit_note: "add RL methods", removed_reason: null },
-  ],
-  rationale: "Literature review plan",
-  hash_of_consumed_inputs: "abc",
-};
-
-describe("StagePlanCard", () => {
-  it("renders each item with its status chip", () => {
-    const { getByText } = render(<StagePlanCard plan={samplePlan} />);
-    expect(getByText("Survey topic")).toBeInTheDocument();
-    expect(getByText("Gather papers")).toBeInTheDocument();
-    expect(getByText("Address feedback")).toBeInTheDocument();
-    expect(getByText("done")).toBeInTheDocument();
-    expect(getByText("todo")).toBeInTheDocument();
-    expect(getByText("edit")).toBeInTheDocument();
-  });
-
-  it("shows the rationale", () => {
-    const { getByText } = render(<StagePlanCard plan={samplePlan} />);
-    expect(getByText(/Literature review plan/)).toBeInTheDocument();
-  });
-});
-```
-
-- [ ] **Step 2: Implement**
-
-```typescript
-import { Card, Tag, Typography } from "antd";
-
-interface StagePlanItem {
-  id: string;
-  description: string;
-  status: "done" | "edit" | "todo" | "removed";
-  source: string;
-  existing_artifact_ref: string | null;
-  edit_note: string | null;
-  removed_reason: string | null;
-}
-
-interface StagePlan {
-  items: StagePlanItem[];
-  rationale: string;
-  hash_of_consumed_inputs: string;
-}
-
-const STATUS_COLORS: Record<StagePlanItem["status"], string> = {
-  done: "green",
-  edit: "orange",
-  todo: "blue",
-  removed: "default",
-};
-
-export function StagePlanCard({ plan }: { plan: StagePlan }) {
-  return (
-    <Card size="small" title="Stage Plan">
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {plan.rationale}
-      </Typography.Paragraph>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {plan.items.map((item) => (
-          <li key={item.id} style={{ padding: "4px 0" }}>
-            <Tag color={STATUS_COLORS[item.status]}>{item.status}</Tag>
-            <span>{item.description}</span>
-            {item.edit_note && (
-              <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
-                ({item.edit_note})
-              </Typography.Text>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Card>
-  );
-}
-```
-
-- [ ] **Step 3: Run tests + commit**
+Dispatch as a small independent task (see prior Plan 7D draft §T5 code listing — unchanged). Commit message:
 
 ```bash
-cd web && npm test -- StagePlanCard
-cd .. && git add web/ && git commit -m "feat(web): StagePlanCard renders plan items with status chips (Plan 7D T5)"
+git commit -m "feat(web): StagePlanCard renders plan items with status chips (Plan 7D T5)"
 ```
 
 ---
@@ -650,47 +657,17 @@ cd .. && git add web/ && git commit -m "feat(web): StagePlanCard renders plan it
 
 **Files:**
 - Modify: `web/src/components/session/ChatView.tsx`
-- Modify: `web/src/components/session/StageGroup.tsx` (may already be lazy-load-shaped from 6f5bfa2)
+- Modify: `web/src/components/session/StageGroup.tsx`
 - Modify: `web/tests/components/ChatView.test.tsx`
 
-- [ ] **Step 1: Audit current state**
+Audit the existing WIP at `6f5bfa2` first (`git show 6f5bfa2 -- web/src/components/session/ChatView.tsx`) — it already partially implements this shape; the remaining work is (a) per-section lazy-load via `useAgentHistory` gated on `isExpanded`, and (b) auto-expanding only the active-stage section.
 
-The WIP at `6f5bfa2` already reshaped ChatView toward stage-grouping; use `git show 6f5bfa2 -- web/src/components/session/ChatView.tsx web/src/components/session/StageGroup.tsx` to see the existing work. If it's already close, this task becomes a refinement rather than a rewrite.
+Use Ant Design's `Collapse` with explicit `activeKey` control (parent tracks a string[]). Each `StageGroup` child calls `useAgentHistory` ONLY when its stage is in `activeKey`.
 
-- [ ] **Step 2: Update ChatView test**
-
-Assert:
-- Each stage renders as a collapsible `Collapse.Panel` (Ant Design).
-- Only the `activeStage` section is open by default.
-- Non-active sections don't invoke `useAgentHistory` until expanded — spy on the query key.
-
-```typescript
-it("lazy-loads agent history per stage — non-active stages do not fetch", () => {
-  const fetchSpy = vi.spyOn(globalThis, "fetch");
-  render(<ChatView sessionId="s1" activeStage="literature_review" />);
-  // literature_review fetch should have fired; experimentation should not
-  expect(fetchSpy).toHaveBeenCalledWith(
-    expect.stringContaining("agents") && expect.stringContaining("literature_review"),
-    expect.any(Object),
-  );
-  expect(fetchSpy).not.toHaveBeenCalledWith(
-    expect.stringContaining("experimentation"),
-    expect.any(Object),
-  );
-});
-```
-
-- [ ] **Step 3: Implement lazy-load**
-
-Refactor `ChatView.tsx` so each stage's history query is only triggered when the `Collapse.Panel` is expanded. Use Ant Design's `Collapse` with `destroyInactivePanel={false}` so expanding keeps turns rendered but initial-collapsed panels don't mount the history hook.
-
-Simplest approach: child `StageGroup` component that calls `useAgentHistory` only when `isExpanded === true`. Parent `ChatView` tracks expanded state and passes down.
-
-- [ ] **Step 4: Tests + commit**
+Commit:
 
 ```bash
-cd web && npm test -- ChatView StageGroup
-cd .. && git add web/ && git commit -m "feat(web): ChatView stage-grouped + lazy-load turns (Plan 7D T6)"
+git commit -m "feat(web): ChatView stage-grouped + lazy-load per section (Plan 7D T6)"
 ```
 
 ---
@@ -700,133 +677,112 @@ cd .. && git add web/ && git commit -m "feat(web): ChatView stage-grouped + lazy
 **Files:**
 - Modify: `web/src/components/session/CheckpointModal.tsx`
 - Modify: `web/tests/components/CheckpointModal.test.tsx`
-- Modify: `web/src/hooks/usePIHistory.ts` (if needed — may already return latest entry)
 
-- [ ] **Step 1: Update CheckpointModal test**
+Add a top banner (Ant Design `Alert` type=info) when the latest `pi_decisions` entry has `confidence >= threshold` and `used_fallback === false`. Format:
 
-Assert:
-- When session state has `needs_approval: true`, the modal is open.
-- When `pi_decisions` has a recent entry with matching checkpoint, the modal shows the PI reasoning + confidence.
-- When the checkpoint control is `approve`, modal shows Yes/No buttons.
-- When the checkpoint control is `edit`, modal shows an edit form (new — not in prior CheckpointModal).
+> **PI advisor recommends `<next_stage>`** ({confidence * 100}% confidence)
+> `<reasoning>`
 
-- [ ] **Step 2: Update CheckpointModal**
+Distinguish `approve` vs `edit` stage controls by reading the `SessionPreferences.stage_controls[stage]` value: `approve` → two buttons (Accept / Override), `edit` → form for editing the stage output before advancing.
 
-Read the latest `pi_decisions` entry via `usePIHistory`. When the checkpoint reason mentions `"PI advisor"`, render the advice prominently at the top of the modal. Distinguish `approve` vs `edit` stage controls via a new prop or by reading session preferences.
+Closes the M2 TODO(7D) left by Plan 7C at `agentlabx/core/pipeline.py` (where `decision.needs_approval` is currently unread).
 
-```typescript
-interface CheckpointModalProps {
-  sessionId: string;
-  open: boolean;
-  // ... existing
-  needsApproval: boolean;
-  lastPIAdvice?: {
-    checkpoint: string;
-    next_stage: string;
-    reasoning: string;
-    confidence: number;
-  };
-}
-
-export function CheckpointModal(props: CheckpointModalProps) {
-  const { lastPIAdvice } = props;
-  return (
-    <Modal open={props.open} /* ... */>
-      {lastPIAdvice && (
-        <Alert
-          type="info"
-          message={
-            <span>
-              PI advisor recommends <strong>{lastPIAdvice.next_stage}</strong>
-              {" "}({(lastPIAdvice.confidence * 100).toFixed(0)}% confidence)
-            </span>
-          }
-          description={lastPIAdvice.reasoning}
-          style={{ marginBottom: 12 }}
-        />
-      )}
-      {/* ... existing yes/no/edit UX per stage control */}
-    </Modal>
-  );
-}
-```
-
-- [ ] **Step 3: Wire SessionDetailPage to pass props**
-
-In `SessionDetailPage.tsx`, pass `needsApproval={session.needs_approval}` and `lastPIAdvice={piHistory?.[piHistory.length - 1]}` down.
-
-- [ ] **Step 4: Tests + commit**
+Commit:
 
 ```bash
-cd web && npm test -- CheckpointModal
-cd .. && git add web/ && git commit -m "feat(web): CheckpointModal surfaces PI advice + approve/edit UX (Plan 7D T7)"
+git commit -m "feat(web): CheckpointModal surfaces PI advice + approve/edit UX (Plan 7D T7)"
 ```
 
 ---
 
-## Task 8: `SessionDetailPage` layout + reconcile 6f5bfa2 WIP + delete AgentHistoryCard
+## Task 8: `SessionDetailPage` Option A layout + uiStore state
 
 **Files:**
 - Modify: `web/src/pages/SessionDetailPage.tsx`
-- Modify: `web/src/components/session/AgentMonitor.tsx`
-- Delete: `web/src/components/session/AgentHistoryCard.tsx` + test
-- Evaluate: `web/src/components/session/ZoneNode.tsx`, `AgentTurn.tsx` (duplicate of `AgentTurnBubble.tsx`?), `ToolCallInline.tsx` (duplicate of `ToolCallAnnotation.tsx`?)
+- Modify: `web/src/stores/uiStore.ts`
 - Modify: `web/tests/pages/SessionDetailPage.test.tsx`
 
-- [ ] **Step 1: Update SessionDetailPage layout per §8.2**
-
-Layout shape:
+### Layout target
 
 ```
-┌────────────────────────────────────────────────────┐
-│  Header: topic · session_id · status badge         │
-├────────────────────────────────────────────────────┤
-│  GraphTopology (production line, ~280px tall)      │
-│  StageSubgraphDrawer (only when active, ~100px)    │
-├────────┬───────────────────────────┬───────────────┤
-│ Left   │ Center tabs:              │ Right sider   │
-│ sider  │ • Artifacts               │ ChatView      │
-│ Global │ • Experiments             │ (stage-       │
-│ Ctrls  │ • Cost                    │  grouped)     │
-│ +      │                           │               │
-│ Agent  │                           │ Hypotheses    │
-│ Monit  │                           │ PIDecisionLog │
-│ or     │                           │ Cost compact  │
-├────────┴───────────────────────────┴───────────────┤
-│  FeedbackInput (sticky)                            │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Header                                                        │
+├──────────────────────────────────────────────────────────────┤
+│ GraphTopology (main production line, always visible)          │
+│ [StageSubgraphDrawer | LabMeetingOverlay]  ← conditional row  │
+├──────────────────────────────────────────────┬───────────────┤
+│ ChatView (main column, flex)                 │ Drawer 320px  │
+│                                              │ (toggle)      │
+│                                              │  Tabs:        │
+│                                              │   Monitor /   │
+│                                              │   Plan / Hyps │
+│                                              │   PI / Cost / │
+│                                              │   Artif / Exp │
+├──────────────────────────────────────────────┴───────────────┤
+│ FeedbackInput (sticky)                                        │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-- [ ] **Step 2: Remove AgentHistoryCard composition from AgentMonitor**
+### uiStore fields to add
 
-In `AgentMonitor.tsx`, drop the `<AgentHistoryCard>` render. Replace with `<StagePlanCard plan={latestPlanForAgentStage} />` when the monitored agent belongs to the active stage.
+```typescript
+interface UIState {
+  // ... existing fields
+  innerPanelOpen: boolean;    // user clicked active stage
+  meetingPanelOpen: boolean;  // user clicked WORK while meeting active
+  drawerOpen: boolean;        // right secondary drawer
+  drawerTab: "monitor" | "plan" | "hypotheses" | "pi" | "cost" | "artifacts" | "experiments";
 
-- [ ] **Step 3: Delete obsolete components**
+  toggleInnerPanel: () => void;
+  toggleMeetingPanel: () => void;
+  toggleDrawer: () => void;
+  setDrawerTab: (tab: DrawerTab) => void;
+}
+```
+
+Closing the stage (inner panel closes when stage exits) is automatic — selector on `cursor.node_id` change.
+
+### Integration
+
+- `SessionDetailPage` reads `topology = useGraph(sessionId).data`.
+- `StageSubgraphDrawer` receives `subgraph = topology.subgraphs.find(s => s.id === topology.cursor.node_id) ?? null`.
+- `LabMeetingOverlay` receives `subgraph = topology.subgraphs.find(s => s.id === "lab_meeting") ?? null` (only rendered when `topology.cursor.meeting_node != null`).
+- Row with both open: `<Row gutter={16}><Col span={12}><StageSubgraphDrawer/></Col><Col span={12}><LabMeetingOverlay/></Col></Row>`; otherwise inner takes full width.
+
+### Delete `AgentHistoryCard`
 
 ```bash
 rm web/src/components/session/AgentHistoryCard.tsx
-rm web/tests/components/AgentHistoryCard.test.tsx  # if exists
+rm web/tests/components/AgentHistoryCard.test.tsx  # if present
 ```
 
-Check `AgentTurn.tsx` vs `AgentTurnBubble.tsx` and `ToolCallInline.tsx` vs `ToolCallAnnotation.tsx` — if duplicates, pick one canonical and delete the other.
+Also audit: `AgentTurn.tsx` vs `AgentTurnBubble.tsx` (pick one, delete the other); `ToolCallInline.tsx` vs `ToolCallAnnotation.tsx` (same); `ZoneNode.tsx` (keep if still used by GraphTopology's zone grouping, else delete).
 
-- [ ] **Step 4: Evaluate ZoneNode**
-
-If the new `GraphTopology` with React Flow's native subgraph grouping works, `ZoneNode.tsx` may no longer be needed. Delete if unused. If still useful for zone borders, keep.
-
-- [ ] **Step 5: Update SessionDetailPage test**
-
-Assert:
-- GraphTopology + StageSubgraphDrawer are in the top section.
-- Left sider contains `ControlBar` + `AgentMonitor`.
-- Right sider contains `ChatView` (stage-grouped, see T6).
-- Sticky footer has `FeedbackInput`.
-
-- [ ] **Step 6: Tests + commit**
+Commit:
 
 ```bash
-cd web && npm test
-cd .. && git add -A web/ && git commit -m "feat(web): SessionDetailPage layout + reconcile WIP + drop AgentHistoryCard (Plan 7D T8)"
+git commit -m "feat(web): SessionDetailPage Option A layout + subgraph panel state (Plan 7D T8)"
+```
+
+---
+
+## Task 9: Reconcile WIP at `6f5bfa2` + deletion cleanup
+
+**Files:**
+- Evaluate: `web/src/components/session/AgentTurn.tsx` vs `AgentTurnBubble.tsx`
+- Evaluate: `web/src/components/session/ToolCallInline.tsx` vs `ToolCallAnnotation.tsx`
+- Evaluate: `web/src/components/session/ZoneNode.tsx`
+
+For each duplicate pair or stale component, either:
+- **Keep** if it's cleanly used by the new layout (e.g., `AgentTurnBubble` might be the canonical chat-row; `ToolCallAnnotation` might be the canonical inline tool display).
+- **Delete** if superseded or unused.
+
+This task is the last pass before ship — run the full frontend suite and tidy any unused imports/components the prior tasks accumulated.
+
+Commit:
+
+```bash
+git commit -m "chore(web): reconcile WIP components + delete duplicates (Plan 7D T9)"
 ```
 
 ---
@@ -834,27 +790,30 @@ cd .. && git add -A web/ && git commit -m "feat(web): SessionDetailPage layout +
 ## Self-review checklist
 
 - [ ] **Spec coverage:**
-  - §8.2 graph-hierarchy principle — T3 (production line), T4 (subgraph drawer), T8 (recursive layout in SessionDetailPage)
-  - §8.2 production-line graph — T3 (drops backtrack edges, adds badge)
-  - §8.2 StageSubgraphDrawer with nested attachments — T4 (5-node drawer). Nested `lab_meeting` overlay deferred to a sub-follow-up (LabMeetingOverlay file listed in structure but not in a task; the lab_meeting subgraph body itself is also future work).
-  - §8.3 component list updates — T5 (StagePlanCard), T8 (drop AgentHistoryCard), T7 (CheckpointModal PI advice)
+  - §8.2 graph-hierarchy principle: T3 (main), T4 (inner), T4a (meeting), T8 (layout)
+  - §8.2 production-line + backtrack edge rendering: T3
+  - §3.2.1 stage subgraph shape: T1 (extraction), T4 (rendering) — matches updated 2-branch acyclic shape
+  - §5.5 `invocable_only` subgraphs surfacing: T1 (enriched subgraphs[]), T4a (rendering)
+  - §8.3 component list updates: T5 (StagePlanCard), T8 (drop AgentHistoryCard), T7 (CheckpointModal)
   - Backend: §7.1 stage_plans endpoint — T1
-  - PI advice surfacing — T7 (CheckpointModal)
+  - PI advice surfacing: T7
 
-- [ ] **No placeholders.** Every task has concrete code + commands. Lab meeting overlay is noted as future follow-up, not a silent gap.
+- [ ] **No placeholders.** Every step shows concrete code + commands or points at an existing component pattern to mirror.
 
-- [ ] **Type consistency:** `StagePlan`, `StagePlanItem`, `StagePlanStatus` (web must mirror the backend shape — add types in `web/src/types/` if they don't exist).
+- [ ] **Type consistency:** `GraphSubgraph`, `StagePlan`, `StagePlanItem`, `StagePlanStatus`, cursor fields — all mirror backend.
 
-- [ ] **Pre-production principle:** delete obsolete components (AgentHistoryCard) outright; don't retain as unused.
+- [ ] **Pre-production principle:** delete obsolete components outright; no backwards-compat retention.
+
+- [ ] **Spec-alignment discipline:** no divergence from spec §3.2.1 or §8.2 without explicit user approval + spec update.
 
 ---
 
 ## Execution
 
-Ship 7D after 7C validation. Subagent-driven recommended.
+Ship after validating the layout preview against rendered Mermaid. Subagent-driven execution recommended; dispatch T1 first (backend foundation), then T2 (frontend hook), then T3–T9 in order.
 
-**Follow-ups not in 7D:**
-- `LabMeetingOverlay` + full invocable-subgraph rendering — needs lab_meeting's subgraph body first
-- Cursor reverse-sweep animation on backtrack — UX polish, T3 marks as optional
-- Pixel-art `lab_scene` conversation renderer — reserved prop, future creative plan
-- `TestFullSessionLifecycle` E2E timeout investigation — from 7C follow-up, orthogonal to 7D
+Follow-ups not in 7D:
+- Plan 7B² stage migrations (independent of frontend)
+- `TestFullSessionLifecycle` E2E timeout investigation
+- `lab_scene` conversation renderer (reserved ChatView.mode prop)
+- `lab_meeting` subgraph body (separate plan when the multi-agent discussion logic is specced)
