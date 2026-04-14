@@ -119,7 +119,7 @@ describe("CheckpointModal", () => {
     });
   });
 
-  it("edit button is disabled (deferred in Plan 7E A2)", async () => {
+  it("edit button is absent (dead editing state removed in Plan 7E A2 fixes)", async () => {
     useWSStore.setState({
       events: {
         "sess-1": [
@@ -132,12 +132,12 @@ describe("CheckpointModal", () => {
       },
     });
     renderModal();
-    // The Edit button should be present but disabled — output editing is
-    // deferred to a later plan; the tooltip shows "not yet supported".
-    const editBtns = screen.getAllByRole("button", { name: /Edit/i });
-    const editBtn =
-      editBtns.find((b) => b.textContent?.trim() === "Edit") ?? editBtns[0];
-    expect(editBtn).toBeDisabled();
+    // The Edit button was removed (dead editing state deleted). Only Approve,
+    // Reject, and Redirect are present. Verify the Edit button is gone.
+    expect(screen.queryByRole("button", { name: /Edit/i })).not.toBeInTheDocument();
+    // Core action buttons are still present.
+    expect(screen.getByRole("button", { name: /Approve/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reject/i })).toBeInTheDocument();
   });
 });
 

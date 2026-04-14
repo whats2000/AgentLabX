@@ -78,3 +78,25 @@ def test_checkpoint_approve_reject_action_resumes_with_same_target(client):
     )
     assert r2.status_code == 200
     assert r2.json()["action"] == "reject"
+
+
+def test_checkpoint_approve_returns_409_when_session_not_started(client):
+    """Approving a checkpoint for a session that was never started returns 409.
+
+    Previously the endpoint would silently return 200 when context.executor had
+    no RunningSession for the given session_id (the `if context.executor is not None:`
+    guard fell through to the final `return {"status": "resumed"}` line).
+    """
+    r = client.post("/api/sessions", json={"topic": "t", "user_id": "default"})
+    assert r.status_code == 201
+    sid = r.json()["session_id"]
+    # Deliberately do NOT start the session — no RunningSession will exist.
+
+    r2 = client.post(
+        f"/api/sessions/{sid}/checkpoint/approve",
+        json={"action": "approve"},
+    )
+    # Session exists but has no active executor run → 409 (not a silent 200).
+    assert r2.status_code in (404, 409), (
+        f"Expected 404 or 409 for un-started session, got {r2.status_code}: {r2.text}"
+    )

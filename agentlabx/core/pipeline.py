@@ -135,14 +135,24 @@ class PipelineBuilder:
             """Route to next stage; maintain counters, log, partial rollback."""
             decision = await transition_handler.decide_async(state)
 
+            # Derive the effective event bus: stage_context.event_bus is what
+            # the executor populates; the closure's `event_bus` kwarg is a
+            # legacy path used only by tests that construct a PipelineBuilder
+            # without a stage_context. Prefer stage_context when available.
+            effective_event_bus = (
+                stage_context.event_bus
+                if stage_context is not None and stage_context.event_bus is not None
+                else event_bus
+            )
+
             # Emit checkpoint_reached when the transition decision requires
             # human approval (Plan 7D T7). The CheckpointModal listens for
             # this event via the WebSocket event stream.
-            if decision.needs_approval and event_bus is not None:
+            if decision.needs_approval and effective_event_bus is not None:
                 current_stage = state.get("current_stage", "")
                 pi_decisions: list[dict] = state.get("pi_decisions") or []
                 latest_pi = pi_decisions[-1] if pi_decisions else None
-                await event_bus.emit(
+                await effective_event_bus.emit(
                     Event(
                         type=EventTypes.CHECKPOINT_REACHED,
                         data={

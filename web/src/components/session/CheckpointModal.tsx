@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Input, Modal, Space, Tooltip, Typography, message } from "antd";
+import { useMemo, useState } from "react";
+import { Alert, Button, Modal, Space, Typography, message } from "antd";
 import {
   CheckOutlined,
   CloseOutlined,
-  EditOutlined,
   ForwardOutlined,
 } from "@ant-design/icons";
 import { useWSStore } from "../../stores/wsStore";
@@ -59,8 +58,7 @@ export function CheckpointModal({ sessionId }: Props) {
   }, [events]);
 
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [redirectOpen, setRedirectOpen] = useState(false);
 
   const currentKey = latestCheckpoint
@@ -71,14 +69,6 @@ export function CheckpointModal({ sessionId }: Props) {
     currentKey !== null &&
     dismissedKey !== currentKey;
 
-  useEffect(() => {
-    // Prefill edit textarea each time a new checkpoint opens.
-    if (open) {
-      setEditing(false);
-      setEditValue(latestCheckpoint?.data?.output ?? "");
-    }
-  }, [open, currentKey, latestCheckpoint]);
-
   const close = () => {
     if (currentKey) setDismissedKey(currentKey);
   };
@@ -87,6 +77,7 @@ export function CheckpointModal({ sessionId }: Props) {
     // approve / reject: call the backend checkpoint endpoint to resume the
     // paused pipeline (Plan 7E A2). redirect / edit are deferred (501).
     if (action.action === "approve" || action.action === "reject") {
+      setSubmitting(true);
       try {
         const resp = await fetch(
           `/api/sessions/${sessionId}/checkpoint/approve`,
@@ -112,6 +103,8 @@ export function CheckpointModal({ sessionId }: Props) {
         message.error(CHECKPOINT_ERROR_NOTE);
         console.error("checkpoint/approve fetch error", err);
         return;
+      } finally {
+        setSubmitting(false);
       }
     } else {
       // edit / redirect: send over WS as before (deferred path, backend returns 501
@@ -175,40 +168,7 @@ export function CheckpointModal({ sessionId }: Props) {
             <Text type="secondary">Waiting for PI assessment...</Text>
           )}
 
-          {editing ? (
-            <div>
-              <Text
-                type="secondary"
-                style={{
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.05,
-                }}
-              >
-                Edit stage output
-              </Text>
-              <Input.TextArea
-                rows={8}
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                style={{ marginTop: 4 }}
-              />
-              <Space style={{ marginTop: 8 }}>
-                <Button size="small" onClick={() => setEditing(false)}>
-                  Cancel edit
-                </Button>
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={() =>
-                    sendAction({ action: "edit", content: editValue })
-                  }
-                >
-                  Save
-                </Button>
-              </Space>
-            </div>
-          ) : output ? (
+          {output ? (
             <div>
               <Text
                 type="secondary"
@@ -244,18 +204,11 @@ export function CheckpointModal({ sessionId }: Props) {
             >
               Redirect
             </Button>
-            <Tooltip title="Output editing is not yet supported (deferred)">
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => setEditing(true)}
-                disabled
-              >
-                Edit
-              </Button>
-            </Tooltip>
             <Button
               icon={<CloseOutlined />}
               onClick={() => sendAction({ action: "reject" })}
+              loading={submitting}
+              disabled={submitting}
             >
               Reject
             </Button>
@@ -263,6 +216,8 @@ export function CheckpointModal({ sessionId }: Props) {
               type="primary"
               icon={<CheckOutlined />}
               onClick={() => sendAction({ action: "approve" })}
+              loading={submitting}
+              disabled={submitting}
             >
               Approve
             </Button>

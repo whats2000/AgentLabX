@@ -194,6 +194,12 @@ async def approve_checkpoint(
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
+    if context.executor is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No pipeline executor active for this session",
+        )
+
     if body.action in ("redirect", "edit"):
         raise HTTPException(
             status_code=501,
@@ -206,21 +212,19 @@ async def approve_checkpoint(
     # which requires PAUSED status. A checkpoint-pause (A2) keeps the session
     # RUNNING (only the asyncio.Event is cleared). For sessions that were also
     # manually paused (PAUSED status), we do the full resume transition.
-    if context.executor is not None:
-        running = context.executor.get_running(session_id)
-        if running is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Session {session_id} not found or not started",
-            )
-        from agentlabx.core.session import SessionStatus
+    running = context.executor.get_running(session_id)
+    if running is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session {session_id} not found or not started",
+        )
 
-        if running.session.status == SessionStatus.PAUSED:
-            # Full resume — transitions PAUSED → RUNNING and sets event
-            await context.executor.resume_session(session_id)
-        else:
-            # Checkpoint-pause: session is RUNNING but event is cleared
-            running.paused_event.set()
+    if running.session.status == SessionStatus.PAUSED:
+        # Full resume — transitions PAUSED → RUNNING and sets event
+        await context.executor.resume_session(session_id)
+    else:
+        # Checkpoint-pause: session is RUNNING but event is cleared
+        running.paused_event.set()
 
     return {"status": "resumed", "action": body.action}
 
