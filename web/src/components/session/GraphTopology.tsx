@@ -53,57 +53,51 @@ const ZONE_ORDER = ["discovery", "implementation", "synthesis"] as const;
 const META_IDS = new Set(["__start__", "__end__", "transition"]);
 
 /**
- * Compact edges: remove the transition hub by building direct stage→stage edges.
- * Any edge through `transition` is expanded to a direct from→to.
- * Edges involving __start__/__end__ are dropped entirely.
- * Backtrack edges are preserved as-is (they never go through the transition hub).
+ * Compact edges for the production-line graph.
+ *
+ * The backend already classifies sequential vs backtrack edges. The frontend
+ * should render that topology faithfully, but we still drop transition/meta
+ * nodes from the top canvas to keep the production line readable.
  */
 function compactEdges(rawEdges: GraphEdge[]): GraphEdge[] {
-  const direct = rawEdges.filter(
-    (e) =>
-      e.from !== "transition" &&
-      e.to !== "transition" &&
-      e.from !== "__start__" &&
-      e.to !== "__end__" &&
-      e.from !== "__end__" &&
-      e.to !== "__start__",
-  );
-
-  const intoTransition = rawEdges.filter((e) => e.to === "transition");
-  const outOfTransition = rawEdges.filter((e) => e.from === "transition");
-
-  for (const inE of intoTransition) {
-    for (const outE of outOfTransition) {
-      if (inE.from !== outE.to) {
-        // Avoid duplicates already in direct
-        const already = direct.some(
-          (e) => e.from === inE.from && e.to === outE.to,
-        );
-        if (!already) {
-          direct.push({
-            from: inE.from,
-            to: outE.to,
-            kind: "sequential",
-            reason: null,
-          });
-        }
-      }
-    }
-  }
-
-  return direct;
+  return rawEdges.filter((e) => !META_IDS.has(e.from) && !META_IDS.has(e.to));
 }
 
 function buildRfEdges(edges: GraphEdge[]): Edge[] {
   const backtrackEdges = edges.filter((e) => e.kind === "backtrack");
   const demoteLabels = backtrackEdges.length > DEMOTE_THRESHOLD;
+  const backtrackLaneByPair = new Map<string, number>();
+  let nextLane = 0;
 
   return edges.map((e, i) => {
     const isBacktrack = e.kind === "backtrack";
+    let backtrackOffset = 0;
+    let sourceHandle: string | undefined;
+    let targetHandle: string | undefined;
+    if (isBacktrack) {
+      const pairKey = `${e.from}->${e.to}`;
+      let lane = backtrackLaneByPair.get(pairKey);
+      if (lane === undefined) {
+        lane = nextLane;
+        nextLane += 1;
+        backtrackLaneByPair.set(pairKey, lane);
+      }
+      const useTopLane = lane % 2 === 0;
+      const tier = Math.floor(lane / 2);
+      sourceHandle = useTopLane ? "bt-source-top" : "bt-source-bottom";
+      targetHandle = useTopLane ? "bt-target-top" : "bt-target-bottom";
+      backtrackOffset = 56 + tier * 28;
+    }
     return {
       id: `e${i}`,
       source: e.from,
       target: e.to,
+      type: isBacktrack ? "smoothstep" : "default",
+      sourceHandle,
+      targetHandle,
+      pathOptions: isBacktrack
+        ? { offset: backtrackOffset, borderRadius: 28 }
+        : undefined,
       animated: false,
       style: isBacktrack
         ? { stroke: "#d97706", strokeDasharray: "6 4", strokeWidth: 1.5 }
@@ -157,7 +151,7 @@ async function layoutWithElk(topo: Topo) {
     elkChildren.push({ id: m.id, width: 100, height: 40 });
   }
 
-  // Build ELK edges using compacted set (forward edges only for layout hints)
+  // Build ELK edges using only sequential edges for layout hints.
   const forwardEdges = compacted.filter((e) => e.kind !== "backtrack");
   const elkEdges = forwardEdges.map((e, i) => ({
     id: `e${i}`,

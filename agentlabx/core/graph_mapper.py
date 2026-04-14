@@ -93,18 +93,36 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
             }
         )
 
-    # LangGraph's get_graph() returns a Graph whose .edges is a plain list;
-    # unit-test mocks may expose it as a callable. Support both.
-    raw_edges = g.edges() if callable(g.edges) else g.edges
-    edges: list[dict[str, Any]] = [
-        {"from": e.source, "to": e.target, "kind": "sequential", "reason": None} for e in raw_edges
-    ]
+    def _stage_order() -> list[str]:
+        sequence = state.get("default_sequence") or []
+        if sequence:
+            return [stage for stage in sequence if stage not in META_NODE_IDS]
+        ordered = [nid for nid in g.nodes if nid not in META_NODE_IDS]
+        return ordered
+
+    stage_order = _stage_order()
+    edges: list[dict[str, Any]] = []
+
+    for i in range(len(stage_order) - 1):
+        edges.append(
+            {
+                "from": stage_order[i],
+                "to": stage_order[i + 1],
+                "kind": "sequential",
+                "reason": None,
+            }
+        )
 
     # Overlay backtracks from transition_log when they're not already edges.
+    # Only treat true reverse moves as backtracks; forward transitions are
+    # represented by the production-line spine on the top canvas.
+    default_sequence = stage_order
     for t in state.get("transition_log") or []:
         s = _field(t, "from_stage")
         d = _field(t, "to_stage")
         if not s or not d:
+            continue
+        if not _is_backtrack_transition(s, d, default_sequence):
             continue
         if _edge_idx(edges, s, d) == -1:
             edges.append(
@@ -225,3 +243,19 @@ def _edge_idx(edges: list[dict], source: str, target: str) -> int:
         if e["from"] == source and e["to"] == target:
             return i
     return -1
+
+
+def _is_backtrack_transition(source: str, target: str, default_sequence: list[str]) -> bool:
+    """Return True when transition moves backward in the default stage sequence.
+
+    If sequence context is unavailable, fail-open for compatibility with tests
+    and callers that provide only transition pairs.
+    """
+    if not default_sequence:
+        return True
+    try:
+        s_idx = default_sequence.index(source)
+        t_idx = default_sequence.index(target)
+    except ValueError:
+        return False
+    return t_idx < s_idx

@@ -11,7 +11,16 @@ vi.mock("@xyflow/react", async () => {
   const { useState, useCallback } = await import("react");
 
   type RfNode = { id: string; type?: string; data?: unknown; position?: unknown };
-  type RfEdge = { id: string; source: string; target: string; label?: ReactNode };
+  type RfEdge = {
+    id: string;
+    source: string;
+    target: string;
+    label?: ReactNode;
+    sourceHandle?: string;
+    targetHandle?: string;
+    type?: string;
+    pathOptions?: { offset?: number };
+  };
 
   return {
     ReactFlow: ({
@@ -41,6 +50,10 @@ vi.mock("@xyflow/react", async () => {
               className="react-flow__edge"
               data-source={e.source}
               data-target={e.target}
+              data-source-handle={e.sourceHandle ?? ""}
+              data-target-handle={e.targetHandle ?? ""}
+              data-edge-type={e.type ?? "default"}
+              data-offset={String(e.pathOptions?.offset ?? "")}
             >
               {e.label != null && <span>{e.label}</span>}
             </div>
@@ -223,10 +236,8 @@ describe("GraphTopology backtrack rendering", () => {
       cursor: { node_id: "exp", internal_node: null, meeting_node: null, agent: null, started_at: null },
       subgraphs: [],
     };
-    const { container, findByText } = renderWithTopo(topology);
-    // Backtrack label visible at low density
-    expect(await findByText("↩ 2")).toBeInTheDocument();
-    // Both edges rendered via mock ReactFlow stub
+    const { container } = renderWithTopo(topology);
+    expect(await screen.findByText("↩ 2")).toBeInTheDocument();
     await waitFor(() => {
       const edges = container.querySelectorAll(".react-flow__edge");
       expect(edges.length).toBe(2);
@@ -235,7 +246,7 @@ describe("GraphTopology backtrack rendering", () => {
 
   it("demotes backtrack labels to tooltips when count exceeds 8", async () => {
     const backtracks = Array.from({ length: 9 }, (_, i) => ({
-      from: "exp",
+      from: `exp${i + 1}`,
       to: "lit",
       kind: "backtrack" as const,
       attempts: i + 1,
@@ -244,21 +255,99 @@ describe("GraphTopology backtrack rendering", () => {
       nodes: [
         { id: "lit", type: "stage", label: "Lit", zone: "discovery",
           status: "complete", iteration_count: 1, skipped: false },
-        { id: "exp", type: "stage", label: "Exp", zone: "implementation",
-          status: "active", iteration_count: 1, skipped: false },
+        ...Array.from({ length: 9 }, (_, i) => ({
+          id: `exp${i + 1}`,
+          type: "stage" as const,
+          label: `Exp ${i + 1}`,
+          zone: "implementation" as const,
+          status: "active" as const,
+          iteration_count: 1,
+          skipped: false,
+        })),
       ],
-      edges: [{ from: "lit", to: "exp", kind: "sequential" }, ...backtracks],
-      cursor: { node_id: "exp", internal_node: null, meeting_node: null, agent: null, started_at: null },
+      edges: [{ from: "lit", to: "exp1", kind: "sequential" }, ...backtracks],
+      cursor: { node_id: "exp1", internal_node: null, meeting_node: null, agent: null, started_at: null },
       subgraphs: [],
     };
     const { container, queryByText } = renderWithTopo(topology);
-    // All 10 edges still rendered
+    // All edges still rendered.
     await waitFor(() => {
       const edges = container.querySelectorAll(".react-flow__edge");
       expect(edges.length).toBe(10);
     });
-    // Label demoted — no visible "↩ 9" text
     expect(queryByText("↩ 9")).not.toBeInTheDocument();
+  });
+
+  it("routes each backtrack edge on a separate lane", async () => {
+    const topology: TopoType = {
+      nodes: [
+        { id: "lit", type: "stage", label: "Lit", zone: "discovery",
+          status: "complete", iteration_count: 1, skipped: false },
+        { id: "plan", type: "stage", label: "Plan", zone: "discovery",
+          status: "active", iteration_count: 1, skipped: false },
+        { id: "prep", type: "stage", label: "Prep", zone: "implementation",
+          status: "complete", iteration_count: 1, skipped: false },
+        { id: "exp", type: "stage", label: "Exp", zone: "implementation",
+          status: "pending", iteration_count: 0, skipped: false },
+      ],
+      edges: [
+        { from: "lit", to: "plan", kind: "sequential" },
+        { from: "plan", to: "prep", kind: "sequential" },
+        { from: "prep", to: "exp", kind: "sequential" },
+        { from: "prep", to: "lit", kind: "backtrack", attempts: 2 },
+        { from: "exp", to: "plan", kind: "backtrack", attempts: 1 },
+      ],
+      cursor: { node_id: "plan", internal_node: null, meeting_node: null, agent: null, started_at: null },
+      subgraphs: [],
+    };
+
+    const { container } = renderWithTopo(topology);
+
+    await waitFor(() => {
+      const allEdges = Array.from(container.querySelectorAll(".react-flow__edge"));
+      const backtrackEdges = allEdges.filter((e) => e.getAttribute("data-edge-type") === "smoothstep");
+      expect(backtrackEdges.length).toBe(2);
+
+      const srcHandles = backtrackEdges.map((e) => e.getAttribute("data-source-handle"));
+      const tgtHandles = backtrackEdges.map((e) => e.getAttribute("data-target-handle"));
+      const offsets = backtrackEdges.map((e) => e.getAttribute("data-offset"));
+
+      expect(srcHandles).toContain("bt-source-top");
+      expect(srcHandles).toContain("bt-source-bottom");
+      expect(tgtHandles).toContain("bt-target-top");
+      expect(tgtHandles).toContain("bt-target-bottom");
+      expect(new Set(offsets).size).toBe(1);
+      expect(offsets[0]).toBe("56");
+    });
+  });
+
+  it("renders backend-marked spine plus backtrack edges as-is", async () => {
+    const topology: TopoType = {
+      nodes: [
+        { id: "lit", type: "stage", label: "Lit", zone: "discovery",
+          status: "complete", iteration_count: 1, skipped: false },
+        { id: "plan", type: "stage", label: "Plan", zone: "discovery",
+          status: "active", iteration_count: 1, skipped: false },
+        { id: "exp", type: "stage", label: "Exp", zone: "implementation",
+          status: "pending", iteration_count: 0, skipped: false },
+      ],
+      edges: [
+        { from: "lit", to: "plan", kind: "sequential" },
+        { from: "plan", to: "exp", kind: "sequential" },
+        { from: "exp", to: "lit", kind: "backtrack", attempts: 2 },
+      ],
+      cursor: { node_id: "plan", internal_node: null, meeting_node: null, agent: null, started_at: null },
+      subgraphs: [],
+    };
+
+    const { container, queryByText } = renderWithTopo(topology);
+    expect(queryByText("↩ 2")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      const edges = container.querySelectorAll(".react-flow__edge");
+      // Spine: lit->plan, plan->exp + explicit backtrack exp->lit
+      expect(edges.length).toBe(3);
+    });
   });
 });
 

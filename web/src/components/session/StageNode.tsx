@@ -61,6 +61,31 @@ export function StageNode({ node, control, onControlChange, isActive, isSweeping
       {/* React Flow edge attachment points */}
       <Handle type="target" position={Position.Left} style={{ background: "#999" }} />
       <Handle type="source" position={Position.Right} style={{ background: "#999" }} />
+      {/* Dedicated handles for backtrack arcs to avoid overlap with forward spine */}
+      <Handle
+        id="bt-target-top"
+        type="target"
+        position={Position.Top}
+        style={{ background: "#d97706", width: 8, height: 8, opacity: 0 }}
+      />
+      <Handle
+        id="bt-source-top"
+        type="source"
+        position={Position.Top}
+        style={{ background: "#d97706", width: 8, height: 8, opacity: 0 }}
+      />
+      <Handle
+        id="bt-target-bottom"
+        type="target"
+        position={Position.Bottom}
+        style={{ background: "#d97706", width: 8, height: 8, opacity: 0 }}
+      />
+      <Handle
+        id="bt-source-bottom"
+        type="source"
+        position={Position.Bottom}
+        style={{ background: "#d97706", width: 8, height: 8, opacity: 0 }}
+      />
 
       <div style={{ fontSize: 12, fontWeight: 600 }}>
         {node.label}

@@ -152,6 +152,33 @@ def test_topology_overlays_backtrack_from_transition_model():
     assert "more papers" in (backtrack[0].get("reason") or "")
 
 
+def test_topology_does_not_misclassify_forward_transition_as_backtrack():
+    state = {
+        "current_stage": "plan_formulation",
+        "completed_stages": ["literature_review"],
+        "stage_iterations": {},
+        "stage_config": {},
+        "default_sequence": ["literature_review", "plan_formulation", "experimentation"],
+        "transition_log": [
+            {
+                "from_stage": "literature_review",
+                "to_stage": "plan_formulation",
+                "reason": "Advancing to next stage",
+            }
+        ],
+    }
+
+    topo = build_topology(_C(), state)
+    backtrack = [
+        e
+        for e in topo["edges"]
+        if e["kind"] == "backtrack"
+        and e["from"] == "literature_review"
+        and e["to"] == "plan_formulation"
+    ]
+    assert backtrack == []
+
+
 @pytest.fixture
 def compiled_graph_fixture():
     from agentlabx.core.pipeline import PipelineBuilder
