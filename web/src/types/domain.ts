@@ -54,11 +54,29 @@ export interface GraphCursor {
   started_at: string | null;
 }
 
+export interface GraphSubgraphNode {
+  id: string;
+  type: string;
+}
+
+export interface GraphSubgraphEdge {
+  from: string;
+  to: string;
+}
+
+export interface GraphSubgraph {
+  id: string;
+  kind: "stage_subgraph" | "invocable_only" | string;
+  label?: string;
+  nodes: GraphSubgraphNode[];
+  edges: GraphSubgraphEdge[];
+}
+
 export interface GraphTopology {
   nodes: GraphNode[];
   edges: GraphEdge[];
   cursor: GraphCursor | null;
-  subgraphs: Array<{ id: string; nodes: GraphNode[]; edges: GraphEdge[] }>;
+  subgraphs: GraphSubgraph[];
 }
 
 // Agent turn / history types
