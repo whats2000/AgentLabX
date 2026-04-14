@@ -57,7 +57,9 @@ async def test_subgraph_emits_internal_node_changed_events():
 
 @pytest.mark.asyncio
 async def test_subgraph_nodes_return_current_internal_node_in_update():
-    """Node return dicts include current_stage_internal_node so LangGraph merges it."""
+    """Node return dicts propagate current_stage_internal_node through the
+    subgraph channel (both in-place state mutation and the typed return dict
+    write to the same field; final value is 'decide' at subgraph exit)."""
     compiled = StageSubgraphBuilder().compile(_EchoStage())
     state = create_initial_state(session_id="s1", user_id="u1", research_topic="t")
     state["current_stage"] = "echo"

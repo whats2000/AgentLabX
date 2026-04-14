@@ -65,6 +65,7 @@ class _SubgraphState(TypedDict, total=False):
     execution: StageExecution
     evaluation: StageEvaluation
     stage_result: StageResult
+    current_stage_internal_node: str | None  # declared so LangGraph merges node-return writes
 
 
 class StageSubgraphBuilder:
