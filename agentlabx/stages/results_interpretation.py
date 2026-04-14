@@ -1,4 +1,9 @@
-"""Real results interpretation stage — postdoc + PhD dialogue updates hypothesis status."""
+"""Real results interpretation stage — postdoc + PhD dialogue updates hypothesis status.
+
+Plan 7E B3 migration: build_plan itemises interpretation tasks with prior-bypass on the
+narrative item; execute_plan stays at default (delegates to legacy .run()), so plan
+items are OBSERVABILITY-ONLY in 7E.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import re
 
 from agentlabx.core.event_types import EventTypes
 from agentlabx.core.events import Event
-from agentlabx.core.state import EvidenceLink, Hypothesis, PipelineState
+from agentlabx.core.state import EvidenceLink, Hypothesis, PipelineState, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -18,6 +23,72 @@ class ResultsInterpretationStage(BaseStage):
     description = "Postdoc and PhD interpret results and update hypothesis status."
     required_agents = ["postdoc", "phd_student"]
     required_tools = []
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise interpretation tasks with prior-bypass on narrative.
+
+        If state["interpretation"] is non-empty and no feedback is given, the
+        narrative item is marked done referencing the existing artifact.
+        """
+        prior_interp = state.get("interpretation", [])
+        has_prior = bool(prior_interp) and not feedback
+
+        items: list[StagePlanItem] = [
+            StagePlanItem(
+                id="interp:metrics",
+                description="Interpret experiment metrics against hypotheses",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="interp:hypothesis-updates",
+                description="Update hypothesis status (supported/refuted/active)",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="interp:narrative",
+                description="Produce narrative interpretation",
+                status="done" if has_prior else "todo",
+                source="prior" if has_prior else "contract",
+                existing_artifact_ref="interpretation[-1]" if has_prior else None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+        ]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="interp:feedback-driven",
+                    description=f"Revise interpretation: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        rationale = "Results interpretation plan"
+        if feedback:
+            rationale += " (revising under feedback)"
+        elif has_prior:
+            rationale += " (prior narrative exists; extending)"
+
+        return StagePlan(
+            items=items,
+            rationale=rationale,
+            hash_of_consumed_inputs=state.get("research_topic", ""),
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry

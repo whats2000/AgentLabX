@@ -1,4 +1,9 @@
-"""Real peer review stage — 3 blind reviewers, majority decision."""
+"""Real peer review stage — 3 blind reviewers, majority decision.
+
+Plan 7E B3 migration: build_plan itemises review tasks with prior-bypass on the
+recommendation item; execute_plan stays at default (delegates to legacy .run()),
+so plan items are OBSERVABILITY-ONLY in 7E.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ from agentlabx.agents.base import AgentContext, MemoryScope
 from agentlabx.agents.config_agent import ConfigAgent
 from agentlabx.agents.context import ContextAssembler
 from agentlabx.core.registry import PluginType
-from agentlabx.core.state import PipelineState, ReviewResult
+from agentlabx.core.state import PipelineState, ReviewResult, StagePlan, StagePlanItem
 from agentlabx.stages.base import BaseStage, StageContext, StageResult
 
 REVIEW_JSON_FORMAT = (
@@ -20,6 +25,11 @@ REVIEW_JSON_FORMAT = (
 
 
 class PeerReviewStage(BaseStage):
+    """Plan 7E B3 migration: build_plan itemises review tasks with prior-bypass on
+    recommendation; execute_plan stays at the default (delegates to legacy .run()),
+    so plan items are OBSERVABILITY-ONLY in 7E.
+    """
+
     name = "peer_review"
     zone = "synthesis"
     description = "Blind peer review — 3 reviewers see only the final report."
@@ -27,6 +37,81 @@ class PeerReviewStage(BaseStage):
     required_tools = []
 
     NUM_REVIEWERS = 3
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise review tasks with prior-bypass on recommendation.
+
+        If state["review"] is non-empty and no feedback is given, the
+        recommendation item is marked done referencing the existing artifact.
+        """
+        prior_review = state.get("review", [])
+        has_prior = bool(prior_review) and not feedback
+
+        items: list[StagePlanItem] = [
+            StagePlanItem(
+                id="review:baselines-check",
+                description="Check experiment baselines are sufficient",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="review:novelty",
+                description="Evaluate novelty and significance",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="review:clarity",
+                description="Review report clarity",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="review:recommendation",
+                description="Produce accept/revise/reject recommendation",
+                status="done" if has_prior else "todo",
+                source="prior" if has_prior else "contract",
+                existing_artifact_ref="review[-1]" if has_prior else None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+        ]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="review:feedback-driven",
+                    description=f"Revise review: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        rationale = "Peer review plan"
+        if feedback:
+            rationale += " (revising under feedback)"
+        elif has_prior:
+            rationale += " (prior review exists; extending)"
+
+        return StagePlan(
+            items=items,
+            rationale=rationale,
+            hash_of_consumed_inputs=state.get("research_topic", ""),
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry
