@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Input, Modal, Space, Typography, message } from "antd";
+import { Alert, Button, Input, Modal, Space, Typography, message } from "antd";
 import {
   CheckOutlined,
   EditOutlined,
@@ -8,6 +8,7 @@ import {
 import { useWSStore } from "../../stores/wsStore";
 import { wsRegistry } from "../../api/wsRegistry";
 import { RedirectModal } from "./RedirectModal";
+import { usePIHistory } from "../../hooks/usePIHistory";
 import type { ClientAction, PipelineEvent } from "../../types/events";
 
 const { Text, Paragraph } = Typography;
@@ -20,6 +21,9 @@ const { Text, Paragraph } = Typography;
  */
 const OBSERVABLE_NOTE =
   "Action recorded. Full HITL execution ships in a later release.";
+
+/** Minimum confidence required to surface PI advice in the modal banner. */
+const PI_ADVICE_CONFIDENCE_THRESHOLD = 0.6;
 
 interface CheckpointPayload {
   stage?: string;
@@ -36,6 +40,16 @@ interface Props {
 
 export function CheckpointModal({ sessionId }: Props) {
   const events = useWSStore((s) => s.events[sessionId] ?? EMPTY);
+
+  // Fetch PI advisor decision history to surface high-confidence advice.
+  const { data: piHistory } = usePIHistory(sessionId);
+  const latestPIDecision =
+    piHistory && piHistory.length > 0 ? piHistory[piHistory.length - 1] : null;
+  const shouldSurfacePIAdvice =
+    latestPIDecision !== null &&
+    latestPIDecision !== undefined &&
+    latestPIDecision.used_fallback === false &&
+    latestPIDecision.confidence >= PI_ADVICE_CONFIDENCE_THRESHOLD;
 
   // Pull the most recent checkpoint_reached event. We key the modal by the
   // event's (timestamp, stage) so when a new one arrives it re-opens.
@@ -99,6 +113,22 @@ export function CheckpointModal({ sessionId }: Props) {
         width={640}
       >
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {shouldSurfacePIAdvice && latestPIDecision && (
+            <Alert
+              type="info"
+              showIcon
+              message={
+                <span>
+                  PI advisor recommends{" "}
+                  <strong>{latestPIDecision.next_stage ?? "(no stage)"}</strong>
+                  {" "}
+                  ({Math.round(latestPIDecision.confidence * 100)}% confidence)
+                </span>
+              }
+              description={latestPIDecision.reasoning}
+              style={{ marginBottom: 0 }}
+            />
+          )}
           {piRec ? (
             <div>
               <Text

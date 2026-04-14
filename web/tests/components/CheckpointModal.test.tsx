@@ -2,15 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
-const sendMock = vi.fn();
+const { sendMock, getPIHistoryMock } = vi.hoisted(() => ({
+  sendMock: vi.fn(),
+  getPIHistoryMock: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../../src/api/wsRegistry", () => ({
   wsRegistry: {
     getSocket: () => ({ send: sendMock }),
   },
 }));
+
 vi.mock("../../src/api/client", () => ({
-  api: { redirectSession: vi.fn() },
+  api: { redirectSession: vi.fn(), getPIHistory: getPIHistoryMock },
   APIError: class extends Error {},
   isValidationError: () => false,
 }));
@@ -18,10 +24,11 @@ vi.mock("../../src/api/client", () => ({
 import { CheckpointModal } from "../../src/components/session/CheckpointModal";
 import { useWSStore } from "../../src/stores/wsStore";
 
-function renderModal() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function makeQC() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+function renderModal(qc = makeQC()) {
   return render(
     <QueryClientProvider client={qc}>
       <CheckpointModal sessionId="sess-1" />
@@ -29,10 +36,18 @@ function renderModal() {
   );
 }
 
+function wrapper(qc = makeQC()) {
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+}
+
 describe("CheckpointModal", () => {
   beforeEach(() => {
     useWSStore.setState({ events: {} });
     sendMock.mockReset();
+    getPIHistoryMock.mockReset();
+    getPIHistoryMock.mockResolvedValue([]);
   });
 
   it("is closed when no checkpoint_reached event", () => {
@@ -115,5 +130,77 @@ describe("CheckpointModal", () => {
       action: "edit",
       content: "edited",
     });
+  });
+});
+
+describe("CheckpointModal PI advice surfacing", () => {
+  beforeEach(() => {
+    useWSStore.setState({
+      events: {
+        "sess-1": [
+          {
+            type: "checkpoint_reached",
+            data: { stage: "experimentation" },
+            timestamp: "t-pi",
+          },
+        ],
+      },
+    });
+    sendMock.mockReset();
+    getPIHistoryMock.mockReset();
+  });
+
+  it("shows PI advice when latest decision is confident and not a fallback", async () => {
+    getPIHistoryMock.mockResolvedValue([
+      {
+        decision_id: "d1",
+        action: "advance",
+        checkpoint: "backtrack_limit",
+        next_stage: "plan_formulation",
+        reasoning: "Pivot the hypothesis after repeated experiment failures",
+        confidence: 0.85,
+        used_fallback: false,
+        ts: "2026-04-14T10:00:00Z",
+      },
+    ]);
+
+    render(<CheckpointModal sessionId="sess-1" />, { wrapper: wrapper() });
+
+    expect(await screen.findByText(/PI advisor/i)).toBeInTheDocument();
+    expect(await screen.findByText(/plan_formulation/i)).toBeInTheDocument();
+    expect(await screen.findByText(/85%/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Pivot the hypothesis/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT show PI advice banner when latest decision used_fallback=true", async () => {
+    getPIHistoryMock.mockResolvedValue([
+      {
+        decision_id: "d2",
+        action: "advance",
+        checkpoint: "backtrack_limit",
+        next_stage: "peer_review",
+        reasoning: "defer to rule fallback",
+        confidence: 0.3,
+        used_fallback: true,
+        ts: "2026-04-14T10:00:00Z",
+      },
+    ]);
+
+    render(<CheckpointModal sessionId="sess-1" />, { wrapper: wrapper() });
+
+    // Wait for query to resolve before asserting absence
+    await waitFor(() => expect(getPIHistoryMock).toHaveBeenCalled());
+    expect(screen.queryByText(/PI advisor recommends/i)).toBeNull();
+  });
+
+  it("does NOT show PI advice banner when pi_decisions is empty", async () => {
+    getPIHistoryMock.mockResolvedValue([]);
+
+    render(<CheckpointModal sessionId="sess-1" />, { wrapper: wrapper() });
+
+    await waitFor(() => expect(getPIHistoryMock).toHaveBeenCalled());
+    expect(screen.queryByText(/PI advisor recommends/i)).toBeNull();
   });
 });

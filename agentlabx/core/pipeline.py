@@ -7,7 +7,8 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from agentlabx.core.events import EventBus
+from agentlabx.core.events import Event, EventBus
+from agentlabx.core.event_types import EventTypes
 from agentlabx.core.registry import PluginRegistry, PluginType
 from agentlabx.core.session import SessionPreferences
 from datetime import UTC, datetime
@@ -132,12 +133,29 @@ class PipelineBuilder:
 
         async def transition_node(state: PipelineState) -> dict[str, Any]:
             """Route to next stage; maintain counters, log, partial rollback."""
-            # TODO(7D): decision.needs_approval is currently not consumed.
-            # Plan 7D will surface it via the CheckpointModal so PI-advised
-            # escalations pause for human confirmation before the route change
-            # takes effect. Today the flag is set on Priority-3 / Priority-5 /
-            # PI-advisor paths (see transition.py) but nothing reads it.
             decision = await transition_handler.decide_async(state)
+
+            # Emit checkpoint_reached when the transition decision requires
+            # human approval (Plan 7D T7). The CheckpointModal listens for
+            # this event via the WebSocket event stream.
+            if decision.needs_approval and event_bus is not None:
+                current_stage = state.get("current_stage", "")
+                pi_decisions: list[dict] = state.get("pi_decisions") or []
+                latest_pi = pi_decisions[-1] if pi_decisions else None
+                await event_bus.emit(
+                    Event(
+                        type=EventTypes.CHECKPOINT_REACHED,
+                        data={
+                            "stage": current_stage,
+                            "next_stage": decision.next_stage,
+                            "reason": decision.reason,
+                            "pi_recommendation": (
+                                latest_pi.get("reasoning") if latest_pi else None
+                            ),
+                        },
+                        source="transition_node",
+                    )
+                )
             current = state.get("current_stage", "")
             update: dict[str, Any] = {
                 "next_stage": decision.next_stage,
