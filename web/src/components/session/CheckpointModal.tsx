@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Input, Modal, Space, Typography, message } from "antd";
+import { Alert, Button, Input, Modal, Space, Tooltip, Typography, message } from "antd";
 import {
   CheckOutlined,
+  CloseOutlined,
   EditOutlined,
   ForwardOutlined,
 } from "@ant-design/icons";
@@ -13,14 +14,9 @@ import type { ClientAction, PipelineEvent } from "../../types/events";
 
 const { Text, Paragraph } = Typography;
 
-/**
- * Fix B — "observable" checkpoint modal. Backend does not actually
- * pause on checkpoints yet (real HITL interrupt is future work), so
- * the UI sends the action, backend logs it, UI shows a toast
- * explaining the limitation.
- */
-const OBSERVABLE_NOTE =
-  "Action recorded. Full HITL execution ships in a later release.";
+/** Shown when the backend returns an unexpected error on approve/reject. */
+const CHECKPOINT_ERROR_NOTE =
+  "Failed to send checkpoint action. Check console for details.";
 
 /** Minimum confidence required to surface PI advice in the modal banner. */
 const PI_ADVICE_CONFIDENCE_THRESHOLD = 0.6;
@@ -87,14 +83,46 @@ export function CheckpointModal({ sessionId }: Props) {
     if (currentKey) setDismissedKey(currentKey);
   };
 
-  const sendAction = (action: ClientAction) => {
-    const socket = wsRegistry.getSocket(sessionId);
-    if (!socket) {
-      message.warning("Not connected.");
-      return;
+  const sendAction = async (action: ClientAction) => {
+    // approve / reject: call the backend checkpoint endpoint to resume the
+    // paused pipeline (Plan 7E A2). redirect / edit are deferred (501).
+    if (action.action === "approve" || action.action === "reject") {
+      try {
+        const resp = await fetch(
+          `/api/sessions/${sessionId}/checkpoint/approve`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: action.action, reason: action.reason }),
+          },
+        );
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({}));
+          if (resp.status === 501) {
+            message.warning(
+              detail?.detail ?? "This action is not yet supported.",
+            );
+          } else {
+            message.error(CHECKPOINT_ERROR_NOTE);
+            console.error("checkpoint/approve error", resp.status, detail);
+          }
+          return;
+        }
+      } catch (err) {
+        message.error(CHECKPOINT_ERROR_NOTE);
+        console.error("checkpoint/approve fetch error", err);
+        return;
+      }
+    } else {
+      // edit / redirect: send over WS as before (deferred path, backend returns 501
+      // for edit; redirect goes via RedirectModal which has its own endpoint)
+      const socket = wsRegistry.getSocket(sessionId);
+      if (!socket) {
+        message.warning("Not connected.");
+        return;
+      }
+      socket.send(action);
     }
-    socket.send(action);
-    message.info(OBSERVABLE_NOTE);
     close();
   };
 
@@ -216,12 +244,20 @@ export function CheckpointModal({ sessionId }: Props) {
             >
               Redirect
             </Button>
+            <Tooltip title="Output editing is not yet supported (deferred)">
+              <Button
+                icon={<EditOutlined />}
+                onClick={() => setEditing(true)}
+                disabled
+              >
+                Edit
+              </Button>
+            </Tooltip>
             <Button
-              icon={<EditOutlined />}
-              onClick={() => setEditing(true)}
-              disabled={editing}
+              icon={<CloseOutlined />}
+              onClick={() => sendAction({ action: "reject" })}
             >
-              Edit
+              Reject
             </Button>
             <Button
               type="primary"

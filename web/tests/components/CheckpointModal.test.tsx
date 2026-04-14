@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -43,11 +43,24 @@ function wrapper(qc = makeQC()) {
 }
 
 describe("CheckpointModal", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     useWSStore.setState({ events: {} });
     sendMock.mockReset();
     getPIHistoryMock.mockReset();
     getPIHistoryMock.mockResolvedValue([]);
+    // Mock global fetch for checkpoint/approve calls
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "resumed", action: "approve" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
   });
 
   it("is closed when no checkpoint_reached event", () => {
@@ -77,7 +90,7 @@ describe("CheckpointModal", () => {
     expect(screen.getByText("results...")).toBeInTheDocument();
   });
 
-  it("approve sends action and closes", async () => {
+  it("approve calls /checkpoint/approve endpoint and closes", async () => {
     const user = userEvent.setup();
     useWSStore.setState({
       events: {
@@ -92,14 +105,21 @@ describe("CheckpointModal", () => {
     });
     renderModal();
     await user.click(screen.getByRole("button", { name: /Approve/ }));
-    expect(sendMock).toHaveBeenCalledWith({ action: "approve" });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/sessions/sess-1/checkpoint/approve",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"action":"approve"'),
+        }),
+      );
+    });
     await waitFor(() => {
       expect(screen.queryByText(/Checkpoint:/)).not.toBeInTheDocument();
     });
   });
 
-  it("edit reveals textarea and Save sends edit action", async () => {
-    const user = userEvent.setup();
+  it("edit button is disabled (deferred in Plan 7E A2)", async () => {
     useWSStore.setState({
       events: {
         "sess-1": [
@@ -112,24 +132,12 @@ describe("CheckpointModal", () => {
       },
     });
     renderModal();
-    // Two visible buttons match /Edit/: "Edit" and "Edit" inside icon aria.
-    // Match the exact visible label by finding the span text.
-    const editBtns = screen.getAllByRole("button", { name: /Edit/ });
-    // Approve/Redirect buttons don't include "Edit"; the Edit button is the
-    // one whose accessible name matches exactly "Edit" (case-insensitive)
-    // once the "edit " aria-label prefix is stripped. We look for the button
-    // whose text content is exactly "Edit".
+    // The Edit button should be present but disabled — output editing is
+    // deferred to a later plan; the tooltip shows "not yet supported".
+    const editBtns = screen.getAllByRole("button", { name: /Edit/i });
     const editBtn =
       editBtns.find((b) => b.textContent?.trim() === "Edit") ?? editBtns[0];
-    await user.click(editBtn);
-    const ta = screen.getByRole("textbox");
-    await user.clear(ta);
-    await user.type(ta, "edited");
-    await user.click(screen.getByRole("button", { name: /Save/ }));
-    expect(sendMock).toHaveBeenCalledWith({
-      action: "edit",
-      content: "edited",
-    });
+    expect(editBtn).toBeDisabled();
   });
 });
 

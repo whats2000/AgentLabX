@@ -156,6 +156,15 @@ class PipelineBuilder:
                         source="transition_node",
                     )
                 )
+
+                # A2: pause the pipeline so StageRunner blocks before the next
+                # stage until the user approves via POST /checkpoint/approve.
+                # paused_event lives on stage_context (wired by the executor).
+                # We clear it directly rather than via executor.pause_session()
+                # so the session status stays RUNNING (the pause is a HITL gate,
+                # not a user-initiated pause — no status transition needed).
+                if stage_context is not None and stage_context.paused_event is not None:
+                    stage_context.paused_event.clear()
             current = state.get("current_stage", "")
             update: dict[str, Any] = {
                 "next_stage": decision.next_stage,

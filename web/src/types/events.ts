@@ -65,5 +65,6 @@ export type ClientAction =
     }
   | { action: "redirect"; target_stage: string; reason?: string }
   | { action: "inject_feedback"; content: string }
-  | { action: "approve" }
+  | { action: "approve"; reason?: string }
+  | { action: "reject"; reason?: string }
   | { action: "edit"; content: string };

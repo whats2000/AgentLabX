@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -154,6 +154,75 @@ async def resume_session(request: Request, session_id: str):
         session.resume()
 
     return {"session_id": session_id, "status": session.status.value}
+
+
+class CheckpointApproveRequest(BaseModel):
+    """Action taken in response to a HITL checkpoint.
+
+    See spec §3.8 HITL execution modes.
+    """
+
+    action: Literal["approve", "reject", "redirect", "edit"]
+    redirect_target: str | None = None
+    edited_output: dict | None = None
+    reason: str | None = None
+
+
+@router.post("/{session_id}/checkpoint/approve")
+async def approve_checkpoint(
+    request: Request,
+    session_id: str,
+    body: CheckpointApproveRequest,
+):
+    """Resume a session paused at a HITL checkpoint.
+
+    Actions shipped in Plan 7E A2:
+      approve — unpause; let the pipeline route per decision.next_stage
+      reject  — unpause with no state change (handler's decision stands; user acknowledged)
+
+    Deferred (501):
+      redirect — requires state-mutation API for human_override
+      edit     — requires state-patching for edited_output
+
+    See spec §3.8.
+    """
+    context = request.app.state.context
+
+    # Verify the session exists (raises 404 if not)
+    try:
+        context.session_manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    if body.action in ("redirect", "edit"):
+        raise HTTPException(
+            status_code=501,
+            detail=f"Action '{body.action}' deferred to a later plan",
+        )
+
+    # approve | reject: both resume the pipeline by setting paused_event.
+    # We reach directly into the RunningSession rather than calling
+    # executor.resume_session() because resume_session() calls session.resume()
+    # which requires PAUSED status. A checkpoint-pause (A2) keeps the session
+    # RUNNING (only the asyncio.Event is cleared). For sessions that were also
+    # manually paused (PAUSED status), we do the full resume transition.
+    if context.executor is not None:
+        running = context.executor.get_running(session_id)
+        if running is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session {session_id} not found or not started",
+            )
+        from agentlabx.core.session import SessionStatus
+
+        if running.session.status == SessionStatus.PAUSED:
+            # Full resume — transitions PAUSED → RUNNING and sets event
+            await context.executor.resume_session(session_id)
+        else:
+            # Checkpoint-pause: session is RUNNING but event is cleared
+            running.paused_event.set()
+
+    return {"status": "resumed", "action": body.action}
 
 
 @router.delete("/{session_id}", status_code=204)
