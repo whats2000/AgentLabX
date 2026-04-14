@@ -1,4 +1,9 @@
-"""Real data exploration stage — SW engineer runs EDA via code_executor."""
+"""Real data exploration stage — SW engineer runs EDA via code_executor.
+
+Plan 7E B2 migration: build_plan itemises EDA survey + quality-issues +
+recommendations + optional feedback-driven work; execute_plan stays at the
+default (delegates to legacy .run()), so plan items are OBSERVABILITY-ONLY.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from agentlabx.core.state import EDAResult, PipelineState
+from agentlabx.core.state import EDAResult, PipelineState, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -23,6 +28,74 @@ class DataExplorationStage(BaseStage):
     description = "SW engineer runs exploratory data analysis via code executor."
     required_agents = ["sw_engineer"]
     required_tools = ["code_executor"]
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise EDA tasks based on current state + optional feedback.
+
+        Default plan: survey, quality-issues, recommendations. When prior
+        data_exploration output exists and no feedback targets this stage,
+        the survey item is marked done referencing the prior artifact.
+        """
+        prior = state.get("data_exploration", [])
+        has_prior = bool(prior) and not feedback
+
+        survey_status = "done" if has_prior else "todo"
+        items: list[StagePlanItem] = [
+            StagePlanItem(
+                id="eda:survey",
+                description="Survey dataset structure and quality",
+                status=survey_status,
+                source="prior" if has_prior else "contract",
+                existing_artifact_ref="data_exploration[-1]" if has_prior else None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="eda:quality-issues",
+                description="Identify data quality issues",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="eda:recommendations",
+                description="Recommend preparation steps",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+        ]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="eda:feedback-driven",
+                    description=f"Address feedback: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        rationale_parts = ["EDA plan"]
+        if feedback:
+            rationale_parts.append("(addressing feedback)")
+        elif has_prior:
+            rationale_parts.append("(prior survey present; revisiting quality/recommendations)")
+
+        return StagePlan(
+            items=items,
+            rationale=" ".join(rationale_parts),
+            hash_of_consumed_inputs=state.get("research_topic", ""),
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry

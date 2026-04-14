@@ -1,4 +1,10 @@
-"""Real experimentation stage — baseline, main, ablations with enforced validation."""
+"""Real experimentation stage — baseline, main, ablations with enforced validation.
+
+Plan 7E B2 migration: build_plan itemises baseline/main/ablation items with
+per-tag prior-bypass logic; execute_plan stays at the default (delegates to
+legacy .run()), so plan items are OBSERVABILITY-ONLY. The prior-bypass encodes
+"don't re-run a baseline you already have."
+"""
 
 from __future__ import annotations
 
@@ -10,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from agentlabx.core.state import ExperimentResult, PipelineState, ReproducibilityRecord
+from agentlabx.core.state import ExperimentResult, PipelineState, ReproducibilityRecord, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -21,6 +27,69 @@ class ExperimentationStage(BaseStage):
     description = "ML engineer runs baseline/main/ablation experiments with validation."
     required_agents = ["ml_engineer"]
     required_tools = ["code_executor"]
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise experimentation tasks with per-tag prior-bypass logic.
+
+        For each of baseline/main/ablation: if a result with that tag already
+        exists in state["experiment_results"] AND no feedback is given, the
+        corresponding item is marked done referencing the existing result. This
+        encodes "don't re-run a baseline you already have."
+        """
+        prior_results = state.get("experiment_results", [])
+        present_tags: set[str] = set()
+        if prior_results and not feedback:
+            for r in prior_results:
+                tag = getattr(r, "tag", None)
+                if tag:
+                    present_tags.add(tag)
+
+        def status_for(tag: str) -> tuple[str, str | None]:
+            if tag in present_tags and not feedback:
+                return "done", f"experiment_results (tag={tag})"
+            return "todo", None
+
+        items: list[StagePlanItem] = []
+        for tag, desc in [
+            ("baseline", "Run at least one baseline experiment"),
+            ("main", "Run main experiments against hypotheses"),
+            ("ablation", "Run ablation studies (required if main shows improvement)"),
+        ]:
+            status, ref = status_for(tag)
+            items.append(StagePlanItem(
+                id=f"exp:{tag}",
+                description=desc,
+                status=status,
+                source="prior" if status == "done" else "contract",
+                existing_artifact_ref=ref,
+                edit_note=None,
+                removed_reason=None,
+            ))
+
+        if feedback:
+            items.append(StagePlanItem(
+                id="exp:feedback-driven",
+                description=f"Address feedback: {feedback}",
+                status="todo",
+                source="feedback",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ))
+
+        rationale_parts = ["Experimentation plan"]
+        if feedback:
+            rationale_parts.append("(addressing feedback)")
+        elif present_tags:
+            rationale_parts.append(f"({', '.join(sorted(present_tags))} already present)")
+
+        return StagePlan(
+            items=items,
+            rationale=" ".join(rationale_parts),
+            hash_of_consumed_inputs=state.get("research_topic", ""),
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry

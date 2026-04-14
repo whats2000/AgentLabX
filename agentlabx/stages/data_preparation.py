@@ -1,4 +1,9 @@
-"""Real data preparation stage — ML/SW engineers collaborate on dataset pipeline."""
+"""Real data preparation stage — ML/SW engineers collaborate on dataset pipeline.
+
+Plan 7E B2 migration: build_plan itemises clean + features + pipeline-code +
+optional feedback-driven work; execute_plan stays at the default (delegates to
+legacy .run()), so plan items are OBSERVABILITY-ONLY.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from agentlabx.core.state import PipelineState
+from agentlabx.core.state import PipelineState, StagePlan, StagePlanItem
 from agentlabx.stages._helpers import build_agent_context, resolve_agent, resolve_tool
 from agentlabx.stages.base import BaseStage, StageContext, StageResult, sync_agent_memory_to_state
 
@@ -18,6 +23,74 @@ class DataPreparationStage(BaseStage):
     description = "ML + SW engineers collaborate on data pipeline; validate via execution."
     required_agents = ["ml_engineer", "sw_engineer"]
     required_tools = ["code_executor"]
+
+    def build_plan(
+        self, state: PipelineState, *, feedback: str | None = None
+    ) -> StagePlan:
+        """Itemise data preparation tasks based on current state + optional feedback.
+
+        Default plan: clean, features, pipeline-code. When prior dataset_code
+        exists and no feedback targets this stage, pipeline-code is marked done
+        referencing the prior artifact.
+        """
+        prior_code = state.get("dataset_code", [])
+        has_prior_code = bool(prior_code) and not feedback
+
+        pipeline_status = "done" if has_prior_code else "todo"
+        items: list[StagePlanItem] = [
+            StagePlanItem(
+                id="prep:clean",
+                description="Clean dataset based on EDA findings",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="prep:features",
+                description="Engineer features required by plan",
+                status="todo",
+                source="contract",
+                existing_artifact_ref=None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+            StagePlanItem(
+                id="prep:pipeline-code",
+                description="Produce dataset preparation code",
+                status=pipeline_status,
+                source="prior" if has_prior_code else "contract",
+                existing_artifact_ref="dataset_code[-1]" if has_prior_code else None,
+                edit_note=None,
+                removed_reason=None,
+            ),
+        ]
+
+        if feedback:
+            items.append(
+                StagePlanItem(
+                    id="prep:feedback-driven",
+                    description=f"Address feedback: {feedback}",
+                    status="todo",
+                    source="feedback",
+                    existing_artifact_ref=None,
+                    edit_note=None,
+                    removed_reason=None,
+                )
+            )
+
+        rationale_parts = ["Data preparation plan"]
+        if feedback:
+            rationale_parts.append("(addressing feedback)")
+        elif has_prior_code:
+            rationale_parts.append("(prior pipeline code present; reusing)")
+
+        return StagePlan(
+            items=items,
+            rationale=" ".join(rationale_parts),
+            hash_of_consumed_inputs=state.get("research_topic", ""),
+        )
 
     async def run(self, state: PipelineState, context: StageContext) -> StageResult:
         registry = context.registry
