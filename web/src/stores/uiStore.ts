@@ -34,21 +34,46 @@ function normalizeTab(tab: string): DetailTab {
   return "conversation";
 }
 
+export type DrawerTab =
+  | "monitor"
+  | "plan"
+  | "hypotheses"
+  | "pi"
+  | "cost"
+  | "artifacts"
+  | "experiments";
+
 interface UIState {
   sidebarCollapsed: boolean;
   detailTab: DetailTab;
   sessionListFilter: string;
 
+  // Option A layout panel state
+  innerPanelOpen: boolean;
+  meetingPanelOpen: boolean;
+  drawerOpen: boolean;
+  drawerTab: DrawerTab;
+
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebar: () => void;
   setDetailTab: (tab: DetailTab) => void;
   setSessionListFilter: (filter: string) => void;
+
+  toggleInnerPanel: () => void;
+  toggleMeetingPanel: () => void;
+  toggleDrawer: () => void;
+  setDrawerTab: (tab: DrawerTab) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarCollapsed: false,
   detailTab: "conversation",
   sessionListFilter: "",
+
+  innerPanelOpen: false,
+  meetingPanelOpen: false,
+  drawerOpen: false,
+  drawerTab: "monitor",
 
   setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
   toggleSidebar: () =>
@@ -57,4 +82,12 @@ export const useUIStore = create<UIState>((set) => ({
     set({ detailTab: normalizeTab(tab as string) });
   },
   setSessionListFilter: (sessionListFilter) => set({ sessionListFilter }),
+
+  toggleInnerPanel: () =>
+    set((state) => ({ innerPanelOpen: !state.innerPanelOpen })),
+  toggleMeetingPanel: () =>
+    set((state) => ({ meetingPanelOpen: !state.meetingPanelOpen })),
+  toggleDrawer: () =>
+    set((state) => ({ drawerOpen: !state.drawerOpen })),
+  setDrawerTab: (tab) => set({ drawerTab: tab }),
 }));

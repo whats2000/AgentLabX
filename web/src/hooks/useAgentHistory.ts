@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import type { AgentHistoryResponse } from "../types/domain";
 
 /**
- * Overload 1 – legacy per-agent fetch (used by AgentMonitor, AgentHistoryCard, etc.)
+ * Overload 1 – legacy per-agent fetch (used by ChatView stage groups, etc.)
  */
 export function useAgentHistory(
   sessionId: string,
