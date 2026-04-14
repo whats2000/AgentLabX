@@ -51,6 +51,7 @@ class TracedLLMProvider(BaseLLMProvider):
             "is_mock": self.is_mock,
             "turn_id": ctx.turn_id,
             "parent_turn_id": ctx.parent_turn_id,
+            "stage": ctx.stage,
         }
         await self._bus.emit(
             Event(
@@ -89,6 +90,7 @@ class TracedLLMProvider(BaseLLMProvider):
             "cost_usd": resp.cost,
             "model": resp.model,
             "is_mock": self.is_mock,
+            "stage": ctx.stage,
         }
         ctx.tokens_in += resp.tokens_in or 0
         ctx.tokens_out += resp.tokens_out or 0
