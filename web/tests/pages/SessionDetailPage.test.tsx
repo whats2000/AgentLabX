@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SessionDetailPage from "../../src/pages/SessionDetailPage";
@@ -168,18 +168,24 @@ describe("SessionDetailPage", () => {
 
   it("renders StageSubgraphDrawer when innerPanelOpen is true", async () => {
     mockedApi.getSession.mockResolvedValue(SESSION);
-    // Pre-open inner panel
-    useUIStore.setState({ innerPanelOpen: true });
     renderAt("sess-x");
     await screen.findByText("My research topic");
+    // Open inner panel after mount (simulates user action within this session,
+    // not stale state from a prior session — the mount effect resets panels).
+    act(() => {
+      useUIStore.setState({ innerPanelOpen: true });
+    });
     expect(screen.getByTestId("stage-subgraph-drawer")).toBeInTheDocument();
   });
 
   it("does NOT render LabMeetingOverlay when only innerPanelOpen is true (meetingPanelOpen false)", async () => {
     mockedApi.getSession.mockResolvedValue(SESSION);
-    useUIStore.setState({ innerPanelOpen: true, meetingPanelOpen: false });
     renderAt("sess-x");
     await screen.findByText("My research topic");
+    // Open inner panel after mount (after reset effect has fired).
+    act(() => {
+      useUIStore.setState({ innerPanelOpen: true, meetingPanelOpen: false });
+    });
     expect(screen.queryByTestId("lab-meeting-overlay")).toBeNull();
   });
 
@@ -200,6 +206,34 @@ describe("SessionDetailPage", () => {
     renderAt("sess-x");
     await screen.findByText("My research topic");
     expect(screen.getByTestId("agent-monitor")).toBeInTheDocument();
+  });
+
+  it("resets inner/meeting panel state when sessionId changes", async () => {
+    mockedApi.getSession.mockResolvedValue(SESSION);
+
+    // Start with panels open (simulating stale state from a prior session)
+    useUIStore.setState({ innerPanelOpen: true, meetingPanelOpen: true });
+
+    const { unmount } = renderAt("sess-x");
+    await screen.findByText("My research topic");
+
+    // After mount with sess-x the effect fires and resets panels
+    expect(useUIStore.getState().innerPanelOpen).toBe(false);
+    expect(useUIStore.getState().meetingPanelOpen).toBe(false);
+
+    unmount();
+
+    // Re-open panels, then simulate navigating to a new session
+    useUIStore.setState({ innerPanelOpen: true, meetingPanelOpen: true });
+    const SESSION2 = { ...SESSION, session_id: "sess-y", research_topic: "Second topic" };
+    mockedApi.getSession.mockResolvedValue(SESSION2);
+
+    renderAt("sess-y");
+    await screen.findByText("Second topic");
+
+    // Panels must be reset for the new session
+    expect(useUIStore.getState().innerPanelOpen).toBe(false);
+    expect(useUIStore.getState().meetingPanelOpen).toBe(false);
   });
 
   it("shows an error alert when the session fetch fails", async () => {

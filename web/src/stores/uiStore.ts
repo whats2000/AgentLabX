@@ -63,6 +63,8 @@ interface UIState {
   toggleMeetingPanel: () => void;
   toggleDrawer: () => void;
   setDrawerTab: (tab: DrawerTab) => void;
+  /** Reset session-specific panel state when navigating between sessions. */
+  resetPanelState: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -90,4 +92,5 @@ export const useUIStore = create<UIState>((set) => ({
   toggleDrawer: () =>
     set((state) => ({ drawerOpen: !state.drawerOpen })),
   setDrawerTab: (tab) => set({ drawerTab: tab }),
+  resetPanelState: () => set({ innerPanelOpen: false, meetingPanelOpen: false }),
 }));

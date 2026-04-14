@@ -56,7 +56,17 @@ export default function SessionDetailPage() {
     toggleMeetingPanel,
     toggleDrawer,
     setDrawerTab,
+    resetPanelState,
   } = useUIStore();
+
+  // Reset per-session panel state when navigating between sessions.
+  // Prevents stale "inner panel open" claims from a prior session sticking
+  // into a new one (Plan 7E C5).
+  // Leave drawerOpen + drawerTab unchanged — they're user preferences, not
+  // session-specific state.
+  useEffect(() => {
+    resetPanelState();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wire the session-scoped WebSocket; auto-invalidates TanStack cache.
   useWebSocket(sessionId);
