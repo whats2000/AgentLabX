@@ -271,32 +271,24 @@ Solid edges are the default forward sequence. Dotted edges condense the reverse 
 
 ### 3.2.1 Stage Architecture — Each Stage Is a LangGraph Subgraph
 
-Every stage is compiled as its own `StateGraph` with the following internal shape. This gives stages full autonomy to self-loop (iterate with peers, retry, consult tools) without each iteration surfacing as a top-level graph step.
+Every stage is compiled as its own `StateGraph` with the following internal shape. The subgraph is acyclic — iteration lives **inside** `execute_plan`, not as a graph-level self-loop. Backtracks emitted by a stage are the same shape regardless of whether `build_plan` or `work` noticed the need.
 
 ```mermaid
 flowchart LR
     ENTER([ENTER]) --> PLAN["Stage Plan<br/>itemize work:<br/>done · edit · todo · removed"]
-    PLAN --> GATE{Plan outcome?}
-    GATE -->|all done or removed| FAST["Decide<br/>status=done<br/>reason=plan-empty"]
-    GATE -->|prerequisite missing<br/>can't plan| BTOUT["Decide<br/>status=backtrack<br/>target=upstream stage"]
-    GATE -->|actionable items| WORK["Agent(s) work<br/>execute plan items"]
-    WORK --> EVAL{Evaluate<br/>plan satisfied?<br/>dead-end?}
-    EVAL -->|iterate / revise plan| WORK
-    EVAL -->|ready| DECIDE["Decide<br/>emit StageResult"]
+    PLAN --> GATE{Any todo/edit<br/>items?}
+    GATE -->|no — bypass| DECIDE
+    GATE -->|yes| WORK["Work<br/>execute plan items<br/>(iterates internally)"]
+    WORK --> EVAL["Evaluate<br/>post-work quality gate<br/>may override execution.status"]
+    EVAL --> DECIDE["Decide<br/>emit StageResult"]
     DECIDE --> EXIT([EXIT])
-    FAST --> EXIT
-    BTOUT --> EXIT
 
     classDef node fill:#fff,stroke:#334155;
     classDef term fill:#eef2ff,stroke:#6366f1;
-    classDef fast fill:#f0fdf4,stroke:#10b981;
     classDef plan fill:#fef3c7,stroke:#d97706;
-    classDef back fill:#fef2f2,stroke:#ef4444;
     class WORK,EVAL,DECIDE node;
     class ENTER,EXIT term;
-    class FAST fast;
     class PLAN,GATE plan;
-    class BTOUT back;
 ```
 
 **Node responsibilities:**
@@ -304,13 +296,25 @@ flowchart LR
 | Node | Responsibility |
 |---|---|
 | `enter` | Hydrate agent memory from `state[agent_memory]`, attach any incoming `backtrack_feedback`, pick up queued cross-stage requests. |
-| `stage_plan` | **Build a structured plan of what this stage needs to do on this entry.** Itemize the stage's contract into concrete tasks, each marked `done` (already satisfied by state), `edit` (existing artifact needs augmentation), `todo` (fresh work), or `removed` (no longer applicable). If planning itself reveals a missing prerequisite (e.g., lit didn't cover the method family this stage needs), the node may emit `StageResult(status="backtrack", next_hint=<upstream>)` without ever running `work` — this is where the old PI router's backtrack decision now lives, made by the agent who spotted the gap. See §3.2.2. |
-| `work` | Execute the plan's `todo` and `edit` items only. The plan is the agent's own task list — LLM calls, tool invocations, peer handoffs are driven by walking plan items. Idempotent per-iteration; state updates only via reducers. |
-| `evaluate` | Check the plan is satisfied and stage contract holds (e.g., experimentation requires at least one baseline; report writing requires all sections). Also detects dead-ends (dataset unavailable, performance ceiling, conflicting evidence) that should surface as `backtrack` rather than continued iteration. May revise the plan (add new items surfaced during work) and loop back to `work`, or proceed to `decide`. Optionally invoke the PI advisor for a checkpoint review (§3.3.1). |
-| `decide` | Build the `StageResult` (status + reason + feedback + optional `next_hint` + optional cross-stage requests). Flush dirty agent memory back to state. |
+| `stage_plan` | Build a `StagePlan` — itemize the stage's contract into concrete tasks, each marked `done` / `edit` / `todo` / `removed`. See §3.2.2. |
+| `gate` (conditional edge, not a node) | If the plan has no `todo`/`edit` items → route to `decide` (bypass — `decide` synthesizes `status="done", reason="plan-empty: <rationale>"`). Otherwise → route to `work`. |
+| `work` | Execute the plan's `todo` and `edit` items. Iteration over items (per-item LLM calls, retries, peer handoffs) happens INSIDE this node — the node itself runs once per subgraph invocation. Returns a `StageExecution`. |
+| `evaluate` | Post-work quality gate. Inspects `execution` + current state; may populate `StageEvaluation.override_status` / `override_next_hint` / `override_reason` to upgrade a `done` execution into a `backtrack` (dead-end detected) or other status. Returns a `StageEvaluation`. |
+| `decide` | Build the final `StageResult` by composing `execution` + `evaluation` (overrides win). Flush dirty agent memory back to state. |
 | `exit` | Terminal node — surfaces `StageResult` to the top-level graph's transition handler. |
 
-The `evaluate → work` edge is the self-loop (agent may revise the plan mid-flight). The `gate → decide` edge is the bypass path taken when the plan has no actionable items. Inside a zone, multiple stages' subgraphs can peer-handoff via the top-level graph without prompting HITL checkpoints (§3.3.3).
+**Why backtracks from `work`, not from `gate`:** a stage that notices a missing prerequisite during planning produces a `StagePlan` with a single `todo` item like `"emit backtrack because lit_review missed method family X"`. `work` runs once, `execute_plan` emits `StageExecution(status="backtrack", next_hint="literature_review", feedback=...)`. `evaluate` passes through; `decide` surfaces the backtrack. The cost is one trivial `execute_plan` call; the benefit is a single uniform backtrack path regardless of which node noticed.
+
+**Why iteration lives inside `execute_plan`, not as `evaluate → work`:** stages iterate over stage-specific loop variables (search queries for literature review, baselines for experimentation). That state doesn't fit cleanly in the subgraph's `_SubgraphState` and doesn't need to. Keeping the subgraph acyclic also matches the top-level graph convention (§3.2) and LangGraph's typical idiom.
+
+**Considered alternatives (kept for posterity — see Plan 7B² follow-up):**
+
+| Alternative | Why deferred |
+|---|---|
+| 3-branch gate with a dedicated "plan-initiated backtrack" synthesis path | Redundant with work-initiated backtrack (see "Why backtracks from work" above). No migrated stage today sends a plan-initiated-only backtrack signal. |
+| `evaluate → work` self-loop for mid-subgraph iteration | Duplicates stage-internal iteration that already lives in `execute_plan`. Would require projecting stage-specific loop state into the subgraph TypedDict. Breaks acyclic convention with the top-level graph. |
+
+Both could be re-introduced via small additions to `StageSubgraphBuilder` and `StagePlan` if a future stage's behaviour genuinely needs them; no stage in Plan 7B² target scope does.
 
 ### 3.2.2 Stage Plan — Structured Per-Entry Work List
 

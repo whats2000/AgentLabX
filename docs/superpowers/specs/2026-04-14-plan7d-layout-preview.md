@@ -203,71 +203,25 @@ flowchart LR
 
 Opens beneath the main strip when the user clicks the active stage. **Extracted at runtime from the stage's compiled subgraph** via `compiled.get_graph(xray=1)` — never hardcoded. `▾` appears on WORK only when a nested subgraph (lab_meeting) is currently running.
 
-### ⚠️ Spec vs implementation discrepancy
-
-Platform spec §3.2.1 defines a 3-branch gate + evaluate-self-loop. The current `StageSubgraphBuilder` (Plan 7B T4, commit `87c7995`) ships a simpler 2-branch gate + no self-loop. We need to decide which is truth before finalizing Figure 2 and before writing the T1 backend extraction that will surface this shape to the UI.
-
-**Spec §3.2.1 — what we originally designed:**
+Shape matches platform spec §3.2.1 (updated 2026-04-14 to reflect the Plan 7B T4 implementation): acyclic, 2-branch gate, iteration lives inside `execute_plan` not at the subgraph level. Plan-initiated backtrack goes through `work` like any other backtrack (see §3.2.1 "Why backtracks from work, not from gate").
 
 ```mermaid
 flowchart LR
-    ENTER([ENTER]) --> PLAN["Stage Plan<br/>itemize work"]
-    PLAN --> GATE{Plan outcome?}
-    GATE -->|all done or removed| FAST["Decide<br/>status=done<br/>reason=plan-empty"]
-    GATE -->|prerequisite missing<br/>can't plan| BTOUT["Decide<br/>status=backtrack<br/>target=upstream"]
-    GATE -->|actionable items| WORK["Work<br/>execute plan items"]
-    WORK --> EVAL{Evaluate<br/>plan satisfied?<br/>dead-end?}
-    EVAL -->|iterate / revise plan| WORK
-    EVAL -->|ready| DECIDE["Decide<br/>emit StageResult"]
-    DECIDE --> EXIT([EXIT])
-    FAST --> EXIT
-    BTOUT --> EXIT
-
-    classDef term fill:#eef2ff,stroke:#6366f1
-    classDef fast fill:#f0fdf4,stroke:#10b981
-    classDef plan fill:#fef3c7,stroke:#d97706
-    classDef back fill:#fef2f2,stroke:#ef4444
-    class ENTER,EXIT term
-    class FAST fast
-    class PLAN,GATE plan
-    class BTOUT back
-```
-
-**Current implementation — what `StageSubgraphBuilder.compile()` actually emits today:**
-
-```mermaid
-flowchart LR
-    ENTER([ENTER]) --> PLAN[Stage Plan]
-    PLAN --> GATE{Actionable<br/>items?}
-    GATE -->|yes| WORK[Work]
+    ENTER([ENTER]) --> PLAN["Stage Plan<br/>3 items · 1 done · 2 todo"]
+    PLAN --> GATE{"Any todo/edit<br/>items?"}
+    GATE -->|yes| WORK["🔵 Work ▾<br/>▶ ml_engineer<br/>(click if meeting active)"]
     GATE -->|no| DECIDE[Decide]
     WORK --> EVAL[Evaluate]
     EVAL --> DECIDE[Decide]
     DECIDE --> EXIT([EXIT])
 
-    classDef term fill:#eef2ff,stroke:#6366f1
-    classDef plan fill:#fef3c7,stroke:#d97706
-    class ENTER,EXIT term
-    class PLAN,GATE plan
+    classDef active fill:#e0f2fe,stroke:#0284c7,stroke-width:3px
+    classDef done fill:#f0fdf4,stroke:#10b981
+    classDef pending fill:#fafafa,stroke:#d4d4d4
+    class ENTER,PLAN,GATE done
+    class WORK active
+    class EVAL,DECIDE,EXIT pending
 ```
-
-**Two gaps:**
-
-1. **Gate has 2 branches, spec has 3.** Missing the plan-initiated backtrack path — when `build_plan` realizes a prerequisite is missing (lit_review didn't cover method family X, can't plan), the stage has no way to emit `status="backtrack"` without running `work`. Today the gate routes an empty-actionable plan to `decide`, which synthesizes `status="done"` unconditionally.
-
-2. **Evaluate has no self-loop.** Spec shows `evaluate → work` for iteration; current code has `evaluate → decide` (one-shot). This matters when the stage wants to revise the plan mid-flight and re-execute actionable items.
-
-**Question for you:** which truth do we pin?
-
-- **Option ① Match the spec (close the gaps):** add a `backtrack_target` field to `StagePlan`; gate inspects it to route to a "decide-backtrack" synthesis node; evaluate returns a signal that routes back to work for iteration. ~50 lines in `subgraph.py` + tests. Adds real functionality the system currently lacks (plan-initiated backtrack; in-stage iteration).
-
-- **Option ② Match the implementation (shrink the spec):** update §3.2.1 diagram to show 2-branch gate + linear evaluate→decide. Drop "plan-initiated backtrack" and "iterate" as planned-for-later. Honest about current capability. Plan 7B² can add them back when migrating stages whose evaluate wants to loop (experimentation especially needs iteration over todo items).
-
-- **Option ③ Close gap #2 now, defer gap #1:** add evaluate self-loop now (small — 10 lines), since stages genuinely need to iterate (experimentation's MAX_ITERATIONS loop currently happens inside `.run()` instead of at the subgraph level). Defer plan-initiated backtrack to a follow-up.
-
-My lean: **Option ③**. Gap #2 (self-loop) is small, genuinely needed, and makes `evaluate` non-vestigial. Gap #1 (plan-initiated backtrack) is architecturally bigger and can wait until a stage actually needs it — today every stage can emit backtrack from `work` just as easily. Draw Figure 2 as the current 2-branch implementation for now, with a note that the self-loop arrives via a small prerequisite commit before Plan 7D T1 extracts it.
-
-Your call. After you pick, Figure 2 below will reflect the chosen truth and the rest of Plan 7D T1/T3/T4 will match.
 
 ```mermaid
 flowchart LR
