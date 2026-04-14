@@ -144,3 +144,28 @@ export interface ExperimentsResponse {
   runs: Array<Record<string, unknown>>;
   log: Array<Record<string, unknown>>;
 }
+
+// Stage plans
+export type StagePlanStatus = "done" | "edit" | "todo" | "removed";
+export type StagePlanItemSource =
+  | "contract"
+  | "feedback"
+  | "request"
+  | "user"
+  | "prior";
+
+export interface StagePlanItem {
+  id: string;
+  description: string;
+  status: StagePlanStatus;
+  source: StagePlanItemSource;
+  existing_artifact_ref: string | null;
+  edit_note: string | null;
+  removed_reason: string | null;
+}
+
+export interface StagePlan {
+  items: StagePlanItem[];
+  rationale: string;
+  hash_of_consumed_inputs: string;
+}

@@ -149,4 +149,26 @@ describe("useWebSocket invalidation map (C10)", () => {
     const keys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey);
     expect(keys).toContainEqual(["hypotheses", "s1"]);
   });
+
+  it("stage_started invalidates stage-plans", async () => {
+    const { invalidate } = await setup("s1");
+
+    act(() => {
+      emit("stage_started", { stage: "literature_review" });
+    });
+
+    const keys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey);
+    expect(keys).toContainEqual(["stage-plans", "s1"]);
+  });
+
+  it("stage_completed invalidates stage-plans", async () => {
+    const { invalidate } = await setup("s1");
+
+    act(() => {
+      emit("stage_completed", { stage: "literature_review" });
+    });
+
+    const keys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey);
+    expect(keys).toContainEqual(["stage-plans", "s1"]);
+  });
 });

@@ -88,7 +88,7 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
   pi_decision: (sid) => [["pi-history", sid]],
   hypothesis_update: (sid) => [["hypotheses", sid]],
   // stage_* also carried the old "Fix H" invalidations; keep them plus the new graph key
-  stage_started: (sid) => [["graph", sid]],
+  stage_started: (sid) => [["graph", sid], ["stage-plans", sid]],
   stage_completed: (sid) => [
     ["graph", sid],
     ["experiments", sid],
@@ -96,6 +96,7 @@ const INVALIDATE: Record<string, InvalidatorFn> = {
     ["artifacts", sid],
     ["transitions", sid],
     ["hypotheses", sid],
+    ["stage-plans", sid],
   ],
   stage_failed: (sid) => [
     ["graph", sid],
