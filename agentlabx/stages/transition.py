@@ -201,12 +201,15 @@ class TransitionHandler:
            advisor overrides.
 
         2. ConsultKind.NEGATIVE_RESULT — when last_stage_status is
-           "negative_result" AND rule_decision.action is "advance". Advisor
-           decides publish / pivot / redirect. Returns early if advisor overrides.
+           "negative_result" AND rule_decision.action is "advance" OR
+           "backtrack". The advisor makes the content-level judgment
+           (publish / pivot / redirect) even when the stage pre-chose a
+           backtrack target. The action is re-derived from the advisor's
+           chosen target. Returns early if advisor overrides.
 
-        Other action types (backtrack, forced_advance, complete, human_override)
-        never consult the advisor — PI is an advisor, NOT a router
-        (spec §3.3.5).
+        Other action types (forced_advance, complete, human_override,
+        backtrack_limit_exceeded) never consult the advisor — PI is an
+        advisor, NOT a router (spec §3.3.5).
         """
         rule_decision = self.decide(state)
 
@@ -244,19 +247,28 @@ class TransitionHandler:
             return rule_decision
 
         # ── Checkpoint 2: negative_result (Plan 7C follow-up) ─────────────────
+        # NEGATIVE_RESULT is a content-level judgment (publish / pivot / redirect),
+        # not a routing concern. Consult the advisor whenever a stage concluded
+        # with a refuted hypothesis — even if the stage chose a backtrack target
+        # unilaterally. The advisor's choice wins (with confidence gate);
+        # the action is re-derived from whether the advisor's target sits earlier
+        # in the default sequence (→ backtrack) or later (→ advance).
         if (
-            state.get("last_stage_status") == "negative_result"
-            and rule_decision.action == "advance"  # only on the forward path
+            self.pi_advisor is not None
+            and state.get("last_stage_status") == "negative_result"
+            and rule_decision.action in ("advance", "backtrack")
         ):
             origin = state.get("current_stage", "")
             experiment_results = state.get("experiment_results") or []
+            # hypothesis_id is best-effort — pulled from the most recent
+            # experiment result when available. Non-experimentation stages
+            # emitting negative_result will surface "unknown" (acceptable;
+            # the advisor's prompt documents that "unknown" is valid).
             hypothesis_id = "unknown"
             if experiment_results:
                 last_exp = experiment_results[-1]
                 hypothesis_id = (
-                    last_exp.hypothesis_id
-                    if hasattr(last_exp, "hypothesis_id")
-                    else getattr(last_exp, "hypothesis_id", None) or "unknown"
+                    getattr(last_exp, "hypothesis_id", None) or "unknown"
                 )
 
             advice = await self.pi_advisor.consult_escalation(
@@ -270,9 +282,14 @@ class TransitionHandler:
             )
 
             if not advice.used_fallback and advice.next_stage is not None:
+                is_backtrack = self._is_backtrack(
+                    advice.next_stage,
+                    state.get("current_stage", ""),
+                    state.get("default_sequence") or [],
+                )
                 return TransitionDecision(
                     next_stage=advice.next_stage,
-                    action=rule_decision.action,
+                    action="backtrack" if is_backtrack else "advance",
                     reason=f"PI advisor (negative result): {advice.reasoning}",
                     needs_approval=True,
                 )

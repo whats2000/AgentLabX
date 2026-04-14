@@ -244,9 +244,14 @@ class PipelineState(TypedDict):
     stage_plans: dict[str, list[StagePlan]]
 
     # Most recent stage's StageResult.status — populated by StageRunner on
-    # each stage exit. Used by TransitionHandler.decide_async to route the
-    # NEGATIVE_RESULT checkpoint consultation (spec §3.3.5, Plan 7C).
-    last_stage_status: str | None
+    # each stage exit.
+    #
+    # Single-writer invariant: only StageRunner writes this field, on stage
+    # exit. Sequential stage execution makes "most recent" unambiguous today.
+    # Parallel stage nodes (if ever introduced) would require an Annotated
+    # reducer (timestamped last-write-wins, etc.) — matches the stage_plans
+    # and agent_memory invariant pattern.
+    last_stage_status: Literal["done", "backtrack", "negative_result", "request"] | None
 
 
 def apply_partial_rollback(
