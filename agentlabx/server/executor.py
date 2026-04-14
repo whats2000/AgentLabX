@@ -278,8 +278,30 @@ class PipelineExecutor:
 
         async def run_pipeline() -> None:
             try:
-                await graph.ainvoke(initial_state, config=config)
-                session.complete()
+                final_state = await graph.ainvoke(initial_state, config=config)
+
+                # B3 fix: if every stage that ran produced an error, the pipeline
+                # silently "succeeded" (errors were caught in-band by StageRunner
+                # and recorded as StageError entries, not propagated as exceptions).
+                # In that case we must transition to FAILED, not COMPLETED.
+                errors: list = (final_state or {}).get("errors") or []
+                stage_iters: dict = (final_state or {}).get("stage_iterations") or {}
+                total_ran = sum(stage_iters.values())  # total stage invocations
+                if errors and total_ran > 0 and len(errors) >= total_ran:
+                    # Every stage invocation produced an error — treat as pipeline failure.
+                    latest = errors[-1]
+                    reason_msg = getattr(latest, "message", None) or str(latest)
+                    logger.warning(
+                        "Session %s: all %d stage run(s) errored — marking FAILED. "
+                        "Last error: %s",
+                        session.session_id,
+                        total_ran,
+                        reason_msg,
+                    )
+                    session.fail()
+                else:
+                    session.complete()
+
                 # Task 10 wraps persist_session in SessionManager transition methods.
                 # Here we call persist directly if available (graceful fallback for now).
                 if hasattr(session_manager, "persist_session"):
