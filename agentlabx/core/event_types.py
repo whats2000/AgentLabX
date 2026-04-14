@@ -34,6 +34,9 @@ class EventTypes:
     # Stage subgraph observability (Plan 7E A1)
     STAGE_INTERNAL_NODE_CHANGED = "stage_internal_node_changed"
 
+    # Stage plan persistence (Plan 8 ARCH-1)
+    STAGE_PLAN_PERSISTED = "stage_plan_persisted"
+
     # Observability
     COST_UPDATE = "cost_update"
     ERROR = "error"

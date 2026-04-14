@@ -57,6 +57,36 @@ async def _emit_internal_node_changed(
     )
 
 
+async def _emit_stage_plan_persisted(
+    s: "_SubgraphState", stage_name: str, plan: StagePlan
+) -> None:
+    """Emit STAGE_PLAN_PERSISTED event after plan is written to state.
+
+    Plan 8 ARCH-1: enables harness observability and T10 stage_plan_persisted
+    contract. Emitted immediately after the plan is persisted to
+    state["stage_plans"][stage.name].
+    """
+    ctx = s.get("context")
+    bus = ctx.event_bus if ctx is not None else None
+    if bus is None:
+        return
+    from agentlabx.core.event_types import EventTypes
+    from agentlabx.core.events import Event
+
+    items_count = len(plan.get("items", [])) if plan else 0
+    await bus.emit(
+        Event(
+            type=EventTypes.STAGE_PLAN_PERSISTED,
+            data={
+                "stage": stage_name,
+                "items_count": items_count,
+                "session_id": s["state"].get("session_id"),
+            },
+            source=stage_name,
+        )
+    )
+
+
 class _SubgraphState(TypedDict, total=False):
     """Working state for a single stage's subgraph execution.
 
@@ -111,6 +141,8 @@ class StageSubgraphBuilder:
             history.append(plan)
             plans[stage.name] = history
             s["state"]["stage_plans"] = plans
+            # Emit stage_plan_persisted event for harness observability (Plan 8 ARCH-1)
+            await _emit_stage_plan_persisted(s, stage.name, plan)
             return {"plan": plan, "current_stage_internal_node": "stage_plan"}
 
         def gate_node(s: _SubgraphState) -> str:
