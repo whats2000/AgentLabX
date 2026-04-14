@@ -120,6 +120,28 @@ describe("StageSubgraphDrawer", () => {
     expect(onWorkClick).not.toHaveBeenCalled();
   });
 
+  it("renders error alert when subgraph.error is set", () => {
+    const subgraph: GraphSubgraph = {
+      id: "experimentation",
+      kind: "stage_subgraph",
+      label: "experimentation",
+      nodes: [],
+      edges: [],
+      error: "Subgraph extraction failed: synthetic failure",
+    };
+    const { getByText } = render(
+      <StageSubgraphDrawer
+        activeStage="experimentation"
+        subgraph={subgraph}
+        cursorInternalNode={null}
+        meetingActive={false}
+        onWorkClick={() => {}}
+      />,
+    );
+    expect(getByText(/Subgraph unavailable/i)).toBeInTheDocument();
+    expect(getByText(/synthetic failure/i)).toBeInTheDocument();
+  });
+
   it("renders nodes in topological order derived from edges", () => {
     // nodes should appear enter → stage_plan → work → evaluate → decide
     const { container } = render(

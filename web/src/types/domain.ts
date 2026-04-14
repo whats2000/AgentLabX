@@ -70,6 +70,7 @@ export interface GraphSubgraph {
   label?: string;
   nodes: GraphSubgraphNode[];
   edges: GraphSubgraphEdge[];
+  error?: string;  // populated by backend when extraction fails
 }
 
 export interface GraphTopology {

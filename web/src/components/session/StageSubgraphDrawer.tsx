@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Card } from "antd";
+import { Alert, Card } from "antd";
 import type { GraphSubgraph } from "../../types/domain";
 import { topoSort } from "../../utils/topoSort";
 
@@ -28,6 +28,23 @@ export function StageSubgraphDrawer({
   }, [subgraph]);
 
   if (!activeStage || !subgraph) return null;
+
+  if (subgraph.error) {
+    return (
+      <Card
+        size="small"
+        title={`Inside ${subgraph.label ?? activeStage}`}
+        style={{ marginTop: 12 }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="Subgraph unavailable"
+          description={subgraph.error}
+        />
+      </Card>
+    );
+  }
 
   return (
     <Card

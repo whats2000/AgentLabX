@@ -8,9 +8,12 @@ skipped stages, iteration counts, backtrack transitions).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from agentlabx.core.zones import zone_for
+
+logger = logging.getLogger(__name__)
 
 META_NODE_IDS = ("__start__", "__end__", "transition")
 
@@ -188,9 +191,19 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
                     "nodes": sub_nodes,
                     "edges": sub_edges,
                 })
-        except Exception:
-            # Fail soft — missing subgraph data is survivable; frontend handles empty.
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Subgraph extraction failed for stage %s: %s",
+                current, exc, exc_info=True,
+            )
+            subgraphs.append({
+                "id": current,
+                "kind": "stage_subgraph",
+                "label": current,
+                "nodes": [],
+                "edges": [],
+                "error": f"Subgraph extraction failed: {exc}",
+            })
 
     return {"nodes": nodes, "edges": edges, "cursor": cursor, "subgraphs": subgraphs}
 
