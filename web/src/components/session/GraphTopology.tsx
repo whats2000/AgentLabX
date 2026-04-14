@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -21,10 +21,14 @@ import type { ControlLevel } from "../../hooks/useUpdateStagePreference";
 
 const elk = new ELK();
 
+const DEMOTE_THRESHOLD = 8;
+
 type StageNodeData = {
   node: GraphNode;
   control?: ControlLevel;
   onControlChange?: (level: ControlLevel) => void;
+  isActive?: boolean;
+  onStageClick?: (stageId: string) => void;
 };
 
 type ZoneNodeData = { zone: string };
@@ -35,6 +39,8 @@ const nodeTypes = {
       node={p.data.node}
       control={p.data.control}
       onControlChange={p.data.onControlChange}
+      isActive={p.data.isActive}
+      onStageClick={p.data.onStageClick}
     />
   ),
   zone: (p: { data: ZoneNodeData }) => <ZoneNode data={p.data} />,
@@ -47,6 +53,7 @@ const META_IDS = new Set(["__start__", "__end__", "transition"]);
  * Compact edges: remove the transition hub by building direct stage→stage edges.
  * Any edge through `transition` is expanded to a direct from→to.
  * Edges involving __start__/__end__ are dropped entirely.
+ * Backtrack edges are preserved as-is (they never go through the transition hub).
  */
 function compactEdges(rawEdges: GraphEdge[]): GraphEdge[] {
   const direct = rawEdges.filter(
@@ -84,6 +91,34 @@ function compactEdges(rawEdges: GraphEdge[]): GraphEdge[] {
   return direct;
 }
 
+function buildRfEdges(edges: GraphEdge[]): Edge[] {
+  const backtrackEdges = edges.filter((e) => e.kind === "backtrack");
+  const demoteLabels = backtrackEdges.length > DEMOTE_THRESHOLD;
+
+  return edges.map((e, i) => {
+    const isBacktrack = e.kind === "backtrack";
+    return {
+      id: `e${i}`,
+      source: e.from,
+      target: e.to,
+      animated: false,
+      style: isBacktrack
+        ? { stroke: "#d97706", strokeDasharray: "6 4", strokeWidth: 1.5 }
+        : { stroke: "#64748b", strokeWidth: 1.5 },
+      label: isBacktrack && !demoteLabels ? `↩ ${e.attempts ?? ""}` : undefined,
+      labelStyle: isBacktrack
+        ? { fontSize: 10, fill: "#d97706", fontWeight: 600 }
+        : undefined,
+      labelBgStyle: isBacktrack ? { fill: "#fff", fillOpacity: 0.9 } : undefined,
+      data: {
+        tooltip: isBacktrack
+          ? `Backtrack: ${e.attempts} attempt(s) from ${e.from} to ${e.to}`
+          : undefined,
+      },
+    } as Edge;
+  });
+}
+
 async function layoutWithElk(topo: Topo) {
   const stageNodes = topo.nodes.filter((n) => !META_IDS.has(n.id) && n.zone !== null);
   const metaNodes = topo.nodes.filter((n) => META_IDS.has(n.id));
@@ -119,8 +154,9 @@ async function layoutWithElk(topo: Topo) {
     elkChildren.push({ id: m.id, width: 100, height: 40 });
   }
 
-  // Build ELK edges using compacted set (skip edges to/from suppressed meta nodes at this level)
-  const elkEdges = compacted.map((e, i) => ({
+  // Build ELK edges using compacted set (forward edges only for layout hints)
+  const forwardEdges = compacted.filter((e) => e.kind !== "backtrack");
+  const elkEdges = forwardEdges.map((e, i) => ({
     id: `e${i}`,
     sources: [e.from],
     targets: [e.to],
@@ -145,14 +181,21 @@ async function layoutWithElk(topo: Topo) {
 
 interface Props {
   sessionId: string;
+  /** When provided, bypasses the useGraph hook and uses this topology directly. */
+  topology?: Topo;
+  /** Called when the user clicks the active stage node. */
+  onStageClick?: (stageId: string) => void;
 }
 
-export function GraphTopology({ sessionId }: Props) {
-  const { data: topo, isLoading } = useGraph(sessionId);
+export function GraphTopology({ sessionId, topology: topoProp, onStageClick }: Props) {
+  const { data: topoFromHook, isLoading } = useGraph(sessionId);
   const { data: session } = useSession(sessionId);
   const updateMut = useUpdateStagePreference(sessionId);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<StageNodeData | ZoneNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Use prop topology if provided (e.g. in tests), otherwise use hook data
+  const topo = topoProp ?? topoFromHook;
 
   const stageControls = (
     (session?.preferences as Record<string, unknown> | undefined)
@@ -166,8 +209,14 @@ export function GraphTopology({ sessionId }: Props) {
     [updateMut],
   );
 
+  // TODO: cursor-reverse-sweep animation deferred — detect backward cursor jumps via
+  // useRef(previousCursor) and apply a CSS class for 600ms. The backtrack edges
+  // themselves convey the backward motion adequately for now.
+
   useEffect(() => {
     if (!topo) return;
+
+    const compacted = compactEdges(topo.edges);
 
     layoutWithElk(topo)
       .then((laid) => {
@@ -196,8 +245,8 @@ export function GraphTopology({ sessionId }: Props) {
           const zoneMembers = topo.nodes.filter((n) => n.zone === zone);
           for (const n of zoneMembers) {
             const elkChild = elkGroup.children?.find((c) => c.id === n.id);
-            const relX = (elkChild?.x ?? 0) - 0; // ELK already returns relative coords for children
-            const relY = (elkChild?.y ?? 0) - 0;
+            const relX = elkChild?.x ?? 0;
+            const relY = elkChild?.y ?? 0;
             newNodes.push({
               id: n.id,
               type: "stage",
@@ -211,28 +260,17 @@ export function GraphTopology({ sessionId }: Props) {
                   n.type === "stage"
                     ? (level: ControlLevel) => handleControlChange(n.id, level)
                     : undefined,
+                isActive: topo.cursor?.node_id === n.id,
+                onStageClick,
               } as StageNodeData,
             } as Node<StageNodeData>);
           }
         }
 
-        // Add meta nodes (suppressed — render tiny and faded)
-        // Actually skip __start__, __end__, transition from rendering
-        // to avoid the "hairball" look. They're used for layout hints only.
+        // Meta nodes suppressed — used for layout hints only.
 
         setNodes(newNodes);
-
-        const compacted = compactEdges(topo.edges);
-        setEdges(
-          compacted.map((e, i) => ({
-            id: `e${i}`,
-            source: e.from,
-            target: e.to,
-            animated: e.kind === "backtrack",
-            style: e.kind === "backtrack" ? { stroke: "#faad14" } : undefined,
-            label: e.reason ?? undefined,
-          })),
-        );
+        setEdges(buildRfEdges(compacted));
       })
       .catch(() => {
         // Fallback: flat layout without zone grouping
@@ -249,23 +287,16 @@ export function GraphTopology({ sessionId }: Props) {
                 n.type === "stage"
                   ? (level: ControlLevel) => handleControlChange(n.id, level)
                   : undefined,
+              isActive: topo.cursor?.node_id === n.id,
+              onStageClick,
             },
           })),
         );
-        const compacted = compactEdges(topo.edges);
-        setEdges(
-          compacted.map((e, i) => ({
-            id: `e${i}`,
-            source: e.from,
-            target: e.to,
-            animated: e.kind === "backtrack",
-            style: e.kind === "backtrack" ? { stroke: "#faad14" } : undefined,
-          })),
-        );
+        setEdges(buildRfEdges(compacted));
       });
-  }, [topo, stageControls, handleControlChange, setNodes, setEdges]);
+  }, [topo, stageControls, handleControlChange, setNodes, setEdges, onStageClick]);
 
-  if (isLoading) return <Skeleton active />;
+  if (!topoProp && isLoading) return <Skeleton active />;
   if (!topo) return <Empty description="No topology" />;
 
   return (

@@ -43,10 +43,13 @@ export interface GraphEdge {
   to: string;
   kind: GraphEdgeKind;
   reason?: string | null;
+  attempts?: number | null;
 }
 
 export interface GraphCursor {
   node_id: string;
+  internal_node?: string | null;
+  meeting_node?: string | null;
   agent: string | null;
   started_at: string | null;
 }
