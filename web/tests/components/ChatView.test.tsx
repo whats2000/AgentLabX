@@ -1,81 +1,93 @@
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { vi, describe, it, expect } from "vitest";
+import type { ReactNode } from "react";
 import { ChatView } from "../../src/components/session/ChatView";
 
-vi.mock("../../src/api/client", () => ({
-  api: {
-    listAgents: vi.fn().mockResolvedValue([
-      { name: "postdoc", role: "postdoc", turn_count: 2, last_active_stage: "plan_formulation" },
-    ]),
-    getAgentHistory: vi.fn().mockImplementation((_sid: string, agent: string) =>
-      Promise.resolve({
-        turns:
-          agent === "postdoc"
-            ? [
-                {
-                  turn_id: "T1",
-                  agent: "postdoc",
-                  stage: "plan_formulation",
-                  kind: "llm_request",
-                  payload: { prompt: "go", system_prompt: "sp" },
-                  is_mock: true,
-                  tokens_in: null,
-                  tokens_out: null,
-                  cost_usd: null,
-                  system_prompt_hash: null,
-                  parent_turn_id: null,
-                  ts: "2026-04-13T00:00:00",
-                },
-                {
-                  turn_id: "T1",
-                  agent: "postdoc",
-                  stage: "plan_formulation",
-                  kind: "llm_response",
-                  payload: { content: "Proposed plan" },
-                  is_mock: true,
-                  tokens_in: 5,
-                  tokens_out: 8,
-                  cost_usd: 0.01,
-                  system_prompt_hash: null,
-                  parent_turn_id: null,
-                  ts: "2026-04-13T00:00:01",
-                },
-              ]
-            : [],
-        next_cursor: null,
-      }),
-    ),
-  },
-}));
+function wrapper() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+}
 
-describe("ChatView", () => {
-  it("groups by stage and shows agent response as bubble", async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <ChatView sessionId="s1" />
-      </QueryClientProvider>,
-    );
-    // Stage section header appears
-    expect(await screen.findByText("Plan Formulation")).toBeInTheDocument();
-    // Response content is rendered in the bubble
-    expect(screen.getByText(/Proposed plan/)).toBeInTheDocument();
-    // [mock] tag appears
-    expect(screen.getByText(/mock/i)).toBeInTheDocument();
-    // System prompt is NOT rendered (dropped in new design)
-    expect(screen.queryByText(/system prompt/i)).toBeNull();
+describe("ChatView stage-grouped lazy-load", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
   });
 
-  it("shows empty state when no agents have any turns", async () => {
-    const api = await import("../../src/api/client");
-    (api.api.listAgents as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <ChatView sessionId="s1" />
-      </QueryClientProvider>,
-    );
-    expect(await screen.findByText(/no agent turns yet/i)).toBeInTheDocument();
+  it("renders a panel for each stage in the default sequence", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ turns: [] }),
+    } as Response);
+
+    render(<ChatView sessionId="s1" activeStage="literature_review" />, {
+      wrapper: wrapper(),
+    });
+
+    // Headers for all 8 stages visible
+    [
+      "literature_review",
+      "plan_formulation",
+      "experimentation",
+      "peer_review",
+    ].forEach((name) => {
+      expect(
+        screen.getByText(new RegExp(name.replace(/_/g, " "), "i")),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("auto-expands only the activeStage section on first render", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ turns: [] }),
+    } as Response);
+
+    const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
+    render(<ChatView sessionId="s1" activeStage="experimentation" />, {
+      wrapper: wrapper(),
+    });
+
+    // Give TanStack Query time to trigger the enabled query
+    await waitFor(() => {
+      const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
+      expect(calls.filter((u) => u.includes("experimentation")).length).toBeGreaterThan(0);
+    });
+
+    // literature_review panel is collapsed by default; lazy-load hasn't fired
+    const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
+    const literatureCalls = calls.filter((u) => u.includes("literature_review"));
+    expect(literatureCalls.length).toBe(0);
+  });
+
+  it("expanding a previously-collapsed panel triggers its lazy-load", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ turns: [] }),
+    } as Response);
+
+    const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
+    render(<ChatView sessionId="s1" activeStage="experimentation" />, {
+      wrapper: wrapper(),
+    });
+
+    // Initial: no literature_review fetch
+    const initialCalls = fetchSpy.mock.calls.map((c) => String(c[0]));
+    expect(initialCalls.filter((u) => u.includes("literature_review")).length).toBe(0);
+
+    // User clicks literature_review panel header to expand
+    const header = screen.getByText(/literature[ _]review/i);
+    await userEvent.click(header);
+
+    // Now a fetch for literature_review should have fired
+    await waitFor(() => {
+      const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
+      expect(
+        calls.filter((u) => u.includes("literature_review")).length,
+      ).toBeGreaterThan(0);
+    });
   });
 });

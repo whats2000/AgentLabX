@@ -1,39 +1,46 @@
-import { Card, Typography } from "antd";
-import { AgentTurn } from "./AgentTurn";
-import type { AgentTurnRow } from "../../types/domain";
+import { Empty, Spin } from "antd";
+import { useAgentHistory } from "../../hooks/useAgentHistory";
+import { AgentTurnBubble } from "./AgentTurnBubble";
+// TODO(T9): deduplicate AgentTurn vs AgentTurnBubble — using AgentTurnBubble here
+// as it renders better in the Collapse.Panel context (avatar + bubble layout).
 
-const { Text } = Typography;
-
-function prettyStage(s: string): string {
-  return s.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+interface Props {
+  sessionId: string;
+  stageName: string;
+  isExpanded: boolean;
 }
 
-export function StageGroup({
-  stage,
-  turns,
-  mode,
-}: {
-  stage: string;
-  turns: AgentTurnRow[];
-  mode: "clean" | "lab_scene";
-}) {
-  // Group turns by turn_id within this stage
-  const byTurn: Record<string, AgentTurnRow[]> = {};
+export function StageGroup({ sessionId, stageName, isExpanded }: Props) {
+  // Only fetch when expanded — `enabled` flag gates the query.
+  const { data, isLoading } = useAgentHistory(sessionId, {
+    stage: stageName,
+    enabled: isExpanded,
+  });
+
+  // Belt + suspenders: ChatView also gates children via conditional render,
+  // but guard here too in case StageGroup is used standalone.
+  if (!isExpanded) return null;
+
+  if (isLoading) return <Spin size="small" />;
+
+  const turns = data?.turns ?? [];
+
+  if (turns.length === 0) {
+    return <Empty description="No turns yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  }
+
+  // Group rows by turn_id so AgentTurnBubble gets all rows for one turn.
+  const byTurn: Record<string, typeof turns> = {};
   for (const t of turns) {
     (byTurn[t.turn_id] ??= []).push(t);
   }
+  const orderedTurnIds = Array.from(new Set(turns.map((t) => t.turn_id)));
 
   return (
-    <Card size="small" style={{ marginBottom: 12 }}>
-      <Text strong>{prettyStage(stage)}</Text>
-      <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>
-        {Object.keys(byTurn).length} turns
-      </Text>
-      <div style={{ marginTop: 8 }}>
-        {Object.entries(byTurn).map(([turnId, rows]) => (
-          <AgentTurn key={turnId} turnId={turnId} rows={rows} mode={mode} />
-        ))}
-      </div>
-    </Card>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {orderedTurnIds.map((tid) => (
+        <AgentTurnBubble key={tid} rows={byTurn[tid]} />
+      ))}
+    </div>
   );
 }
