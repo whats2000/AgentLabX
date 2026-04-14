@@ -49,8 +49,11 @@ class LiteLLMProvider(BaseLLMProvider):
         temperature: float = 0.0,
     ) -> LLMResponse:
         if model is None:
-            msg = "model must be a non-None string for LiteLLMProvider"
-            raise ValueError(msg)
+            raise ValueError(
+                "model must be a non-None string for LiteLLMProvider. "
+                "Set AGENTLABX_LLM__DEFAULT_MODEL env var (e.g. 'gemini/gemini-2.5-flash') "
+                "or pass config_overrides={'llm': {'default_model': '...'}} when creating the session."
+            )
         messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

@@ -247,6 +247,7 @@ class PipelineExecutor:
                 llm_provider=self.llm_provider,
                 pi_agent_config=pi_config,
                 event_bus=event_bus,
+                model=resolved_model,
             )
 
         builder = PipelineBuilder(

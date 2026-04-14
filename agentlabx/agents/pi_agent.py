@@ -133,7 +133,7 @@ class PIAgent:
     def __init__(
         self,
         llm_provider: BaseLLMProvider | None = None,
-        model: str = "claude-sonnet-4-6",
+        model: str | None = None,
         confidence_threshold: float | None = None,
         pi_agent_config: AgentConfig | None = None,
         event_bus: EventBus | None = None,
