@@ -413,6 +413,23 @@ async def get_session_requests(session_id: str, request: Request):
     }
 
 
+@router.get("/{session_id}/stage_plans/{stage_name}")
+async def get_stage_plans(session_id: str, stage_name: str, request: Request):
+    """Return the versioned StagePlan history for a stage within a session.
+
+    Response: {"stage_name": "<stage>", "plans": [<StagePlan>, ...]}
+    The plans list is oldest→newest; the last entry is the latest plan.
+    """
+    context = request.app.state.context
+    try:
+        context.session_manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    state = await _require_state(request, session_id)
+    stage_plans = (state.get("stage_plans") or {}).get(stage_name, [])
+    return {"stage_name": stage_name, "plans": stage_plans}
+
+
 @router.get("/{session_id}/experiments")
 async def get_session_experiments(session_id: str, request: Request):
     """Return experiment run results and the attempt log."""

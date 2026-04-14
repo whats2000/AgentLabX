@@ -322,3 +322,9 @@ class TestStageRunnerEvents:
         runner = StageRunner(SuccessStage(), context=ctx)
         result = await runner.run(initial_state)
         assert result["current_stage"] == "success_stage"
+
+    async def test_runner_clears_internal_node_cursor_on_exit(self, initial_state):
+        """StageRunner sets current_stage_internal_node=None after subgraph exits."""
+        runner = StageRunner(SuccessStage())
+        update = await runner.run(initial_state)
+        assert update["current_stage_internal_node"] is None

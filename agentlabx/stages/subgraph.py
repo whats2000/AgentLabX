@@ -56,11 +56,13 @@ class StageSubgraphBuilder:
         builder: StateGraph = StateGraph(_SubgraphState)
 
         def enter_node(s: _SubgraphState) -> dict[str, Any]:
+            s["state"]["current_stage_internal_node"] = "enter"
             # Placeholder — reserved for memory hydration on re-entry (Plan 7C+).
             # Feedback pickup is handled in stage_plan, not here.
             return {}
 
         async def plan_node(s: _SubgraphState) -> dict[str, Any]:
+            s["state"]["current_stage_internal_node"] = "stage_plan"
             feedback = s["state"].get("backtrack_feedback")
             plan = stage.build_plan(s["state"], feedback=feedback)
             # Persist the plan on state for observability (versioned per entry).
@@ -86,18 +88,21 @@ class StageSubgraphBuilder:
             return "work"
 
         async def work_node(s: _SubgraphState) -> dict[str, Any]:
+            s["state"]["current_stage_internal_node"] = "work"
             execution = await stage.execute_plan(
                 s["state"], s["plan"], s["context"]
             )
             return {"execution": execution}
 
         def evaluate_node(s: _SubgraphState) -> dict[str, Any]:
+            s["state"]["current_stage_internal_node"] = "evaluate"
             evaluation = stage.evaluate(
                 s["state"], plan=s["plan"], execution=s["execution"]
             )
             return {"evaluation": evaluation}
 
         def decide_node(s: _SubgraphState) -> dict[str, Any]:
+            s["state"]["current_stage_internal_node"] = "decide"
             execution = s.get("execution")
             evaluation = s.get("evaluation")
             if execution is None:

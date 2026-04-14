@@ -182,6 +182,9 @@ class StageRunner:
         update["stage_iterations"] = stage_iters
         update["total_iterations"] = state.get("total_iterations", 0) + 1
 
+        # Clear internal-node cursor now that the subgraph has exited.
+        update["current_stage_internal_node"] = None
+
         # Call on_exit
         self.stage.on_exit(state)
         return update

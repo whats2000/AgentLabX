@@ -253,6 +253,16 @@ class PipelineState(TypedDict):
     # and agent_memory invariant pattern.
     last_stage_status: Literal["done", "backtrack", "negative_result", "request"] | None
 
+    # Subgraph-internal cursor (Plan 7D) — populated by StageSubgraphBuilder
+    # nodes via state mutation; cleared by StageRunner on stage exit.
+    # Consumed by graph_mapper to expose via /graph endpoint cursor.
+    #
+    # Single-writer invariant: only subgraph nodes + StageRunner write these.
+    # Sequential stage execution makes "most recent" unambiguous. Matches
+    # the agent_memory / stage_plans / last_stage_status pattern.
+    current_stage_internal_node: str | None
+    current_meeting_node: str | None
+
 
 def apply_partial_rollback(
     state: PipelineState, *, target: str, feedback: str | None
@@ -344,4 +354,6 @@ def create_initial_state(
         backtrack_feedback=None,
         stage_plans={},
         last_stage_status=None,
+        current_stage_internal_node=None,
+        current_meeting_node=None,
     )

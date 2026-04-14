@@ -361,3 +361,9 @@ def test_initial_state_has_stage_plans_key():
         session_id="s1", user_id="u1", research_topic="t"
     )
     assert state["stage_plans"] == {}
+
+
+def test_initial_state_has_subgraph_cursor_fields():
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="t")
+    assert state["current_stage_internal_node"] is None
+    assert state["current_meeting_node"] is None

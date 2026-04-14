@@ -155,3 +155,60 @@ def test_graph_mapper_surfaces_backtrack_attempts_on_edges(
     assert backtrack_edges, "expected a backtrack edge to be surfaced"
     assert backtrack_edges[0].get("attempts") == 2
     assert backtrack_edges[0].get("kind") == "backtrack"
+
+
+@pytest.fixture
+def registry_fixture():
+    from agentlabx.core.registry import PluginRegistry
+    from agentlabx.plugins._builtin import register_builtin_plugins
+    r = PluginRegistry()
+    register_builtin_plugins(r)
+    return r
+
+
+def test_graph_mapper_includes_cursor_internal_node(compiled_graph_fixture):
+    """cursor.internal_node populated from state."""
+    from agentlabx.core.state import create_initial_state
+
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="t")
+    state["current_stage"] = "literature_review"
+    state["current_stage_internal_node"] = "work"
+    topology = build_topology(compiled_graph_fixture, state)
+    assert topology["cursor"]["internal_node"] == "work"
+    assert topology["cursor"]["meeting_node"] is None
+
+
+def test_graph_mapper_synthesizes_backtrack_edges(compiled_graph_fixture):
+    """state['backtrack_attempts'] → edges with kind=backtrack."""
+    from agentlabx.core.state import create_initial_state
+
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="t")
+    state["backtrack_attempts"] = {
+        "experimentation->literature_review": 2,
+        "plan_formulation->experimentation": 1,
+    }
+    topology = build_topology(compiled_graph_fixture, state)
+    bt_edges = [e for e in topology["edges"] if e.get("kind") == "backtrack"]
+    assert len(bt_edges) == 2
+    assert {(e["from"], e["to"], e["attempts"]) for e in bt_edges} == {
+        ("experimentation", "literature_review", 2),
+        ("plan_formulation", "experimentation", 1),
+    }
+
+
+def test_graph_mapper_extracts_active_stage_subgraph(
+    compiled_graph_fixture, registry_fixture
+):
+    """subgraphs[] includes active stage's compiled subgraph when registry given."""
+    from agentlabx.core.state import create_initial_state
+
+    state = create_initial_state(session_id="s1", user_id="u1", research_topic="t")
+    state["current_stage"] = "literature_review"
+    topology = build_topology(compiled_graph_fixture, state, registry=registry_fixture)
+    stage_sub = next(
+        (s for s in topology["subgraphs"] if s["id"] == "literature_review"),
+        None,
+    )
+    assert stage_sub is not None
+    assert stage_sub["kind"] == "stage_subgraph"
+    assert len(stage_sub["nodes"]) >= 5  # enter, stage_plan, work, evaluate, decide

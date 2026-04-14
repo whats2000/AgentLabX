@@ -132,7 +132,13 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
 
     cursor: dict[str, Any] | None = None
     if current:
-        cursor = {"node_id": current, "agent": None, "started_at": None}
+        cursor = {
+            "node_id": current,
+            "internal_node": state.get("current_stage_internal_node"),
+            "meeting_node": state.get("current_meeting_node"),
+            "agent": None,  # reserved for future use
+            "started_at": None,
+        }
 
     # Invocable-only stages (e.g., lab_meeting, §5.5) are registered but not
     # wired into the top-level graph. Surface them here so the frontend can
@@ -150,6 +156,41 @@ def build_topology(compiled_graph, state: dict, registry=None) -> dict[str, Any]
                     "nodes": [],
                     "edges": [],
                 })
+
+    # Enrich subgraphs[] with the active stage's compiled subgraph topology.
+    # Only for non-invocable stages (invocable_only stages have their own entry
+    # above). Fail-soft: missing subgraph data is survivable.
+    if registry is not None and current:
+        try:
+            from agentlabx.core.registry import PluginType
+            cls = registry.resolve(PluginType.STAGE, current)
+            if not getattr(cls, "invocable_only", False):
+                from agentlabx.stages.subgraph import StageSubgraphBuilder
+
+                stage_instance = cls()
+                compiled = StageSubgraphBuilder().compile(stage_instance)
+                sub_g = compiled.get_graph()
+                # sub_g.nodes is a dict; keys are node id strings
+                sub_nodes = [
+                    {"id": nid, "type": "internal"}
+                    for nid in sub_g.nodes
+                ]
+                # sub_g.edges is a plain list of Edge namedtuples with .source / .target
+                sub_edges = [
+                    {"from": e.source, "to": e.target}
+                    for e in sub_g.edges
+                    if hasattr(e, "source") and hasattr(e, "target")
+                ]
+                subgraphs.append({
+                    "id": current,
+                    "kind": "stage_subgraph",
+                    "label": current,
+                    "nodes": sub_nodes,
+                    "edges": sub_edges,
+                })
+        except Exception:
+            # Fail soft — missing subgraph data is survivable; frontend handles empty.
+            pass
 
     return {"nodes": nodes, "edges": edges, "cursor": cursor, "subgraphs": subgraphs}
 
