@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -28,6 +28,7 @@ type StageNodeData = {
   control?: ControlLevel;
   onControlChange?: (level: ControlLevel) => void;
   isActive?: boolean;
+  isSweeping?: boolean;
   onStageClick?: (stageId: string) => void;
 };
 
@@ -40,6 +41,7 @@ const nodeTypes = {
       control={p.data.control}
       onControlChange={p.data.onControlChange}
       isActive={p.data.isActive}
+      isSweeping={p.data.isSweeping}
       onStageClick={p.data.onStageClick}
     />
   ),
@@ -209,9 +211,35 @@ export function GraphTopology({ sessionId, topology: topoProp, onStageClick }: P
     [updateMut],
   );
 
-  // TODO: cursor-reverse-sweep animation deferred — detect backward cursor jumps via
-  // useRef(previousCursor) and apply a CSS class for 600ms. The backtrack edges
-  // themselves convey the backward motion adequately for now.
+  // Reverse-sweep animation: orange glow on intermediate stages when cursor jumps backward.
+  const previousCursorRef = useRef<string | null>(null);
+  const [sweepingNodes, setSweepingNodes] = useState<Set<string>>(new Set());
+
+  const currentCursor = topo?.cursor?.node_id ?? null;
+  const defaultSequence = (topo?.nodes ?? [])
+    .filter((n) => n.type === "stage")
+    .map((n) => n.id);
+
+  useEffect(() => {
+    const prev = previousCursorRef.current;
+    const curr = currentCursor;
+    if (!prev || !curr || prev === curr) {
+      previousCursorRef.current = curr;
+      return;
+    }
+    const prevIdx = defaultSequence.indexOf(prev);
+    const currIdx = defaultSequence.indexOf(curr);
+    if (prevIdx > currIdx && currIdx >= 0) {
+      // Backward jump — sweep the stages between new cursor and old cursor (inclusive of old pos)
+      const intermediateIds = defaultSequence.slice(currIdx + 1, prevIdx + 1);
+      setSweepingNodes(new Set(intermediateIds));
+      const timer = setTimeout(() => setSweepingNodes(new Set()), 600);
+      previousCursorRef.current = curr;
+      return () => clearTimeout(timer);
+    }
+    previousCursorRef.current = curr;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCursor, defaultSequence.join("|")]);
 
   useEffect(() => {
     if (!topo) return;
@@ -261,6 +289,7 @@ export function GraphTopology({ sessionId, topology: topoProp, onStageClick }: P
                     ? (level: ControlLevel) => handleControlChange(n.id, level)
                     : undefined,
                 isActive: topo.cursor?.node_id === n.id,
+                isSweeping: sweepingNodes.has(n.id),
                 onStageClick,
               } as StageNodeData,
             } as Node<StageNodeData>);
@@ -288,13 +317,14 @@ export function GraphTopology({ sessionId, topology: topoProp, onStageClick }: P
                   ? (level: ControlLevel) => handleControlChange(n.id, level)
                   : undefined,
               isActive: topo.cursor?.node_id === n.id,
+              isSweeping: sweepingNodes.has(n.id),
               onStageClick,
             },
           })),
         );
         setEdges(buildRfEdges(compacted));
       });
-  }, [topo, stageControls, handleControlChange, setNodes, setEdges, onStageClick]);
+  }, [topo, stageControls, handleControlChange, setNodes, setEdges, onStageClick, sweepingNodes]);
 
   if (!topoProp && isLoading) return <Skeleton active />;
   if (!topo) return <Empty description="No topology" />;

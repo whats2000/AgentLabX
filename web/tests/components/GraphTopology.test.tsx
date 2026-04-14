@@ -263,6 +263,69 @@ describe("GraphTopology backtrack rendering", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Reverse-sweep animation on backward cursor jump
+// ---------------------------------------------------------------------------
+describe("GraphTopology cursor-reverse-sweep", () => {
+  it("applies cursor-reverse-sweep class to intermediate stages on backward cursor jump", async () => {
+    const baseNodes: TopoType["nodes"] = [
+      { id: "lit", type: "stage", label: "Lit", zone: "discovery",
+        status: "complete", iteration_count: 1, skipped: false },
+      { id: "plan", type: "stage", label: "Plan", zone: "discovery",
+        status: "complete", iteration_count: 1, skipped: false },
+      { id: "exp", type: "stage", label: "Exp", zone: "implementation",
+        status: "active", iteration_count: 1, skipped: false },
+    ];
+    const baseEdges: TopoType["edges"] = [
+      { from: "lit", to: "plan", kind: "sequential" },
+      { from: "plan", to: "exp", kind: "sequential" },
+    ];
+
+    const topology1: TopoType = {
+      nodes: baseNodes,
+      edges: baseEdges,
+      cursor: { node_id: "exp", internal_node: null, meeting_node: null, agent: null, started_at: null },
+      subgraphs: [],
+    };
+
+    const { container, rerender } = render(
+      <QueryClientProvider client={makeQc()}>
+        <GraphTopology sessionId="s1" topology={topology1} />
+      </QueryClientProvider>,
+    );
+
+    // Wait for initial render with cursor at "exp"
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='stage-node-exp']")).not.toBeNull();
+    });
+
+    // Cursor jumps back to "lit" (backtrack: exp → lit)
+    const topology2: TopoType = {
+      ...topology1,
+      cursor: { ...topology1.cursor, node_id: "lit" },
+    };
+    rerender(
+      <QueryClientProvider client={makeQc()}>
+        <GraphTopology sessionId="s1" topology={topology2} />
+      </QueryClientProvider>,
+    );
+
+    // Intermediate nodes (plan, exp) should have the sweep class
+    await waitFor(() => {
+      const sweeping = container.querySelectorAll(".cursor-reverse-sweep");
+      expect(sweeping.length).toBeGreaterThan(0);
+      // "plan" and "exp" are between "lit" (new pos) and "exp" (old pos)
+      const ids = Array.from(sweeping).map((el) => el.getAttribute("data-testid"));
+      expect(ids).toContain("stage-node-plan");
+      expect(ids).toContain("stage-node-exp");
+    });
+
+    // "lit" itself should NOT be sweeping (it's the new cursor position)
+    const litNode = container.querySelector("[data-testid='stage-node-lit']");
+    expect(litNode?.classList.contains("cursor-reverse-sweep")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Active-stage click affordance
 // ---------------------------------------------------------------------------
 describe("GraphTopology active-stage click", () => {

@@ -17,10 +17,11 @@ interface Props {
   control?: ControlLevel;
   onControlChange?: (level: ControlLevel) => void;
   isActive?: boolean;
+  isSweeping?: boolean;
   onStageClick?: (stageId: string) => void;
 }
 
-export function StageNode({ node, control, onControlChange, isActive, onStageClick }: Props) {
+export function StageNode({ node, control, onControlChange, isActive, isSweeping, onStageClick }: Props) {
   const opacity = node.skipped ? 0.4 : 1.0;
   const clickable = isActive && onStageClick !== undefined;
 
@@ -29,7 +30,10 @@ export function StageNode({ node, control, onControlChange, isActive, onStageCli
       data-testid={`stage-node-${node.id}`}
       data-status={node.status}
       onClick={clickable ? () => onStageClick(node.id) : undefined}
-      className={isActive ? "stage-node-active" : undefined}
+      className={[
+        isActive ? "stage-node-active" : "",
+        isSweeping ? "cursor-reverse-sweep" : "",
+      ].filter(Boolean).join(" ") || undefined}
       style={{
         padding: 10,
         borderRadius: 8,
