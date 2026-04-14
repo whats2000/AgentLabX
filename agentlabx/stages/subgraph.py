@@ -23,12 +23,19 @@ from agentlabx.stages.base import (
 )
 
 
-async def _emit_internal_node_changed(s: "_SubgraphState", node_name: str) -> None:
+async def _emit_internal_node_changed(
+    s: "_SubgraphState", node_name: str, *, stage_name: str
+) -> None:
     """Emit STAGE_INTERNAL_NODE_CHANGED event when a subgraph node activates.
 
     Plan 7E A1: drives the live cursor ring in StageSubgraphDrawer. Without
     this, LangGraph's in-place state mutations in node bodies don't stream
     to the frontend (subgraph runs atomically from the parent's perspective).
+
+    ``stage_name`` is passed explicitly via closure from
+    ``StageSubgraphBuilder.compile`` (fixes B4: at subgraph entry
+    ``state["current_stage"]`` still holds the previous stage's name or is
+    empty for the first stage).
     """
     ctx = s.get("context")
     bus = ctx.event_bus if ctx is not None else None
@@ -42,10 +49,10 @@ async def _emit_internal_node_changed(s: "_SubgraphState", node_name: str) -> No
             type=EventTypes.STAGE_INTERNAL_NODE_CHANGED,
             data={
                 "internal_node": node_name,
-                "stage": s["state"].get("current_stage"),
+                "stage": stage_name,
                 "session_id": s["state"].get("session_id"),
             },
-            source=s["state"].get("current_stage", "subgraph"),
+            source=stage_name,
         )
     )
 
@@ -85,14 +92,14 @@ class StageSubgraphBuilder:
 
         async def enter_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "enter"
-            await _emit_internal_node_changed(s, "enter")
+            await _emit_internal_node_changed(s, "enter", stage_name=stage.name)
             # Placeholder — reserved for memory hydration on re-entry (Plan 7C+).
             # Feedback pickup is handled in stage_plan, not here.
             return {"current_stage_internal_node": "enter"}
 
         async def plan_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "stage_plan"
-            await _emit_internal_node_changed(s, "stage_plan")
+            await _emit_internal_node_changed(s, "stage_plan", stage_name=stage.name)
             feedback = s["state"].get("backtrack_feedback")
             plan = stage.build_plan(s["state"], feedback=feedback)
             # Persist the plan on state for observability (versioned per entry).
@@ -119,7 +126,7 @@ class StageSubgraphBuilder:
 
         async def work_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "work"
-            await _emit_internal_node_changed(s, "work")
+            await _emit_internal_node_changed(s, "work", stage_name=stage.name)
             execution = await stage.execute_plan(
                 s["state"], s["plan"], s["context"]
             )
@@ -127,7 +134,7 @@ class StageSubgraphBuilder:
 
         async def evaluate_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "evaluate"
-            await _emit_internal_node_changed(s, "evaluate")
+            await _emit_internal_node_changed(s, "evaluate", stage_name=stage.name)
             evaluation = stage.evaluate(
                 s["state"], plan=s["plan"], execution=s["execution"]
             )
@@ -135,7 +142,7 @@ class StageSubgraphBuilder:
 
         async def decide_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "decide"
-            await _emit_internal_node_changed(s, "decide")
+            await _emit_internal_node_changed(s, "decide", stage_name=stage.name)
             execution = s.get("execution")
             evaluation = s.get("evaluation")
             if execution is None:
