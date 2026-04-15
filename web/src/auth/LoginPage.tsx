@@ -28,8 +28,12 @@ export function LoginPage(): React.JSX.Element {
       } else {
         await api.login(email, passphrase)
       }
-      refresh()
-      nav("/settings")
+      const me = await refresh()
+      if (me) {
+        nav("/settings")
+      } else {
+        setError("login succeeded but session was not established; please try again")
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }

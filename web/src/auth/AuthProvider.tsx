@@ -6,7 +6,7 @@ import { api, type IdentityDto } from "@/api/client"
 interface AuthContextValue {
   identity: IdentityDto | null
   isLoading: boolean
-  refresh: () => void
+  refresh: () => Promise<IdentityDto | null>
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null)
@@ -25,7 +25,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const value: AuthContextValue = {
     identity: q.data ?? null,
     isLoading: q.isLoading,
-    refresh: () => { void q.refetch() },
+    refresh: async () => {
+      const { data } = await q.refetch()
+      return data ?? null
+    },
   }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -31,9 +31,10 @@ export function Layout(): React.JSX.Element {
           <Button
             variant="outline"
             onClick={() => {
-              void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).then(
-                () => { refresh() }
-              )
+              void (async () => {
+                await fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+                await refresh()
+              })()
             }}
           >
             Log out
