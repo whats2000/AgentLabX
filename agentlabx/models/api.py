@@ -5,17 +5,19 @@ from pydantic import BaseModel, Field
 
 class RegisterRequest(BaseModel):  # type: ignore[explicit-any]
     display_name: str = Field(min_length=1, max_length=128)
+    email: str = Field(min_length=3, max_length=320)
     passphrase: str = Field(min_length=8, max_length=256)
 
 
 class LoginRequest(BaseModel):  # type: ignore[explicit-any]
-    identity_id: str
+    email: str
     passphrase: str
 
 
 class IdentityResponse(BaseModel):  # type: ignore[explicit-any]
     id: str
     display_name: str
+    email: str
     auther_name: str
     capabilities: list[str]
 
@@ -32,6 +34,7 @@ class StoreCredentialRequest(BaseModel):  # type: ignore[explicit-any]
 class AdminUserResponse(BaseModel):  # type: ignore[explicit-any]
     id: str
     display_name: str
+    email: str
     auther_name: str
     capabilities: list[str]
 

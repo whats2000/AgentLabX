@@ -13,6 +13,7 @@ class Identity:
     id: str
     auther_name: str
     display_name: str
+    email: str
     capabilities: frozenset[str]
 
 

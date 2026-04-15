@@ -137,6 +137,7 @@ async def list_users(
                 AdminUserResponse(
                     id=u.id,
                     display_name=u.display_name,
+                    email=u.email,
                     auther_name=u.auther_name,
                     capabilities=sorted(caps),
                 )
@@ -153,11 +154,12 @@ async def create_user(
     db: DatabaseHandle = request.state.db
     auther = DefaultAuther(db)
     identity = await auther.register(
-        display_name=payload.display_name, passphrase=payload.passphrase
+        display_name=payload.display_name, email=payload.email, passphrase=payload.passphrase
     )
     return AdminUserResponse(
         id=identity.id,
         display_name=identity.display_name,
+        email=identity.email,
         auther_name=identity.auther_name,
         capabilities=sorted(identity.capabilities),
     )

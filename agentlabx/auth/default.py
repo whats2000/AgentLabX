@@ -20,14 +20,20 @@ class DefaultAuther:
     def __init__(self, db: DatabaseHandle) -> None:
         self._db = db
 
-    async def register(self, *, display_name: str, passphrase: str) -> Identity:
+    async def register(self, *, display_name: str, email: str, passphrase: str) -> Identity:
+        normalized_email = email.strip().lower()
         user_id = str(uuid.uuid4())
         digest = hash_passphrase(passphrase)
         async with self._db.session() as session:
             user_count = (
                 await session.execute(select(User).with_only_columns(User.id))
             ).all()
-            user = User(id=user_id, display_name=display_name, auther_name=self.name)
+            user = User(
+                id=user_id,
+                display_name=display_name,
+                email=normalized_email,
+                auther_name=self.name,
+            )
             session.add(user)
             ciphertext = digest.encode("utf-8")
             session.add(
@@ -42,24 +48,26 @@ class DefaultAuther:
             id=user_id,
             auther_name=self.name,
             display_name=display_name,
+            email=normalized_email,
             capabilities=frozenset(caps),
         )
 
     async def authenticate(self, credentials: dict[str, str]) -> Identity:
-        identity_id = credentials.get("identity_id")
+        email = credentials.get("email")
         passphrase = credentials.get("passphrase")
-        if identity_id is None or passphrase is None:
-            raise AuthError("identity_id and passphrase required")
+        if email is None or passphrase is None:
+            raise AuthError("email and passphrase required")
+        normalized_email = email.strip().lower()
         async with self._db.session() as session:
             user = (
-                await session.execute(select(User).where(User.id == identity_id))
+                await session.execute(select(User).where(User.email == normalized_email))
             ).scalar_one_or_none()
             if user is None or user.auther_name != self.name:
                 raise AuthError("unknown identity")
             row = (
                 await session.execute(
                     select(UserConfig).where(
-                        UserConfig.user_id == identity_id,
+                        UserConfig.user_id == user.id,
                         UserConfig.slot == _PASSPHRASE_SLOT,
                     )
                 )
@@ -70,12 +78,13 @@ class DefaultAuther:
                 raise AuthError("wrong passphrase")
             caps = (
                 await session.execute(
-                    select(Capability.capability).where(Capability.user_id == identity_id)
+                    select(Capability.capability).where(Capability.user_id == user.id)
                 )
             ).scalars().all()
             return Identity(
                 id=user.id,
                 auther_name=user.auther_name,
                 display_name=user.display_name,
+                email=user.email,
                 capabilities=frozenset(caps),
             )

@@ -20,15 +20,20 @@ async def test_register_first_user_is_admin_and_login_works(
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post(
                 "/api/auth/register",
-                json={"display_name": "Alice", "passphrase": "hunter2xy"},
+                json={
+                    "display_name": "Alice",
+                    "email": "alice@example.com",
+                    "passphrase": "hunter2xy",
+                },
             )
             assert r.status_code == 201
             identity = r.json()
             assert "admin" in identity["capabilities"]
+            assert identity["email"] == "alice@example.com"
 
             r = await c.post(
                 "/api/auth/login",
-                json={"identity_id": identity["id"], "passphrase": "hunter2xy"},
+                json={"email": "alice@example.com", "passphrase": "hunter2xy"},
             )
             assert r.status_code == 200
             assert "agentlabx_session" in r.cookies
@@ -36,6 +41,7 @@ async def test_register_first_user_is_admin_and_login_works(
             r = await c.get("/api/auth/me")
             assert r.status_code == 200
             assert r.json()["id"] == identity["id"]
+            assert r.json()["email"] == "alice@example.com"
 
             r = await c.post("/api/auth/logout")
             assert r.status_code == 204

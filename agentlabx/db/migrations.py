@@ -5,7 +5,7 @@ from sqlalchemy import select
 from agentlabx.db.schema import AppState, Base
 from agentlabx.db.session import DatabaseHandle
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 async def apply_migrations(handle: DatabaseHandle) -> None:

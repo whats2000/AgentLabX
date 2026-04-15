@@ -23,7 +23,9 @@ async def test_authenticated_request_sees_identity(tmp_workspace: Path) -> None:
     try:
         await apply_migrations(handle)
         default = DefaultAuther(handle)
-        identity = await default.register(display_name="A", passphrase="p1234567")
+        identity = await default.register(
+            display_name="A", email="a@example.com", passphrase="p1234567"
+        )
 
         app = FastAPI()
         cfg = SessionConfig(secret=b"x" * 48, secure=False)
@@ -85,8 +87,12 @@ async def test_require_admin_rejects_non_admin(tmp_workspace: Path) -> None:
     try:
         await apply_migrations(handle)
         default = DefaultAuther(handle)
-        admin = await default.register(display_name="Admin", passphrase="p1234567")
-        normal = await default.register(display_name="Normal", passphrase="p1234567")
+        admin = await default.register(
+            display_name="Admin", email="admin@example.com", passphrase="p1234567"
+        )
+        normal = await default.register(
+            display_name="Normal", email="normal@example.com", passphrase="p1234567"
+        )
         assert "admin" in admin.capabilities
         assert "admin" not in normal.capabilities
 

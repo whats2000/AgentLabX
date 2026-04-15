@@ -26,6 +26,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     auther_name: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

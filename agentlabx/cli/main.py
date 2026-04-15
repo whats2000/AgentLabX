@@ -20,9 +20,12 @@ def cli() -> None:
 
 @cli.command("bootstrap-admin")
 @click.option("--display-name", required=True, help="Human-readable admin name.")
+@click.option("--email", required=True, help="Admin email address (used for login).")
 @click.option("--passphrase", prompt=True, hide_input=True, confirmation_prompt=True)
 @click.option("--workspace", type=click.Path(path_type=Path), default=None)
-def bootstrap_admin(display_name: str, passphrase: str, workspace: Path | None) -> None:
+def bootstrap_admin(
+    display_name: str, email: str, passphrase: str, workspace: Path | None
+) -> None:
     """Register the first identity (granted admin capability automatically)."""
 
     async def _run() -> None:
@@ -32,7 +35,7 @@ def bootstrap_admin(display_name: str, passphrase: str, workspace: Path | None) 
         try:
             await apply_migrations(handle)
             identity = await DefaultAuther(handle).register(
-                display_name=display_name, passphrase=passphrase
+                display_name=display_name, email=email, passphrase=passphrase
             )
             click.echo(f"Registered identity id={identity.id} (admin)")
         finally:

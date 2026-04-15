@@ -23,14 +23,17 @@ async def test_admin_onboarding_credential_survives_restart(
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post(
                 "/api/auth/register",
-                json={"display_name": "Admin", "passphrase": "hunter2xy"},
+                json={
+                    "display_name": "Admin",
+                    "email": "admin@example.com",
+                    "passphrase": "hunter2xy",
+                },
             )
             assert r.status_code == 201
-            admin_id = r.json()["id"]
 
             r = await c.post(
                 "/api/auth/login",
-                json={"identity_id": admin_id, "passphrase": "hunter2xy"},
+                json={"email": "admin@example.com", "passphrase": "hunter2xy"},
             )
             assert r.status_code == 200
 
@@ -48,7 +51,7 @@ async def test_admin_onboarding_credential_survives_restart(
         async with AsyncClient(transport=ASGITransport(app=app2), base_url="http://test") as c:
             r = await c.post(
                 "/api/auth/login",
-                json={"identity_id": admin_id, "passphrase": "hunter2xy"},
+                json={"email": "admin@example.com", "passphrase": "hunter2xy"},
             )
             assert r.status_code == 200
 

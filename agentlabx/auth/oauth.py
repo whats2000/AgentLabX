@@ -78,7 +78,7 @@ class OAuthAuther:
         )
 
     async def complete(
-        self, *, provider: str, device_code: str, display_name: str
+        self, *, provider: str, device_code: str, display_name: str, email: str
     ) -> Identity:
         cfg = self._providers.get(provider)
         if cfg is None:
@@ -112,11 +112,19 @@ class OAuthAuther:
                 seconds=int(token_body["expires_in"])
             )
 
+        normalized_email = email.strip().lower()
         async with self._db.session() as session:
             user_count = (
                 await session.execute(select(User).with_only_columns(User.id))
             ).all()
-            session.add(User(id=user_id, display_name=display_name, auther_name=self.name))
+            session.add(
+                User(
+                    id=user_id,
+                    display_name=display_name,
+                    email=normalized_email,
+                    auther_name=self.name,
+                )
+            )
             session.add(
                 OAuthToken(
                     user_id=user_id,
@@ -136,6 +144,7 @@ class OAuthAuther:
             id=user_id,
             auther_name=self.name,
             display_name=display_name,
+            email=normalized_email,
             capabilities=frozenset(caps),
         )
 

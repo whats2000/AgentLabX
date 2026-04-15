@@ -21,6 +21,7 @@ def _identity_response(identity: Identity) -> IdentityResponse:
     return IdentityResponse(
         id=identity.id,
         display_name=identity.display_name,
+        email=identity.email,
         auther_name=identity.auther_name,
         capabilities=sorted(identity.capabilities),
     )
@@ -31,7 +32,7 @@ async def register(payload: RegisterRequest, request: Request) -> IdentityRespon
     db: DatabaseHandle = request.state.db
     auther = DefaultAuther(db)
     identity = await auther.register(
-        display_name=payload.display_name, passphrase=payload.passphrase
+        display_name=payload.display_name, email=payload.email, passphrase=payload.passphrase
     )
     return _identity_response(identity)
 
@@ -42,7 +43,7 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     auther = DefaultAuther(db)
     try:
         identity = await auther.authenticate(
-            {"identity_id": payload.identity_id, "passphrase": payload.passphrase}
+            {"email": payload.email, "passphrase": payload.passphrase}
         )
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc

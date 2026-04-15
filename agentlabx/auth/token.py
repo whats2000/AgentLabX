@@ -79,5 +79,6 @@ class TokenAuther:
                 id=user.id,
                 auther_name=self.name,
                 display_name=user.display_name,
+                email=user.email,
                 capabilities=frozenset(caps),
             )

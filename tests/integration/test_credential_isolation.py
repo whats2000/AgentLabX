@@ -22,14 +22,18 @@ async def test_user_b_cannot_see_user_a_credentials(
             # Admin (first) creates itself and a second user.
             r = await c.post(
                 "/api/auth/register",
-                json={"display_name": "Admin", "passphrase": "admin12345"},
+                json={
+                    "display_name": "Admin",
+                    "email": "admin@example.com",
+                    "passphrase": "admin12345",
+                },
             )
             assert r.status_code == 201
             admin_id = r.json()["id"]
 
             r = await c.post(
                 "/api/auth/login",
-                json={"identity_id": admin_id, "passphrase": "admin12345"},
+                json={"email": "admin@example.com", "passphrase": "admin12345"},
             )
             assert r.status_code == 200
 
@@ -41,16 +45,21 @@ async def test_user_b_cannot_see_user_a_credentials(
 
             r = await c.post(
                 "/api/settings/admin/users",
-                json={"display_name": "Bob", "passphrase": "bob123456"},
+                json={
+                    "display_name": "Bob",
+                    "email": "bob@example.com",
+                    "passphrase": "bob123456",
+                },
             )
             assert r.status_code == 201
             bob_id = r.json()["id"]
+            assert r.json()["email"] == "bob@example.com"
 
             await c.post("/api/auth/logout")
 
             r = await c.post(
                 "/api/auth/login",
-                json={"identity_id": bob_id, "passphrase": "bob123456"},
+                json={"email": "bob@example.com", "passphrase": "bob123456"},
             )
             assert r.status_code == 200
 
@@ -73,5 +82,8 @@ async def test_user_b_cannot_see_user_a_credentials(
                 json={"capability": "admin"},
             )
             assert r.status_code == 403
+
+            # Suppress unused variable warning
+            _ = admin_id
     finally:
         await app.state.db.close()

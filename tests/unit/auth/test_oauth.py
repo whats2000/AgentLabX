@@ -96,10 +96,14 @@ async def test_complete_stores_tokens_and_returns_identity(tmp_workspace: Path) 
         )
         init = await auther.initiate(provider="demo")
         identity = await auther.complete(
-            provider="demo", device_code=init.device_code, display_name="Raj"
+            provider="demo",
+            device_code=init.device_code,
+            display_name="Raj",
+            email="raj@example.com",
         )
         assert identity.display_name == "Raj"
         assert identity.auther_name == "oauth"
+        assert identity.email == "raj@example.com"
     finally:
         await handle.close()
 

@@ -18,7 +18,9 @@ async def test_issue_and_verify(tmp_workspace: Path) -> None:
     try:
         await apply_migrations(handle)
         default = DefaultAuther(handle)
-        identity = await default.register(display_name="A", passphrase="p")
+        identity = await default.register(
+            display_name="A", email="a@example.com", passphrase="p1234567"
+        )
         token_auther = TokenAuther(handle)
         token = await token_auther.issue(identity_id=identity.id)
         assert token.startswith("ax_")
@@ -35,7 +37,9 @@ async def test_revoked_token_rejected(tmp_workspace: Path) -> None:
     try:
         await apply_migrations(handle)
         default = DefaultAuther(handle)
-        identity = await default.register(display_name="A", passphrase="p")
+        identity = await default.register(
+            display_name="A", email="a@example.com", passphrase="p1234567"
+        )
         token_auther = TokenAuther(handle)
         token = await token_auther.issue(identity_id=identity.id)
         await token_auther.revoke(token)

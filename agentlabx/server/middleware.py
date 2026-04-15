@@ -75,5 +75,6 @@ async def _load_identity_for_session(db: DatabaseHandle, session_id: str) -> Ide
             id=user.id,
             auther_name=user.auther_name,
             display_name=user.display_name,
+            email=user.email,
             capabilities=frozenset(caps),
         )
