@@ -12,7 +12,10 @@ export function Layout(): React.JSX.Element {
   return (
     <div className="flex h-full">
       <aside className="w-60 border-r bg-white p-4 space-y-1">
-        <div className="px-2 pb-4 text-sm text-slate-500">{identity.display_name}</div>
+        <div className="px-2 pb-4">
+          <div className="text-sm font-medium text-slate-700">{identity.display_name}</div>
+          <div className="text-xs text-slate-400">{identity.email}</div>
+        </div>
         <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
           <KeyRound className="h-4 w-4" /> Credentials
         </NavLink>

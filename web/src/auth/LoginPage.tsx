@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PasswordInput } from "@/components/ui/password-input"
 
 export function LoginPage(): React.JSX.Element {
   const [mode, setMode] = React.useState<"login" | "register">("register")
-  const [identityId, setIdentityId] = React.useState("")
+  const [email, setEmail] = React.useState("")
   const [displayName, setDisplayName] = React.useState("")
   const [passphrase, setPassphrase] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
@@ -22,10 +23,10 @@ export function LoginPage(): React.JSX.Element {
     setError(null)
     try {
       if (mode === "register") {
-        const ident = await api.register(displayName, passphrase)
-        await api.login(ident.id, passphrase)
+        await api.register(displayName, email, passphrase)
+        await api.login(email, passphrase)
       } else {
-        await api.login(identityId, passphrase)
+        await api.login(email, passphrase)
       }
       refresh()
       nav("/settings")
@@ -45,25 +46,39 @@ export function LoginPage(): React.JSX.Element {
             {mode === "register" ? (
               <div className="space-y-2">
                 <Label>Display name</Label>
-                <Input value={displayName} onChange={(e) => { setDisplayName(e.target.value) }} required />
+                <Input
+                  value={displayName}
+                  onChange={(e) => { setDisplayName(e.target.value) }}
+                  required
+                  autoComplete="name"
+                />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Identity ID</Label>
-                <Input value={identityId} onChange={(e) => { setIdentityId(e.target.value) }} required />
-              </div>
-            )}
+            ) : null}
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value) }}
+                required
+                autoComplete="email"
+              />
+            </div>
             <div className="space-y-2">
               <Label>Passphrase</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={passphrase}
                 onChange={(e) => { setPassphrase(e.target.value) }}
                 required
                 minLength={8}
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
               />
             </div>
-            {error ? <div className="text-sm text-red-600">{error}</div> : null}
+            {error ? (
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <Button type="submit">{mode === "register" ? "Create & log in" : "Log in"}</Button>
               <Button

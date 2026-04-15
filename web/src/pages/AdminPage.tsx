@@ -6,17 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PasswordInput } from "@/components/ui/password-input"
 
 export function AdminPage(): React.JSX.Element {
   const qc = useQueryClient()
   const users = useQuery<AdminUserDto[]>({ queryKey: ["users"], queryFn: api.listUsers })
   const [name, setName] = React.useState("")
+  const [email, setEmail] = React.useState("")
   const [pass, setPass] = React.useState("")
 
   const create = useMutation({
-    mutationFn: () => api.createUser(name, pass),
+    mutationFn: () => api.createUser(name, email, pass),
     onSuccess: () => {
       setName("")
+      setEmail("")
       setPass("")
       void qc.invalidateQueries({ queryKey: ["users"] })
     },
@@ -47,9 +50,29 @@ export function AdminPage(): React.JSX.Element {
               <Input value={name} onChange={(e) => { setName(e.target.value) }} required />
             </div>
             <div className="space-y-2">
-              <Label>Initial passphrase (user can change later)</Label>
-              <Input type="password" value={pass} onChange={(e) => { setPass(e.target.value) }} required minLength={8} />
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value) }}
+                required
+                autoComplete="email"
+              />
             </div>
+            <div className="space-y-2">
+              <Label>Initial passphrase (user can change later)</Label>
+              <PasswordInput
+                value={pass}
+                onChange={(e) => { setPass(e.target.value) }}
+                required
+                minLength={8}
+              />
+            </div>
+            {create.error ? (
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                {create.error.message}
+              </div>
+            ) : null}
             <Button type="submit" disabled={create.isPending}>Create</Button>
           </form>
         </CardContent>
@@ -60,13 +83,19 @@ export function AdminPage(): React.JSX.Element {
           <CardTitle>Users</CardTitle>
         </CardHeader>
         <CardContent>
+          {grant.error ? (
+            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {grant.error.message}
+            </div>
+          ) : null}
           {users.data && users.data.length > 0 ? (
             <ul className="divide-y">
               {users.data.map((u) => (
                 <li key={u.id} className="flex items-center justify-between py-2">
                   <div>
                     <div className="font-medium">{u.display_name}</div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-sm text-slate-500">{u.email}</div>
+                    <div className="text-xs text-slate-400">
                       {u.id} · {u.auther_name} · {u.capabilities.join(", ") || "no capabilities"}
                     </div>
                   </div>

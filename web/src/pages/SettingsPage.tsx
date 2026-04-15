@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PasswordInput } from "@/components/ui/password-input"
 
 export function SettingsPage(): React.JSX.Element {
   const qc = useQueryClient()
@@ -54,13 +55,17 @@ export function SettingsPage(): React.JSX.Element {
             </div>
             <div className="space-y-2">
               <Label>Value</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={value}
                 onChange={(e) => { setValue(e.target.value) }}
                 required
               />
             </div>
+            {put.error ? (
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                {put.error.message}
+              </div>
+            ) : null}
             <Button type="submit" disabled={put.isPending}>Save</Button>
           </form>
         </CardContent>
@@ -71,6 +76,11 @@ export function SettingsPage(): React.JSX.Element {
           <CardTitle>Stored credentials</CardTitle>
         </CardHeader>
         <CardContent>
+          {del.error ? (
+            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {del.error.message}
+            </div>
+          ) : null}
           {slots.isLoading ? (
             <div className="text-sm text-slate-500">Loading…</div>
           ) : slots.data && slots.data.length > 0 ? (

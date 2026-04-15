@@ -1,5 +1,6 @@
 export interface IdentityDto {
   id: string
+  email: string
   display_name: string
   auther_name: string
   capabilities: string[]
@@ -14,23 +15,39 @@ export interface AdminUserDto extends IdentityDto {}
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, { credentials: "include", ...init })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    let detail: string = res.statusText || `HTTP ${res.status}`
+    try {
+      const body: unknown = await res.json()
+      if (
+        typeof body === "object" &&
+        body !== null &&
+        "detail" in body &&
+        typeof (body as { detail: unknown }).detail === "string"
+      ) {
+        detail = (body as { detail: string }).detail
+      }
+    } catch {
+      // body was not JSON; keep statusText
+    }
+    throw new Error(`${res.status}: ${detail}`)
+  }
   if (res.status === 204) return undefined as unknown as T
   return (await res.json()) as T
 }
 
 export const api = {
-  register: (display_name: string, passphrase: string) =>
+  register: (display_name: string, email: string, passphrase: string) =>
     request<IdentityDto>("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name, passphrase }),
+      body: JSON.stringify({ display_name, email, passphrase }),
     }),
-  login: (identity_id: string, passphrase: string) =>
+  login: (email: string, passphrase: string) =>
     request<IdentityDto>("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identity_id, passphrase }),
+      body: JSON.stringify({ email, passphrase }),
     }),
   me: () => request<IdentityDto>("/api/auth/me"),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
@@ -48,11 +65,11 @@ export const api = {
       `/api/settings/credentials/${encodeURIComponent(slot)}/reveal`
     ),
   listUsers: () => request<AdminUserDto[]>("/api/settings/admin/users"),
-  createUser: (display_name: string, passphrase: string) =>
+  createUser: (display_name: string, email: string, passphrase: string) =>
     request<AdminUserDto>("/api/settings/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name, passphrase }),
+      body: JSON.stringify({ display_name, email, passphrase }),
     }),
   grantCapability: (user_id: string, capability: string) =>
     request<void>(`/api/settings/admin/users/${encodeURIComponent(user_id)}/capabilities`, {
