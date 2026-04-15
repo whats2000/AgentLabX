@@ -10,7 +10,14 @@ from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.db.schema import Session as SessionRow
 from agentlabx.db.session import DatabaseHandle
-from agentlabx.models.api import IdentityResponse, LoginRequest, RegisterRequest
+from agentlabx.models.api import (
+    IdentityResponse,
+    LoginRequest,
+    RegisterRequest,
+    UpdateDisplayNameRequest,
+    UpdateEmailRequest,
+    UpdatePassphraseRequest,
+)
 from agentlabx.server.dependencies import current_identity
 from agentlabx.server.middleware import COOKIE_NAME, SessionConfig
 
@@ -82,6 +89,66 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
 @router.get("/me", response_model=IdentityResponse)
 async def me(identity: Identity = Depends(current_identity)) -> IdentityResponse:
     return _identity_response(identity)
+
+
+@router.patch("/me/display-name", response_model=IdentityResponse)
+async def update_display_name(
+    payload: UpdateDisplayNameRequest,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IdentityResponse:
+    db: DatabaseHandle = request.state.db
+    auther = DefaultAuther(db)
+    try:
+        updated = await auther.update_display_name(
+            identity_id=identity.id, new_display_name=payload.display_name
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _identity_response(updated)
+
+
+@router.patch("/me/email", response_model=IdentityResponse)
+async def update_email(
+    payload: UpdateEmailRequest,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IdentityResponse:
+    db: DatabaseHandle = request.state.db
+    auther = DefaultAuther(db)
+    try:
+        updated = await auther.update_email(
+            identity_id=identity.id,
+            new_email=payload.new_email,
+            passphrase=payload.passphrase,
+        )
+    except EmailAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"email already registered: {payload.new_email}",
+        ) from exc
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return _identity_response(updated)
+
+
+@router.patch("/me/passphrase", response_model=IdentityResponse)
+async def update_passphrase(
+    payload: UpdatePassphraseRequest,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IdentityResponse:
+    db: DatabaseHandle = request.state.db
+    auther = DefaultAuther(db)
+    try:
+        updated = await auther.update_passphrase(
+            identity_id=identity.id,
+            old_passphrase=payload.old_passphrase,
+            new_passphrase=payload.new_passphrase,
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return _identity_response(updated)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

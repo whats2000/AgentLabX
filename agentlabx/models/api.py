@@ -43,5 +43,19 @@ class GrantCapabilityRequest(BaseModel):  # type: ignore[explicit-any]
     capability: str
 
 
+class UpdateDisplayNameRequest(BaseModel):  # type: ignore[explicit-any]
+    display_name: str = Field(min_length=1, max_length=128)
+
+
+class UpdateEmailRequest(BaseModel):  # type: ignore[explicit-any]
+    new_email: str = Field(min_length=3, max_length=320)
+    passphrase: str = Field(min_length=1, max_length=256)
+
+
+class UpdatePassphraseRequest(BaseModel):  # type: ignore[explicit-any]
+    old_passphrase: str = Field(min_length=1, max_length=256)
+    new_passphrase: str = Field(min_length=8, max_length=256)
+
+
 class RunsListResponse(BaseModel):  # type: ignore[explicit-any]
     runs: list[str]  # placeholder — no runs in A1

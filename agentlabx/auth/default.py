@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.db.schema import Capability, User, UserConfig
@@ -20,6 +21,26 @@ class DefaultAuther:
 
     def __init__(self, db: DatabaseHandle) -> None:
         self._db = db
+
+    async def _load_identity(self, session: AsyncSession, user_id: str) -> Identity:
+        """Re-query user + capabilities and return a fresh Identity."""
+        user = (
+            await session.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none()
+        if user is None:
+            raise AuthError("unknown identity")
+        caps = (
+            await session.execute(
+                select(Capability.capability).where(Capability.user_id == user_id)
+            )
+        ).scalars().all()
+        return Identity(
+            id=user.id,
+            auther_name=user.auther_name,
+            display_name=user.display_name,
+            email=user.email,
+            capabilities=frozenset(caps),
+        )
 
     async def register(self, *, display_name: str, email: str, passphrase: str) -> Identity:
         normalized_email = email.strip().lower()
@@ -86,15 +107,83 @@ class DefaultAuther:
                 raise AuthError("no passphrase set")
             if not verify_passphrase(row.ciphertext.decode("utf-8"), passphrase):
                 raise AuthError("wrong passphrase")
-            caps = (
+            return await self._load_identity(session, user.id)
+
+    async def update_display_name(
+        self, *, identity_id: str, new_display_name: str
+    ) -> Identity:
+        """Update the display name. No passphrase required."""
+        async with self._db.session() as session:
+            user = (
+                await session.execute(select(User).where(User.id == identity_id))
+            ).scalar_one_or_none()
+            if user is None:
+                raise AuthError("unknown identity")
+            user.display_name = new_display_name
+            await session.commit()
+            return await self._load_identity(session, identity_id)
+
+    async def update_email(
+        self, *, identity_id: str, new_email: str, passphrase: str
+    ) -> Identity:
+        """Update the email. Requires current passphrase."""
+        normalized_email = new_email.strip().lower()
+        async with self._db.session() as session:
+            user = (
+                await session.execute(select(User).where(User.id == identity_id))
+            ).scalar_one_or_none()
+            if user is None:
+                raise AuthError("unknown identity")
+            row = (
                 await session.execute(
-                    select(Capability.capability).where(Capability.user_id == user.id)
+                    select(UserConfig).where(
+                        UserConfig.user_id == identity_id,
+                        UserConfig.slot == _PASSPHRASE_SLOT,
+                    )
                 )
-            ).scalars().all()
-            return Identity(
-                id=user.id,
-                auther_name=user.auther_name,
-                display_name=user.display_name,
-                email=user.email,
-                capabilities=frozenset(caps),
-            )
+            ).scalar_one_or_none()
+            if row is None:
+                raise AuthError("no passphrase set")
+            if not verify_passphrase(row.ciphertext.decode("utf-8"), passphrase):
+                raise AuthError("wrong passphrase")
+            # Pre-check for collision
+            existing = (
+                await session.execute(
+                    select(User).where(User.email == normalized_email)
+                )
+            ).scalar_one_or_none()
+            if existing is not None and existing.id != identity_id:
+                raise EmailAlreadyRegisteredError(normalized_email)
+            user.email = normalized_email
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise EmailAlreadyRegisteredError(normalized_email) from exc
+            return await self._load_identity(session, identity_id)
+
+    async def update_passphrase(
+        self, *, identity_id: str, old_passphrase: str, new_passphrase: str
+    ) -> Identity:
+        """Change passphrase. Requires current passphrase."""
+        async with self._db.session() as session:
+            user = (
+                await session.execute(select(User).where(User.id == identity_id))
+            ).scalar_one_or_none()
+            if user is None:
+                raise AuthError("unknown identity")
+            row = (
+                await session.execute(
+                    select(UserConfig).where(
+                        UserConfig.user_id == identity_id,
+                        UserConfig.slot == _PASSPHRASE_SLOT,
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise AuthError("no passphrase set")
+            if not verify_passphrase(row.ciphertext.decode("utf-8"), old_passphrase):
+                raise AuthError("wrong passphrase")
+            row.ciphertext = hash_passphrase(new_passphrase).encode("utf-8")
+            await session.commit()
+            return await self._load_identity(session, identity_id)

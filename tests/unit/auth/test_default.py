@@ -100,3 +100,110 @@ async def test_email_normalization_is_canonical(tmp_workspace: Path) -> None:
         assert ident.email == "same@example.com"
     finally:
         await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_display_name(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="Alice", email="a@x.com", passphrase="p1234567")
+        updated = await a.update_display_name(
+            identity_id=ident.id, new_display_name="Alice II"
+        )
+        assert updated.display_name == "Alice II"
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_email_with_correct_passphrase(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="A", email="old@x.com", passphrase="p1234567")
+        updated = await a.update_email(
+            identity_id=ident.id, new_email="new@x.com", passphrase="p1234567"
+        )
+        assert updated.email == "new@x.com"
+        # login with new email works, old email fails
+        logged = await a.authenticate({"email": "new@x.com", "passphrase": "p1234567"})
+        assert logged.id == ident.id
+        with pytest.raises(AuthError):
+            await a.authenticate({"email": "old@x.com", "passphrase": "p1234567"})
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_email_with_wrong_passphrase_raises(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="A", email="a@x.com", passphrase="right1234")
+        with pytest.raises(AuthError):
+            await a.update_email(
+                identity_id=ident.id, new_email="new@x.com", passphrase="wrong1234"
+            )
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_email_to_existing_raises_conflict(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident_a = await a.register(display_name="A", email="a@x.com", passphrase="p1234567")
+        await a.register(display_name="B", email="b@x.com", passphrase="p1234567")
+        with pytest.raises(EmailAlreadyRegisteredError):
+            await a.update_email(
+                identity_id=ident_a.id, new_email="b@x.com", passphrase="p1234567"
+            )
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_passphrase_rotates_credential(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="A", email="a@x.com", passphrase="old123456")
+        await a.update_passphrase(
+            identity_id=ident.id, old_passphrase="old123456", new_passphrase="new123456"
+        )
+        # new works
+        logged = await a.authenticate({"email": "a@x.com", "passphrase": "new123456"})
+        assert logged.id == ident.id
+        # old fails
+        with pytest.raises(AuthError):
+            await a.authenticate({"email": "a@x.com", "passphrase": "old123456"})
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_update_passphrase_wrong_old_raises(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="A", email="a@x.com", passphrase="right1234")
+        with pytest.raises(AuthError):
+            await a.update_passphrase(
+                identity_id=ident.id, old_passphrase="wrong1234", new_passphrase="whatever1"
+            )
+    finally:
+        await handle.close()
