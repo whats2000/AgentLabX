@@ -11,6 +11,38 @@ from agentlabx.server.app import create_app
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_register_duplicate_email_returns_409(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post(
+                "/api/auth/register",
+                json={
+                    "display_name": "Alice",
+                    "email": "dup@example.com",
+                    "passphrase": "hunter2xy",
+                },
+            )
+            assert r.status_code == 201
+            r = await c.post(
+                "/api/auth/register",
+                json={
+                    "display_name": "Bob",
+                    "email": "dup@example.com",
+                    "passphrase": "hunter2xy",
+                },
+            )
+            assert r.status_code == 409
+            assert "already registered" in r.json()["detail"]
+    finally:
+        await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_register_first_user_is_admin_and_login_works(
     tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
 ) -> None:

@@ -3,8 +3,9 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-from agentlabx.auth.protocol import AuthError, Identity
+from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.db.schema import Capability, User, UserConfig
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.security.passwords import hash_passphrase, verify_passphrase
@@ -25,6 +26,11 @@ class DefaultAuther:
         user_id = str(uuid.uuid4())
         digest = hash_passphrase(passphrase)
         async with self._db.session() as session:
+            existing = (
+                await session.execute(select(User).where(User.email == normalized_email))
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise EmailAlreadyRegisteredError(normalized_email)
             user_count = (
                 await session.execute(select(User).with_only_columns(User.id))
             ).all()
@@ -43,7 +49,11 @@ class DefaultAuther:
             if len(user_count) == 0:
                 session.add(Capability(user_id=user_id, capability="admin"))
                 caps.add("admin")
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise EmailAlreadyRegisteredError(normalized_email) from exc
         return Identity(
             id=user_id,
             auther_name=self.name,

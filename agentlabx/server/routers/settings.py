@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 
 from agentlabx.auth.default import DefaultAuther
-from agentlabx.auth.protocol import Identity
+from agentlabx.auth.protocol import EmailAlreadyRegisteredError, Identity
 from agentlabx.db.schema import Capability, User, UserConfig
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.models.api import (
@@ -153,9 +153,16 @@ async def create_user(
 ) -> AdminUserResponse:
     db: DatabaseHandle = request.state.db
     auther = DefaultAuther(db)
-    identity = await auther.register(
-        display_name=payload.display_name, email=payload.email, passphrase=payload.passphrase
-    )
+    email = payload.email.strip().lower()
+    try:
+        identity = await auther.register(
+            display_name=payload.display_name, email=email, passphrase=payload.passphrase
+        )
+    except EmailAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"email already registered: {email}",
+        ) from exc
     return AdminUserResponse(
         id=identity.id,
         display_name=identity.display_name,

@@ -8,6 +8,10 @@ class AuthError(Exception):
     """Authentication failed (wrong credentials, revoked, expired)."""
 
 
+class EmailAlreadyRegisteredError(Exception):
+    """Raised when an email is already registered to an existing identity."""
+
+
 @dataclass(frozen=True)
 class Identity:
     id: str

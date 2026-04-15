@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from agentlabx.auth.default import DefaultAuther
-from agentlabx.auth.protocol import AuthError
+from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError
 from agentlabx.db.migrations import apply_migrations
 from agentlabx.db.session import DatabaseHandle
 
@@ -75,12 +74,29 @@ async def test_email_is_unique(tmp_workspace: Path) -> None:
     try:
         await apply_migrations(handle)
         auther = DefaultAuther(handle)
-        await auther.register(
-            display_name="Alice", email="alice@example.com", passphrase="p1234567"
-        )
-        with pytest.raises(IntegrityError):
+        await auther.register(display_name="A", email="same@example.com", passphrase="p1234567")
+        with pytest.raises(EmailAlreadyRegisteredError):
+            await auther.register(display_name="B", email="same@example.com", passphrase="p1234567")
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_email_normalization_is_canonical(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        auther = DefaultAuther(handle)
+        await auther.register(display_name="A", email="same@example.com", passphrase="p1234567")
+        with pytest.raises(EmailAlreadyRegisteredError):
             await auther.register(
-                display_name="Alice2", email="alice@example.com", passphrase="q1234567"
+                display_name="B", email="  SAME@Example.com  ", passphrase="p1234567"
             )
+        # And login with any case/whitespace works against the canonical row:
+        ident = await auther.authenticate(
+            {"email": "  Same@Example.COM  ", "passphrase": "p1234567"}
+        )
+        assert ident.email == "same@example.com"
     finally:
         await handle.close()
