@@ -3,6 +3,7 @@ import * as React from "react"
 
 import { api, type CredentialSlotDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -268,13 +269,16 @@ export function SettingsPage(): React.JSX.Element {
                     >
                       Reveal
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { del.mutate(s.slot) }}
-                    >
-                      Delete
-                    </Button>
+                    <ConfirmDialog
+                      trigger={<Button variant="outline" size="sm">Delete</Button>}
+                      title="Delete credential?"
+                      description={
+                        <>Delete credential slot <strong>{s.slot}</strong>. Any configured provider using this slot will stop working until you add it again.</>
+                      }
+                      confirmLabel="Delete"
+                      destructive
+                      onConfirm={() => { del.mutate(s.slot) }}
+                    />
                   </div>
                 </li>
               ))}

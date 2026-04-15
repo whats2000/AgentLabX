@@ -3,6 +3,7 @@ import * as React from "react"
 
 import { api, type AdminUserDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -126,13 +127,16 @@ export function AdminPage(): React.JSX.Element {
                     ) : (
                       <>
                         {u.capabilities.includes("admin") ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => { revoke.mutate({ user_id: u.id, capability: "admin" }) }}
-                          >
-                            Revoke admin
-                          </Button>
+                          <ConfirmDialog
+                            trigger={<Button variant="outline" size="sm">Revoke admin</Button>}
+                            title="Revoke admin capability?"
+                            description={
+                              <>Remove admin privileges from <strong>{u.display_name}</strong> ({u.email}). They will no longer be able to manage users or server-wide settings.</>
+                            }
+                            confirmLabel="Revoke"
+                            destructive
+                            onConfirm={() => { revoke.mutate({ user_id: u.id, capability: "admin" }) }}
+                          />
                         ) : (
                           <Button
                             variant="outline"
@@ -142,17 +146,16 @@ export function AdminPage(): React.JSX.Element {
                             Grant admin
                           </Button>
                         )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (window.confirm(`Delete ${u.display_name} (${u.email})? This cannot be undone.`)) {
-                              del.mutate(u.id)
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
+                        <ConfirmDialog
+                          trigger={<Button variant="outline" size="sm">Delete</Button>}
+                          title="Delete user?"
+                          description={
+                            <>Delete <strong>{u.display_name}</strong> ({u.email}). All of their credentials, notes, and sessions will be removed. This cannot be undone.</>
+                          }
+                          confirmLabel="Delete"
+                          destructive
+                          onConfirm={() => { del.mutate(u.id) }}
+                        />
                       </>
                     )}
                   </div>
