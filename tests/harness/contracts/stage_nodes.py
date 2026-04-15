@@ -195,3 +195,30 @@ def decide_pause_contract(*, stage_name: str) -> Contract:
         id=f"stage_nodes.decide.pause_contract[{stage_name}]",
         check=lambda t: _decide_pause_contract(t, stage_name=stage_name),
     )
+
+
+# -------- TOOL USAGE ----------
+
+def _stage_emits_tool_call(trace: HarnessTrace, *, stage_name: str) -> ContractResult:
+    """Verify the stage actually called a tool. For literature_review, experimentation,
+    etc. that require external data fetches, missing tool_call events mean the agent
+    either hallucinated output or the stage skipped the fetch."""
+    cid = f"stage_nodes.tool_usage.at_least_one_tool_call[{stage_name}]"
+    # Look for agent_tool_call events associated with this stage (via data.stage)
+    tool_calls = [
+        e for e in trace.events_of_type("agent_tool_call")
+        if e.get("data", {}).get("stage") == stage_name
+    ]
+    if not tool_calls:
+        return ContractResult.fail(
+            cid, severity=Severity.P1,
+            detail=f"no agent_tool_call events during {stage_name} — tool-using stage didn't call any tool",
+        )
+    return ContractResult.ok(cid)
+
+
+def stage_emits_tool_call(*, stage_name: str) -> Contract:
+    return Contract(
+        id=f"stage_nodes.tool_usage.at_least_one_tool_call[{stage_name}]",
+        check=lambda t: _stage_emits_tool_call(t, stage_name=stage_name),
+    )

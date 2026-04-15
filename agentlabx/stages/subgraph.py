@@ -14,6 +14,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from agentlabx.core.state import PipelineState, StagePlan
+from agentlabx.core.turn_context import push_stage
 from agentlabx.stages.base import (
     BaseStage,
     StageContext,
@@ -159,9 +160,12 @@ class StageSubgraphBuilder:
         async def work_node(s: _SubgraphState) -> dict[str, Any]:
             s["state"]["current_stage_internal_node"] = "work"
             await _emit_internal_node_changed(s, "work", stage_name=stage.name)
-            execution = await stage.execute_plan(
-                s["state"], s["plan"], s["context"]
-            )
+            # Push stage name so TracedTool can attribute stage-level tool calls
+            # (those not inside a TurnContext) to the correct stage in events.
+            with push_stage(stage.name):
+                execution = await stage.execute_plan(
+                    s["state"], s["plan"], s["context"]
+                )
             return {"execution": execution, "current_stage_internal_node": "work"}
 
         async def evaluate_node(s: _SubgraphState) -> dict[str, Any]:

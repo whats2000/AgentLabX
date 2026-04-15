@@ -34,12 +34,42 @@ async def test_traced_tool_emits_call_and_result(inner):
 
 
 @pytest.mark.asyncio
-async def test_traced_tool_bypasses_when_no_turn(inner):
-    bus = MagicMock(); bus.emit = AsyncMock()
-    storage = MagicMock(); storage.append_agent_turn = AsyncMock()
+async def test_traced_tool_emits_events_without_turn_context(inner):
+    """Stage-level tool calls (no TurnContext) must still emit agent_tool_call events
+    so the harness can observe tool usage even outside agent inference."""
+    from agentlabx.core.events import EventBus, Event
+
+    bus = EventBus()
+    captured: list[Event] = []
+
+    async def grab(event: Event):
+        captured.append(event)
+
+    bus.subscribe("agent_tool_call", grab)
+    bus.subscribe("agent_tool_result", grab)
+
+    storage = MagicMock()
+    storage.append_agent_turn = AsyncMock()
+
     tt = TracedTool(inner=inner, event_bus=bus, storage=storage)
-    await tt.execute(query="x")
-    bus.emit.assert_not_called()
+
+    # No TurnContext pushed — simulates a stage calling a tool directly
+    result = await tt.execute(query="super resolution")
+
+    call_events = [e for e in captured if e.type == "agent_tool_call"]
+    result_events = [e for e in captured if e.type == "agent_tool_result"]
+    assert len(call_events) == 1
+    assert len(result_events) == 1
+    assert call_events[0].data["tool"] == "arxiv_search"
+    assert result_events[0].data["tool"] == "arxiv_search"
+    assert result_events[0].data["success"] is True
+    # stage and turn_id are None for context-free calls
+    assert call_events[0].data["stage"] is None
+    assert call_events[0].data["turn_id"] is None
+    # source is "stage" sentinel when no agent is attributed
+    assert call_events[0].source == "stage"
+    # Storage must NOT be called when no session context
+    storage.append_agent_turn.assert_not_called()
 
 
 @pytest.mark.asyncio

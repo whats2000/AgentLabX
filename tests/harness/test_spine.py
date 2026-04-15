@@ -31,6 +31,7 @@ from tests.harness.contracts.stage_nodes import (
     stage_plan_persisted,
     work_emits_agent_turn,
     evaluate_respects_iteration_bound,
+    stage_emits_tool_call,
 )
 from tests.harness.contracts.transition import (
     SESSION_COMPLETION_REQUIRES_SUCCESS,
@@ -108,6 +109,7 @@ async def test_spine_literature_review():
         stage_plan_persisted(stage_name="literature_review"),
         work_emits_agent_turn(stage_name="literature_review"),
         evaluate_respects_iteration_bound(stage_name="literature_review"),
+        stage_emits_tool_call(stage_name="literature_review"),
         model_plumbed_contract(expected_prefix="gemini/"),
         LLM_ACTUALLY_CALLED,
         TRANSITION_EVENTS_WELL_FORMED,

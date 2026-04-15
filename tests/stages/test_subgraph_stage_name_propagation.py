@@ -67,6 +67,7 @@ from tests.harness.contracts.stage_nodes import (
     work_prompt_includes_plan_items,
     evaluate_respects_iteration_bound,
     decide_pause_contract,
+    stage_emits_tool_call,
 )
 
 
@@ -117,3 +118,17 @@ def test_decide_pause_contract_ok_when_no_approval_needed():
     trace.snapshot("after_lit", {"needs_approval": False})
     c = decide_pause_contract(stage_name="lit")
     assert c.run(trace).passed
+
+
+def test_tool_call_contract_passes_when_tool_called_for_stage():
+    trace = HarnessTrace(test_id="t")
+    trace.record_event({
+        "type": "agent_tool_call",
+        "data": {"tool": "arxiv_search", "stage": "literature_review"},
+    })
+    assert stage_emits_tool_call(stage_name="literature_review").run(trace).passed
+
+
+def test_tool_call_contract_fails_when_no_tool_calls():
+    trace = HarnessTrace(test_id="t")
+    assert not stage_emits_tool_call(stage_name="literature_review").run(trace).passed
