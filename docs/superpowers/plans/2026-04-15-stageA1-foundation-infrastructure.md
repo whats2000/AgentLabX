@@ -75,22 +75,42 @@ tests/
 ├── conftest.py                 # shared fixtures (tmp keyring, in-memory DB)
 ├── unit/
 │   ├── __init__.py
-│   ├── test_passwords.py
-│   ├── test_keyring_store.py
-│   ├── test_fernet_store.py
-│   ├── test_schema.py
-│   ├── test_migrations.py
-│   ├── test_event_bus.py
-│   ├── test_plugin_registry.py
-│   ├── test_default_auther.py
-│   ├── test_token_auther.py
-│   └── test_oauth_auther.py
+│   ├── security/
+│   │   ├── __init__.py
+│   │   ├── test_passwords.py
+│   │   ├── test_keyring_store.py
+│   │   └── test_fernet_store.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   └── test_settings.py
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── test_session.py
+│   │   ├── test_schema.py
+│   │   └── test_migrations.py
+│   ├── events/
+│   │   ├── __init__.py
+│   │   └── test_bus.py
+│   ├── plugins/
+│   │   ├── __init__.py
+│   │   └── test_registry.py
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── test_protocol.py
+│   │   ├── test_default.py
+│   │   ├── test_token.py
+│   │   └── test_oauth.py
+│   └── server/
+│       ├── __init__.py
+│       └── test_session_middleware.py
 └── integration/
     ├── __init__.py
     ├── test_admin_onboarding.py
     ├── test_credential_isolation.py
     └── test_lan_requires_tls.py
 ```
+
+**Test layout rule:** `tests/unit/` mirrors the `agentlabx/` package structure one-for-one. Follow-up tasks that add modules get a matching test subdirectory. `tests/integration/` stays flat because integration tests are cross-cutting.
 
 Frontend (`web/`):
 
@@ -631,12 +651,12 @@ git commit -m "feat(security): Fernet-backed encrypt/decrypt store"
 ### Task 6: AppSettings via pydantic-settings
 
 **Files:**
-- Create: `agentlabx/config/__init__.py`, `agentlabx/config/settings.py`, `tests/unit/test_settings.py`
+- Create: `agentlabx/config/__init__.py`, `agentlabx/config/settings.py`, `tests/unit/config/test_settings.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_settings.py
+# tests/unit/config/test_settings.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -687,7 +707,7 @@ def test_lan_bind_with_missing_cert_file_raises(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_settings.py -v`
+Run: `uv run pytest tests/unit/config/test_settings.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -745,13 +765,13 @@ class AppSettings(BaseSettings):
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_settings.py -v`
+Run: `uv run pytest tests/unit/config/test_settings.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/config tests/unit/test_settings.py
+git add agentlabx/config tests/unit/config/test_settings.py
 git commit -m "feat(config): AppSettings with BindMode + TLS validation"
 ```
 
@@ -760,12 +780,12 @@ git commit -m "feat(config): AppSettings with BindMode + TLS validation"
 ### Task 7: Async SQLAlchemy engine + sessionmaker
 
 **Files:**
-- Create: `agentlabx/db/__init__.py`, `agentlabx/db/session.py`, `tests/unit/test_db_session.py`
+- Create: `agentlabx/db/__init__.py`, `agentlabx/db/session.py`, `tests/unit/db/test_session.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_db_session.py
+# tests/unit/db/test_session.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -801,7 +821,7 @@ async def test_session_roundtrips_a_trivial_query(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_db_session.py -v`
+Run: `uv run pytest tests/unit/db/test_session.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -867,13 +887,13 @@ class DatabaseHandle:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_db_session.py -v`
+Run: `uv run pytest tests/unit/db/test_session.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/db/__init__.py agentlabx/db/session.py tests/unit/test_db_session.py
+git add agentlabx/db/__init__.py agentlabx/db/session.py tests/unit/db/test_session.py
 git commit -m "feat(db): async engine + sessionmaker"
 ```
 
@@ -882,12 +902,12 @@ git commit -m "feat(db): async engine + sessionmaker"
 ### Task 8: Schema models (six tables)
 
 **Files:**
-- Create: `agentlabx/db/schema.py`, `tests/unit/test_schema.py`
+- Create: `agentlabx/db/schema.py`, `tests/unit/db/test_schema.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_schema.py
+# tests/unit/db/test_schema.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -927,7 +947,7 @@ async def test_all_six_tables_created(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_schema.py -v`
+Run: `uv run pytest tests/unit/db/test_schema.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1068,13 +1088,13 @@ class Capability(Base):
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_schema.py -v`
+Run: `uv run pytest tests/unit/db/test_schema.py -v`
 Expected: 1 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/db/schema.py tests/unit/test_schema.py
+git add agentlabx/db/schema.py tests/unit/db/test_schema.py
 git commit -m "feat(db): 6-table schema — users, configs, oauth, state, sessions, capabilities"
 ```
 
@@ -1083,12 +1103,12 @@ git commit -m "feat(db): 6-table schema — users, configs, oauth, state, sessio
 ### Task 9: First-run migrations + schema_version tracking
 
 **Files:**
-- Create: `agentlabx/db/migrations.py`, `tests/unit/test_migrations.py`
+- Create: `agentlabx/db/migrations.py`, `tests/unit/db/test_migrations.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_migrations.py
+# tests/unit/db/test_migrations.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -1134,7 +1154,7 @@ async def test_second_run_is_idempotent(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_migrations.py -v`
+Run: `uv run pytest tests/unit/db/test_migrations.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1167,13 +1187,13 @@ async def apply_migrations(handle: DatabaseHandle) -> None:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_migrations.py -v`
+Run: `uv run pytest tests/unit/db/test_migrations.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/db/migrations.py tests/unit/test_migrations.py
+git add agentlabx/db/migrations.py tests/unit/db/test_migrations.py
 git commit -m "feat(db): idempotent first-run migrations + schema_version"
 ```
 
@@ -1184,12 +1204,12 @@ git commit -m "feat(db): idempotent first-run migrations + schema_version"
 ### Task 10: Asyncio pub/sub event bus
 
 **Files:**
-- Create: `agentlabx/events/__init__.py`, `agentlabx/events/bus.py`, `tests/unit/test_event_bus.py`
+- Create: `agentlabx/events/__init__.py`, `agentlabx/events/bus.py`, `tests/unit/events/test_bus.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_event_bus.py
+# tests/unit/events/test_bus.py
 from __future__ import annotations
 
 import asyncio
@@ -1251,7 +1271,7 @@ async def test_wildcard_subscriber_receives_all_kinds() -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_event_bus.py -v`
+Run: `uv run pytest tests/unit/events/test_bus.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1300,13 +1320,13 @@ class EventBus:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_event_bus.py -v`
+Run: `uv run pytest tests/unit/events/test_bus.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/events tests/unit/test_event_bus.py
+git add agentlabx/events tests/unit/events/test_bus.py
 git commit -m "feat(events): asyncio pub/sub EventBus"
 ```
 
@@ -1315,12 +1335,12 @@ git commit -m "feat(events): asyncio pub/sub EventBus"
 ### Task 11: Plugin registry skeleton (entry-points discovery)
 
 **Files:**
-- Create: `agentlabx/plugins/__init__.py`, `agentlabx/plugins/registry.py`, `tests/unit/test_plugin_registry.py`
+- Create: `agentlabx/plugins/__init__.py`, `agentlabx/plugins/registry.py`, `tests/unit/plugins/test_registry.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_plugin_registry.py
+# tests/unit/plugins/test_registry.py
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -1363,7 +1383,7 @@ def test_discover_uses_importlib_metadata(monkeypatch: pytest.MonkeyPatch) -> No
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_plugin_registry.py -v`
+Run: `uv run pytest tests/unit/plugins/test_registry.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1403,13 +1423,13 @@ def discover_entry_points(
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_plugin_registry.py -v`
+Run: `uv run pytest tests/unit/plugins/test_registry.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/plugins tests/unit/test_plugin_registry.py
+git add agentlabx/plugins tests/unit/plugins/test_registry.py
 git commit -m "feat(plugins): registry + entry-points discovery skeleton"
 ```
 
@@ -1420,12 +1440,12 @@ git commit -m "feat(plugins): registry + entry-points discovery skeleton"
 ### Task 12: `Auther` Protocol, `Identity`, domain errors
 
 **Files:**
-- Create: `agentlabx/auth/__init__.py`, `agentlabx/auth/protocol.py`, `tests/unit/test_auth_protocol.py`
+- Create: `agentlabx/auth/__init__.py`, `agentlabx/auth/protocol.py`, `tests/unit/auth/test_protocol.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_auth_protocol.py
+# tests/unit/auth/test_protocol.py
 from __future__ import annotations
 
 from agentlabx.auth.protocol import Auther, Identity
@@ -1462,7 +1482,7 @@ def test_auther_protocol_can_be_satisfied_by_plain_class() -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_auth_protocol.py -v`
+Run: `uv run pytest tests/unit/auth/test_protocol.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1501,13 +1521,13 @@ class Auther(Protocol):
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_auth_protocol.py -v`
+Run: `uv run pytest tests/unit/auth/test_protocol.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/auth/__init__.py agentlabx/auth/protocol.py tests/unit/test_auth_protocol.py
+git add agentlabx/auth/__init__.py agentlabx/auth/protocol.py tests/unit/auth/test_protocol.py
 git commit -m "feat(auth): Auther Protocol + Identity dataclass"
 ```
 
@@ -1516,12 +1536,12 @@ git commit -m "feat(auth): Auther Protocol + Identity dataclass"
 ### Task 13: `DefaultAuther` (passphrase-backed)
 
 **Files:**
-- Create: `agentlabx/auth/default.py`, `tests/unit/test_default_auther.py`
+- Create: `agentlabx/auth/default.py`, `tests/unit/auth/test_default.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_default_auther.py
+# tests/unit/auth/test_default.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -1585,7 +1605,7 @@ async def test_first_registered_is_admin(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_default_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_default.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1674,13 +1694,13 @@ class DefaultAuther:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_default_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_default.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/auth/default.py tests/unit/test_default_auther.py
+git add agentlabx/auth/default.py tests/unit/auth/test_default.py
 git commit -m "feat(auth): DefaultAuther with argon2 + first-registered-is-admin"
 ```
 
@@ -1689,12 +1709,12 @@ git commit -m "feat(auth): DefaultAuther with argon2 + first-registered-is-admin
 ### Task 14: `TokenAuther` (bearer tokens)
 
 **Files:**
-- Create: `agentlabx/auth/token.py`, `tests/unit/test_token_auther.py`
+- Create: `agentlabx/auth/token.py`, `tests/unit/auth/test_token.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_token_auther.py
+# tests/unit/auth/test_token.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -1744,7 +1764,7 @@ async def test_revoked_token_rejected(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_token_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_token.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -1838,13 +1858,13 @@ class TokenAuther:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_token_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_token.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/auth/token.py tests/unit/test_token_auther.py
+git add agentlabx/auth/token.py tests/unit/auth/test_token.py
 git commit -m "feat(auth): TokenAuther with SHA-256-hashed bearer tokens + revocation"
 ```
 
@@ -1853,12 +1873,12 @@ git commit -m "feat(auth): TokenAuther with SHA-256-hashed bearer tokens + revoc
 ### Task 15: `OAuthAuther` (RFC 8628 device flow)
 
 **Files:**
-- Create: `agentlabx/auth/oauth.py`, `tests/unit/test_oauth_auther.py`
+- Create: `agentlabx/auth/oauth.py`, `tests/unit/auth/test_oauth.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_oauth_auther.py
+# tests/unit/auth/test_oauth.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -1981,7 +2001,7 @@ Note: the Fernet key literal in step 1 is a pass-through placeholder you must re
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_oauth_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_oauth.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -2137,13 +2157,13 @@ class OAuthAuther:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_oauth_auther.py -v`
+Run: `uv run pytest tests/unit/auth/test_oauth.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/auth/oauth.py tests/unit/test_oauth_auther.py
+git add agentlabx/auth/oauth.py tests/unit/auth/test_oauth.py
 git commit -m "feat(auth): OAuthAuther RFC 8628 device flow with encrypted token storage"
 ```
 
@@ -2228,12 +2248,12 @@ git commit -m "feat(models): Pydantic API request/response models"
 ### Task 17: Session-cookie middleware + dependencies
 
 **Files:**
-- Create: `agentlabx/server/__init__.py`, `agentlabx/server/middleware.py`, `agentlabx/server/dependencies.py`, `tests/unit/test_session_middleware.py`
+- Create: `agentlabx/server/__init__.py`, `agentlabx/server/middleware.py`, `agentlabx/server/dependencies.py`, `tests/unit/server/test_session_middleware.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/unit/test_session_middleware.py
+# tests/unit/server/test_session_middleware.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -2356,7 +2376,7 @@ async def test_require_admin_rejects_non_admin(tmp_workspace: Path) -> None:
 
 - [ ] **Step 2: Run the test and see it fail**
 
-Run: `uv run pytest tests/unit/test_session_middleware.py -v`
+Run: `uv run pytest tests/unit/server/test_session_middleware.py -v`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
@@ -2467,13 +2487,13 @@ async def require_admin(request: Request) -> Identity:
 
 - [ ] **Step 4: Run the test and see it pass**
 
-Run: `uv run pytest tests/unit/test_session_middleware.py -v`
+Run: `uv run pytest tests/unit/server/test_session_middleware.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentlabx/server/__init__.py agentlabx/server/middleware.py agentlabx/server/dependencies.py tests/unit/test_session_middleware.py
+git add agentlabx/server/__init__.py agentlabx/server/middleware.py agentlabx/server/dependencies.py tests/unit/server/test_session_middleware.py
 git commit -m "feat(server): session cookie middleware + current_identity/require_admin deps"
 ```
 
