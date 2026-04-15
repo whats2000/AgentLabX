@@ -10,13 +10,16 @@ scope: north-star
 
 ## 1. What AgentLabX is
 
-AgentLabX is an open research-automation platform. A user defines a research topic; a team of LLM-powered agents takes it end-to-end — reviewing literature, forming a plan, preparing data, running experiments with baselines and ablations, interpreting results, writing a report, and critiquing it — with a principal-investigator agent overseeing strategic decisions.
+AgentLabX is an open research-automation platform. 
+A user defines a research topic; a team of LLM-powered agents takes it end-to-end — reviewing literature, forming a plan, preparing data, running experiments with baselines and ablations, interpreting results, writing a report, and critiquing it — with a principal-investigator agent overseeing strategic decisions.
 
-It is a rewrite of `AgentLaboratory` focused on producing research that resembles real lab output rather than a prompt chain. Every stage is a swappable module with a formal input/output contract, every tool is a standards-compliant MCP server, every credential is per-user and encrypted, and every step is observable.
+It is a rewrite of `AgentLaboratory` focused on producing research that resembles real lab output rather than a prompt chain. 
+Every stage is a swappable module with a formal input/output contract, every tool is a standards-compliant MCP server, every credential is per-user and encrypted, and every step is observable.
 
 ## 2. Why a rewrite
 
-The prior implementation mixed identity, secrets, pipeline state, stage logic, and tool integration in a single tangled object graph. Stages bulk-processed without curation; backtracks wiped accumulated knowledge; `.env`-scoped API keys made multi-user impossible; and there was no contract telling a stage what it should produce. The platform ran but did not function — passing mechanical checks while producing empty or hallucinated artifacts.
+The prior implementation mixed identity, secrets, pipeline state, stage logic, and tool integration in a single tangled object graph. Stages bulk-processed without curation; backtracks wiped accumulated knowledge; `.env`-scoped API keys made multi-user impossible; and there was no contract telling a stage what it should produce. 
+The platform ran but did not function — passing mechanical checks while producing empty or hallucinated artifacts.
 
 AgentLabX starts over with strict boundaries so that the failure modes above become structurally impossible: a stage that produces nothing cannot be declared "done," a tool that wasn't actually called cannot be claimed as used, and a secret that belongs to one user cannot leak across sessions.
 
@@ -46,7 +49,9 @@ Multiple implementations of each stage can coexist — a simple baseline, a cura
 
 - **Isolation over integration.** Modules talk through narrow typed interfaces. A module's inputs and outputs are the whole contract; internals are free to change.
 - **Contracts over conventions.** Every stage declares its I/O schema and completion criteria. Tests verify the contract; implementations are swappable behind it.
-- **Deterministic types are mandatory in main code.** `typing.Any` is disallowed. **`object` is also disallowed** — it accepts every value, exposes no discoverable interface, and is `Any` with a different name. Use a `Protocol`, a `TypedDict`, a Pydantic model, or a concrete type / union — never a placeholder that erases information. Past experience: undeterministic types caused runtime errors that surfaced far from their declaration site, dominating debug time. The rule is enforced by ruff (`ANN` rule family, including `ANN401`) and applies to test code as well as production code. Frontend (TypeScript) carries the equivalent rule via `strict: true` + `noImplicitAny: true`; `any` and `unknown` (without narrowing) are treated identically to Python `Any`.
+- **Deterministic types are mandatory in main code.** `typing.Any` is disallowed. **`object` is also disallowed** — it accepts every value, exposes no discoverable interface, and is `Any` with a different name. Use a `Protocol`, a `TypedDict`, a Pydantic model, or a concrete type / union — never a placeholder that erases information. 
+  Past experience: undeterministic types caused runtime errors that surfaced far from their declaration site, dominating debug time. The rule is enforced by ruff (`ANN` rule family, including `ANN401`) and applies to test code as well as production code. 
+  Frontend (TypeScript) carries the equivalent rule via `strict: true` + `noImplicitAny: true`; `any` and `unknown` (without narrowing) are treated identically to Python `Any`.
 - **Real work, real verification.** A harness exercises the platform against real models and asserts that artifacts are semantically correct (not just that events fired). If it works but doesn't function, the harness calls it a failure.
 - **User sovereignty.** Credentials are the user's. They live encrypted under the user's OS keyring, never in env files or config repositories, never process-global.
 - **Incremental build-up.** The platform is assembled one stage at a time, each with its own spec, plan, and review cycle. No monolithic mega-plan. Plans declare the **contract** (what to build); subagent execution writes the code (how to build it). The two stay separate.
