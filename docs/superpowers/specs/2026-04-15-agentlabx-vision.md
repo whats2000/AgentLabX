@@ -46,10 +46,10 @@ Multiple implementations of each stage can coexist — a simple baseline, a cura
 
 - **Isolation over integration.** Modules talk through narrow typed interfaces. A module's inputs and outputs are the whole contract; internals are free to change.
 - **Contracts over conventions.** Every stage declares its I/O schema and completion criteria. Tests verify the contract; implementations are swappable behind it.
-- **Determinism at the boundaries.** Strict type hints everywhere (no `Any`). Events carry structured payloads. Errors have stable codes.
+- **Deterministic types are mandatory in main code.** `typing.Any` is disallowed. **`object` is also disallowed** — it accepts every value, exposes no discoverable interface, and is `Any` with a different name. Use a `Protocol`, a `TypedDict`, a Pydantic model, or a concrete type / union — never a placeholder that erases information. Past experience: undeterministic types caused runtime errors that surfaced far from their declaration site, dominating debug time. The rule is enforced by ruff (`ANN` rule family, including `ANN401`) and applies to test code as well as production code. Frontend (TypeScript) carries the equivalent rule via `strict: true` + `noImplicitAny: true`; `any` and `unknown` (without narrowing) are treated identically to Python `Any`.
 - **Real work, real verification.** A harness exercises the platform against real models and asserts that artifacts are semantically correct (not just that events fired). If it works but doesn't function, the harness calls it a failure.
 - **User sovereignty.** Credentials are the user's. They live encrypted under the user's OS keyring, never in env files or config repositories, never process-global.
-- **Incremental build-up.** The platform is assembled one stage at a time, each with its own spec, plan, and review cycle. No monolithic mega-plan.
+- **Incremental build-up.** The platform is assembled one stage at a time, each with its own spec, plan, and review cycle. No monolithic mega-plan. Plans declare the **contract** (what to build); subagent execution writes the code (how to build it). The two stay separate.
 - **Observable over opaque.** Every agent turn, tool call, transition, and PI decision is visible in a structured event stream usable by both humans and automated test harnesses.
 
 ## 5. What AgentLabX does not ship
