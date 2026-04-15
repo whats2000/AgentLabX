@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, Request, Response
+from itsdangerous import BadSignature, URLSafeTimedSerializer
+from sqlalchemy import select
+
+from agentlabx.auth.protocol import Identity
+from agentlabx.db.schema import Capability, User
+from agentlabx.db.schema import Session as SessionRow
+from agentlabx.db.session import DatabaseHandle
+
+COOKIE_NAME = "agentlabx_session"
+
+
+@dataclass(frozen=True)
+class SessionConfig:
+    secret: bytes
+    secure: bool  # True on LAN bind; False on loopback
+    max_age_seconds: int = 60 * 60 * 12  # 12h
+
+
+def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: DatabaseHandle) -> None:
+    serializer = URLSafeTimedSerializer(cfg.secret)
+
+    @app.middleware("http")
+    async def session_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        request.state.identity = None
+        request.state.session_config = cfg
+        request.state.session_serializer = serializer
+        request.state.db = db
+
+        cookie = request.cookies.get(COOKIE_NAME)
+        if cookie is not None:
+            try:
+                payload = serializer.loads(cookie, max_age=cfg.max_age_seconds)
+            except BadSignature:
+                payload = None
+            if isinstance(payload, dict) and "sid" in payload:
+                identity = await _load_identity_for_session(db, payload["sid"])
+                request.state.identity = identity
+        return await call_next(request)
+
+
+async def _load_identity_for_session(db: DatabaseHandle, session_id: str) -> Identity | None:
+    async with db.session() as session:
+        row = (
+            await session.execute(
+                select(SessionRow).where(SessionRow.id == session_id)
+            )
+        ).scalar_one_or_none()
+        if row is None or row.revoked:
+            return None
+        expires_at = row.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < datetime.now(tz=timezone.utc):
+            return None
+        user = (
+            await session.execute(select(User).where(User.id == row.user_id))
+        ).scalar_one()
+        caps = (
+            await session.execute(
+                select(Capability.capability).where(Capability.user_id == user.id)
+            )
+        ).scalars().all()
+        row.last_seen_at = datetime.now(tz=timezone.utc)
+        await session.commit()
+        return Identity(
+            id=user.id,
+            auther_name=user.auther_name,
+            display_name=user.display_name,
+            capabilities=frozenset(caps),
+        )

@@ -46,6 +46,7 @@ ignore = ["UP017"]  # datetime.UTC not available in all Python 3.12 environments
 
 [tool.ruff.lint.per-file-ignores]
 # Explicit: tests are NOT exempt from ANN rules (strict typing memory).
+"tests/**/*.py" = ["B008"]  # FastAPI Depends() in default args is the canonical pattern
 
 [tool.mypy]
 python_version = "3.12"
