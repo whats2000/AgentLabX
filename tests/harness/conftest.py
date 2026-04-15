@@ -10,6 +10,35 @@ import os
 import pytest
 
 
+def _load_dotenv() -> None:
+    """Load .env file from repo root into os.environ (without overriding existing vars)."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]  # tests/harness/conftest.py → AgentLabX/
+    env_file = repo_root / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
+
+# If GEMINI_API_KEY is present but AGENTLABX_LLM__DEFAULT_MODEL is not,
+# set a sensible Gemini flash default for the harness.
+if os.environ.get("GEMINI_API_KEY") and not os.environ.get("AGENTLABX_LLM__DEFAULT_MODEL"):
+    os.environ["AGENTLABX_LLM__DEFAULT_MODEL"] = "gemini/gemini-2.5-flash"
+
+
 REQUIRED_MODEL_VAR = "AGENTLABX_LLM__DEFAULT_MODEL"
 
 # Map provider prefix (before '/') → env var that must be set for that provider.

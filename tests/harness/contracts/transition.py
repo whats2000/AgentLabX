@@ -7,19 +7,25 @@ from tests.harness.contracts.base import Contract, ContractResult, HarnessTrace,
 
 def _session_completion_requires_success(trace: HarnessTrace) -> ContractResult:
     cid = "transition.session_completion_requires_success"
-    completions = trace.events_of_type("session_completed")
-    failed_stages = trace.events_of_type("stage_failed")
-    if completions and failed_stages:
-        started = trace.events_of_type("stage_started")
-        if started and len(failed_stages) >= len(started):
-            return ContractResult.fail(
-                cid,
-                severity=Severity.P1,
-                detail=(
-                    f"session completed with {len(failed_stages)} stage_failed events "
-                    f"({len(started)} stages started) — B3 regression"
-                ),
-            )
+    starts = trace.events_of_type("stage_started")
+    completes = trace.events_of_type("stage_completed")
+    fails = trace.events_of_type("stage_failed")
+    session_failed = trace.events_of_type("session_failed")
+
+    if not starts:
+        return ContractResult.ok(cid)  # no stages ran, nothing to check
+
+    # If every started stage failed AND none completed AND no session_failed was surfaced,
+    # that's B3: total failure being silently accepted as normal completion.
+    if len(fails) >= len(starts) and len(completes) == 0 and not session_failed:
+        return ContractResult.fail(
+            cid, severity=Severity.P1,
+            detail=(
+                f"All {len(starts)} stages errored ({len(fails)} stage_failed, "
+                f"{len(completes)} stage_completed, no session_failed event) "
+                f"— B3 regression: total failure silently accepted"
+            ),
+        )
     return ContractResult.ok(cid)
 
 
@@ -32,17 +38,23 @@ SESSION_COMPLETION_REQUIRES_SUCCESS = Contract(
 
 def _transition_events_well_formed(trace: HarnessTrace) -> ContractResult:
     cid = "transition.events_well_formed"
-    for e in trace.events_of_type("stage_transitioned"):
+    # Each stage_completed should have a stage name in its data
+    for e in trace.events_of_type("stage_completed"):
         data = e.get("data") or {}
-        # tolerate either nested-data or flat shape
-        from_stage = data.get("from_stage") or e.get("from_stage")
-        to_stage = data.get("to_stage") or e.get("to_stage")
-        reason = data.get("reason") or e.get("reason")
-        if not (from_stage and to_stage and reason):
+        stage = data.get("stage") or e.get("stage")
+        if not stage:
             return ContractResult.fail(
-                cid,
-                severity=Severity.P1,
-                detail=f"stage_transitioned event missing from_stage/to_stage/reason: {e}",
+                cid, severity=Severity.P1,
+                detail=f"stage_completed event missing 'stage' field: {e}",
+            )
+    # Same for stage_started
+    for e in trace.events_of_type("stage_started"):
+        data = e.get("data") or {}
+        stage = data.get("stage") or e.get("stage")
+        if not stage:
+            return ContractResult.fail(
+                cid, severity=Severity.P1,
+                detail=f"stage_started event missing 'stage' field: {e}",
             )
     return ContractResult.ok(cid)
 
@@ -50,5 +62,5 @@ def _transition_events_well_formed(trace: HarnessTrace) -> ContractResult:
 TRANSITION_EVENTS_WELL_FORMED = Contract(
     id="transition.events_well_formed",
     check=_transition_events_well_formed,
-    description="Every stage_transitioned event carries from_stage, to_stage, reason",
+    description="Every stage_started and stage_completed event carries a 'stage' field",
 )

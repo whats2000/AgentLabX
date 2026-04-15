@@ -93,38 +93,54 @@ from tests.harness.contracts.transition import (
 )
 
 
-def test_session_completion_contract_fails_on_complete_after_all_fail():
+def test_session_completion_contract_fails_on_all_fails_no_completes():
     trace = HarnessTrace(test_id="t")
     trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
     trace.record_event({"type": "stage_started", "data": {"stage": "b"}})
     trace.record_event({"type": "stage_failed", "data": {"stage": "a"}})
     trace.record_event({"type": "stage_failed", "data": {"stage": "b"}})
-    trace.record_event({"type": "session_completed"})
+    # No stage_completed, no session_failed — this is the B3 regression
     result = SESSION_COMPLETION_REQUIRES_SUCCESS.run(trace)
     assert not result.passed
 
 
-def test_session_completion_contract_ok_without_completion():
+def test_session_completion_contract_ok_on_partial_success():
     trace = HarnessTrace(test_id="t")
-    trace.record_event({"type": "stage_failed", "data": {"stage": "a"}})
-    # No session_completed event
+    trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
+    trace.record_event({"type": "stage_started", "data": {"stage": "b"}})
+    trace.record_event({"type": "stage_completed", "data": {"stage": "a"}})
+    trace.record_event({"type": "stage_failed", "data": {"stage": "b"}})
+    # One completed, one failed — partial success, not B3
     result = SESSION_COMPLETION_REQUIRES_SUCCESS.run(trace)
     assert result.passed
 
 
-def test_transition_events_well_formed_ok():
+def test_session_completion_contract_ok_on_all_success():
     trace = HarnessTrace(test_id="t")
-    trace.record_event({
-        "type": "stage_transitioned",
-        "data": {"from_stage": "a", "to_stage": "b", "reason": "default_sequence"},
-    })
+    trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
+    trace.record_event({"type": "stage_completed", "data": {"stage": "a"}})
+    result = SESSION_COMPLETION_REQUIRES_SUCCESS.run(trace)
+    assert result.passed
+
+
+def test_session_completion_contract_ok_when_session_failed_event_emitted():
+    """If session_failed WAS emitted, even all-stage-failures is a legitimate failure path (not silent success)."""
+    trace = HarnessTrace(test_id="t")
+    trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
+    trace.record_event({"type": "stage_failed", "data": {"stage": "a"}})
+    trace.record_event({"type": "session_failed", "data": {"reason": "auth"}})
+    result = SESSION_COMPLETION_REQUIRES_SUCCESS.run(trace)
+    assert result.passed
+
+
+def test_events_well_formed_ok():
+    trace = HarnessTrace(test_id="t")
+    trace.record_event({"type": "stage_completed", "data": {"stage": "a"}})
+    trace.record_event({"type": "stage_started", "data": {"stage": "b"}})
     assert TRANSITION_EVENTS_WELL_FORMED.run(trace).passed
 
 
-def test_transition_events_well_formed_fails_on_missing_reason():
+def test_events_well_formed_fails_on_missing_stage():
     trace = HarnessTrace(test_id="t")
-    trace.record_event({
-        "type": "stage_transitioned",
-        "data": {"from_stage": "a", "to_stage": "b"},
-    })
+    trace.record_event({"type": "stage_completed", "data": {}})
     assert not TRANSITION_EVENTS_WELL_FORMED.run(trace).passed
