@@ -1,27 +1,21 @@
 [project]
 name = "agentlabx"
 version = "0.1.0"
-description = "Modular multi-instance research automation platform"
+description = "AgentLabX — Stage A1 foundation infrastructure"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2.0,<3.0",
-    "pydantic-settings>=2.0,<3.0",
-    "pyyaml>=6.0,<7.0",
-    "langgraph>=0.4,<1.0",
-    "langgraph-checkpoint-sqlite>=2.0,<3.0",
-    "litellm>=1.82,<2.0",
-    "sqlalchemy[asyncio]>=2.0,<3.0",
-    "aiosqlite>=0.19,<1.0",
-    "arxiv>=2.1,<3.0",
-    "huggingface-hub>=0.24,<1.0",
-    "semanticscholar>=0.10,<1.0",
-    "PyGithub>=2.3,<3.0",
-    "pypdf>=4.0,<5.0",
-    "scikit-learn>=1.4,<2.0",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.3,<3.0",
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.32,<1.0",
-    "python-multipart>=0.0.9,<1.0",
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "aiosqlite>=0.19,<1.0",
+    "cryptography>=42,<44",
+    "keyring>=24,<26",
+    "argon2-cffi>=23,<24",
+    "itsdangerous>=2.2,<3.0",
     "click>=8.1,<9.0",
+    "httpx>=0.27,<1.0",
 ]
 
 [project.scripts]
@@ -31,8 +25,9 @@ agentlabx = "agentlabx.cli.main:cli"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27,<1.0",
-    "ruff>=0.4",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-requests",
 ]
 
 [build-system]
@@ -44,13 +39,30 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = [
+    "E", "F", "I", "N", "W", "UP", "B", "SIM",
+    "ANN",   # flake8-annotations — every function typed
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Explicit: tests are NOT exempt from ANN rules (strict typing memory).
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_any_explicit = true
+disallow_any_generics = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["keyring.*", "argon2.*", "itsdangerous.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "live_harness: marks tests that require a live LLM provider (deselect with '-m \"not live_harness\"')",
+    "integration: marks integration tests (use `-m integration` to run only these)",
 ]
 
 [tool.hatch.build.targets.wheel]
