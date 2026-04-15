@@ -170,7 +170,6 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
     "mypy>=1.11",
-    "types-requests",
 ]
 
 [build-system]
