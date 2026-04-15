@@ -198,3 +198,60 @@ async def grant_capability(
         if existing is None:
             session.add(Capability(user_id=user_id, capability=payload.capability))
             await session.commit()
+
+
+@router.delete(
+    "/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_user(
+    user_id: str,
+    request: Request,
+    admin: Identity = Depends(require_admin),
+) -> None:
+    """Delete a user and cascade their configs/tokens/sessions/capabilities."""
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot delete your own identity",
+        )
+    db: DatabaseHandle = request.state.db
+    async with db.session() as session:
+        user = (
+            await session.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="no such user")
+        await session.delete(user)
+        await session.commit()
+
+
+@router.delete(
+    "/admin/users/{user_id}/capabilities/{capability}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_capability(
+    user_id: str,
+    capability: str,
+    request: Request,
+    admin: Identity = Depends(require_admin),
+) -> None:
+    """Revoke a capability from a user."""
+    if user_id == admin.id and capability == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot revoke your own admin capability",
+        )
+    db: DatabaseHandle = request.state.db
+    async with db.session() as session:
+        row = (
+            await session.execute(
+                select(Capability).where(
+                    Capability.user_id == user_id,
+                    Capability.capability == capability,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="capability not granted")
+        await session.delete(row)
+        await session.commit()
