@@ -1,9 +1,0 @@
-node_modules
-dist
-.vitest-cache
-coverage
-
-# tsc -b composite project emissions (from tsconfig.node.json referenced project)
-*.tsbuildinfo
-vite.config.js
-vite.config.d.ts
