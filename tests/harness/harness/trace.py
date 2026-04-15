@@ -49,5 +49,8 @@ def write_trace_artifact(trace: HarnessTrace, *, root: Path) -> Path:
             "by_severity": by_sev,
         },
     }
-    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str),
+        encoding="utf-8",
+    )
     return out_path

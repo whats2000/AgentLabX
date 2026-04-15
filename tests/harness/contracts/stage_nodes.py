@@ -137,7 +137,12 @@ def work_prompt_includes_plan_items(*, stage_name: str) -> Contract:
 def _evaluate_respects_iteration_bound(trace: HarnessTrace, *, stage_name: str) -> ContractResult:
     cid = f"stage_nodes.evaluate.respects_iteration_bound[{stage_name}]"
     after = trace.state_snapshots.get(f"after_{stage_name}", {})
-    max_iter = after.get("max_stage_iterations", 10)
+    # max_stage_iterations is a per-stage dict in PipelineState, not a flat int
+    raw = after.get("max_stage_iterations", {})
+    if isinstance(raw, dict):
+        max_iter = raw.get(stage_name, 10)
+    else:
+        max_iter = raw if isinstance(raw, int) else 10
     iters = [
         e for e in trace.events_of_type("stage_internal_node_changed")
         if e.get("data", {}).get("internal_node") == "evaluate"
