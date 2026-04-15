@@ -86,4 +86,22 @@ export const api = {
       `/api/settings/admin/users/${encodeURIComponent(user_id)}/capabilities/${encodeURIComponent(capability)}`,
       { method: "DELETE" }
     ),
+  updateDisplayName: (display_name: string) =>
+    request<IdentityDto>("/api/auth/me/display-name", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name }),
+    }),
+  updateEmail: (new_email: string, passphrase: string) =>
+    request<IdentityDto>("/api/auth/me/email", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_email, passphrase }),
+    }),
+  updatePassphrase: (old_passphrase: string, new_passphrase: string) =>
+    request<IdentityDto>("/api/auth/me/passphrase", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ old_passphrase, new_passphrase }),
+    }),
 }
