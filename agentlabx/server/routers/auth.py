@@ -77,7 +77,7 @@ async def me(identity: Identity = Depends(current_identity)) -> IdentityResponse
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, response: Response) -> Response:
+async def logout(request: Request, response: Response) -> None:
     cookie = request.cookies.get(COOKIE_NAME)
     if cookie is not None:
         try:
@@ -96,4 +96,3 @@ async def logout(request: Request, response: Response) -> Response:
                     row.revoked = True
                     await session.commit()
     response.delete_cookie(COOKIE_NAME)
-    return response

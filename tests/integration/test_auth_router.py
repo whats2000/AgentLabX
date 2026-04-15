@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from agentlabx.server.app import create_app  # type: ignore[import-untyped]
 from httpx import ASGITransport, AsyncClient
 
 from agentlabx.config.settings import AppSettings
+from agentlabx.server.app import create_app
 
 
 @pytest.mark.asyncio
