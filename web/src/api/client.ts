@@ -77,4 +77,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ capability }),
     }),
+  deleteUser: (user_id: string) =>
+    request<void>(`/api/settings/admin/users/${encodeURIComponent(user_id)}`, {
+      method: "DELETE",
+    }),
+  revokeCapability: (user_id: string, capability: string) =>
+    request<void>(
+      `/api/settings/admin/users/${encodeURIComponent(user_id)}/capabilities/${encodeURIComponent(capability)}`,
+      { method: "DELETE" }
+    ),
 }

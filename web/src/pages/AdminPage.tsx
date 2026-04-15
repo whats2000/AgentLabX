@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
 
 import { api, type AdminUserDto } from "@/api/client"
+import { useAuth } from "@/auth/AuthProvider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,6 +11,7 @@ import { PasswordInput } from "@/components/ui/password-input"
 
 export function AdminPage(): React.JSX.Element {
   const qc = useQueryClient()
+  const { identity: me } = useAuth()
   const users = useQuery<AdminUserDto[]>({ queryKey: ["users"], queryFn: api.listUsers })
   const [name, setName] = React.useState("")
   const [email, setEmail] = React.useState("")
@@ -27,6 +29,15 @@ export function AdminPage(): React.JSX.Element {
   const grant = useMutation({
     mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
       api.grantCapability(user_id, capability),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
+  })
+  const revoke = useMutation({
+    mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
+      api.revokeCapability(user_id, capability),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
+  })
+  const del = useMutation({
+    mutationFn: (user_id: string) => api.deleteUser(user_id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
   })
 
@@ -88,6 +99,16 @@ export function AdminPage(): React.JSX.Element {
               {grant.error.message}
             </div>
           ) : null}
+          {revoke.error ? (
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {revoke.error.message}
+            </div>
+          ) : null}
+          {del.error ? (
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {del.error.message}
+            </div>
+          ) : null}
           {users.data && users.data.length > 0 ? (
             <ul className="divide-y">
               {users.data.map((u) => (
@@ -99,15 +120,42 @@ export function AdminPage(): React.JSX.Element {
                       {u.id} · {u.auther_name} · {u.capabilities.join(", ") || "no capabilities"}
                     </div>
                   </div>
-                  {!u.capabilities.includes("admin") ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { grant.mutate({ user_id: u.id, capability: "admin" }) }}
-                    >
-                      Grant admin
-                    </Button>
-                  ) : null}
+                  <div className="flex gap-2">
+                    {u.id === me?.id ? (
+                      <span className="self-center text-xs text-slate-400">(you)</span>
+                    ) : (
+                      <>
+                        {u.capabilities.includes("admin") ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { revoke.mutate({ user_id: u.id, capability: "admin" }) }}
+                          >
+                            Revoke admin
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { grant.mutate({ user_id: u.id, capability: "admin" }) }}
+                          >
+                            Grant admin
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (window.confirm(`Delete ${u.display_name} (${u.email})? This cannot be undone.`)) {
+                              del.mutate(u.id)
+                            }
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
