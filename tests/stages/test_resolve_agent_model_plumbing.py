@@ -54,7 +54,7 @@ def test_resolve_agents_for_stage_passes_context_model():
 # ── Contract unit tests ──────────────────────────────────────────────────────
 
 from tests.harness.contracts.base import HarnessTrace
-from tests.harness.contracts.resolve_agent import model_plumbed_contract
+from tests.harness.contracts.resolve_agent import LLM_ACTUALLY_CALLED, model_plumbed_contract
 
 
 def test_model_plumbed_contract_passes_on_correct_model():
@@ -75,3 +75,24 @@ def test_model_plumbed_contract_passes_when_no_llm_calls():
     trace = HarnessTrace(test_id="t")
     c = model_plumbed_contract(expected_prefix="gemini/")
     assert c.run(trace).passed
+
+
+def test_llm_called_contract_passes_when_request_fired():
+    trace = HarnessTrace(test_id="t")
+    trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
+    trace.record_event({"type": "agent_llm_request", "data": {"model": "gemini/test"}})
+    assert LLM_ACTUALLY_CALLED.run(trace).passed
+
+
+def test_llm_called_contract_fails_when_stage_started_without_request():
+    trace = HarnessTrace(test_id="t")
+    trace.record_event({"type": "stage_started", "data": {"stage": "a"}})
+    # No agent_llm_request — LLM was never reached
+    result = LLM_ACTUALLY_CALLED.run(trace)
+    assert not result.passed
+    assert result.severity.value == "P1"
+
+
+def test_llm_called_contract_ok_when_no_stages_started():
+    trace = HarnessTrace(test_id="t")
+    assert LLM_ACTUALLY_CALLED.run(trace).passed

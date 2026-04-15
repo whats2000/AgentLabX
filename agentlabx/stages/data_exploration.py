@@ -111,6 +111,7 @@ class DataExplorationStage(BaseStage):
             registry,
             "sw_engineer",
             llm_provider=context.llm_provider,
+            model=context.model,
             cost_tracker=context.cost_tracker,
             state=state,
             event_bus=context.event_bus,

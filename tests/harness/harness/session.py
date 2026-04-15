@@ -95,12 +95,40 @@ class HarnessSession:
     async def _build_executor(
         cls, *, llm_provider: Any, tmp_db: str = ":memory:"
     ) -> tuple[PipelineExecutor, SessionManager]:
+        import tempfile
+        from pathlib import Path
+
+        from agentlabx.core.registry import PluginType
+        from agentlabx.providers.execution.subprocess_backend import SubprocessBackend
+        from agentlabx.providers.storage.sqlite_backend import SQLiteBackend
+        from agentlabx.tools.code_executor import CodeExecutor
+
         registry = build_default_registry()
+
+        # Register code_executor — build_default_registry() omits it because the
+        # production path constructs it after the execution backend is available
+        # (see build_app_context). The harness needs it for data_exploration,
+        # data_preparation, and experimentation stages.
+        execution_backend = SubprocessBackend()
+        registry.register(PluginType.EXECUTION_BACKEND, execution_backend.name, execution_backend)
+        registry.register(PluginType.TOOL, "code_executor", CodeExecutor(backend=execution_backend))
+
+        # Wire an in-memory SQLite storage backend so TracedLLMProvider emits
+        # agent_llm_request events. Without storage, PipelineExecutor skips
+        # TracedLLMProvider wrapping and no LLM events are recorded.
+        storage_tmp_dir = tempfile.mkdtemp(prefix="harness_storage_")
+        storage = SQLiteBackend(
+            database_url="sqlite+aiosqlite:///:memory:",
+            artifacts_path=Path(storage_tmp_dir),
+        )
+        await storage.initialize()
+
         session_manager = SessionManager()
         executor = PipelineExecutor(
             registry=registry,
             session_manager=session_manager,
             llm_provider=llm_provider,
+            storage=storage,
             checkpoint_db_path=tmp_db,
         )
         await executor.initialize()
