@@ -113,3 +113,42 @@ async def test_audit_log_records_auth_and_admin_events(
             assert deleted_event["payload"]["target_email"] == "bob@example.com"
     finally:
         await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_admin_can_clear_audit_log(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            # register + login; this generates a few audit events
+            await c.post(
+                "/api/auth/register",
+                json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
+            )
+            await c.post(
+                "/api/auth/login",
+                json={"email": "a@x.com", "passphrase": "p1234567"},
+            )
+            r = await c.get("/api/settings/admin/events")
+            assert r.status_code == 200
+            assert len(r.json()) >= 2  # at least registered + login_success
+
+            # clear
+            r = await c.delete("/api/settings/admin/events")
+            assert r.status_code == 204
+
+            # after clear, log contains exactly one entry: the clear event itself
+            r = await c.get("/api/settings/admin/events")
+            assert r.status_code == 200
+            events = r.json()
+            assert len(events) == 1
+            assert events[0]["kind"] == "admin.audit_log_cleared"
+            assert events[0]["payload"]["actor_email"] == "a@x.com"
+    finally:
+        await app.state.db.close()

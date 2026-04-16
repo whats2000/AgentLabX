@@ -330,6 +330,24 @@ async def revoke_capability(
     )
 
 
+@router.delete("/admin/events", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_audit_log(
+    request: Request,
+    admin: Identity = Depends(require_admin),
+) -> None:
+    """Truncate the JSONL audit log. Emits `admin.audit_log_cleared` AFTER truncation
+    so the clearing action becomes the first record of the new log."""
+    settings: AppSettings = request.app.state.settings
+    path = settings.audit_log_path
+    if path.exists():
+        path.write_text("", encoding="utf-8")
+    await _emit(
+        request,
+        "admin.audit_log_cleared",
+        {"actor_id": admin.id, "actor_email": admin.email},
+    )
+
+
 @router.get("/admin/events", response_model=list[EventResponse])
 async def list_events(
     request: Request,
