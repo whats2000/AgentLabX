@@ -19,9 +19,17 @@ uv sync --extra dev
 
 `uv sync --extra dev` creates `.venv/`, installs the `agentlabx` package in editable mode, and pulls dev deps (pytest, ruff, mypy, httpx). `npm install` pulls the React shell's deps. First-time install takes 1–2 minutes total.
 
-## 2. Bootstrap the Owner identity
+## 2. Create the Owner identity (pick one path)
 
-The first user registered on an install becomes the **Owner** — an immutable admin that no one else can delete or demote. Create this Owner from the CLI so the server has someone to log in as on first boot:
+The first user registered on an install becomes the **Owner** — an immutable admin that no one else can delete or demote. Two equivalent paths; pick whichever fits your workflow:
+
+### Path A — Browser (interactive)
+
+Skip to step 3 (start the backend + Vite). On first visit, the login page automatically shows a **"Create first identity"** form — fill in display name + email + passphrase and submit. You become the Owner and are logged in immediately.
+
+### Path B — CLI (headless / scripted)
+
+Run this before starting the server — useful for container entrypoints, CI setup scripts, or any install without a browser:
 
 ```bash
 uv run agentlabx bootstrap-admin --display-name "Alice" --email alice@example.com
@@ -29,9 +37,9 @@ uv run agentlabx bootstrap-admin --display-name "Alice" --email alice@example.co
 # → Registered identity id=<uuid> (admin)
 ```
 
-This creates the SQLite DB at `~/.agentlabx/agentlabx.db`, records the schema version, and stores an argon2-hashed passphrase. The Fernet master key is generated and stored in your OS keyring (Windows Credential Manager, macOS Keychain, or Secret Service).
+Both paths hit the same backend code and produce an identical DB state.
 
-> You can also register the first user via the browser on a fresh install — `bootstrap-admin` is just the non-interactive path.
+Either way, on first use the server writes SQLite at `~/.agentlabx/agentlabx.db`, records the schema version, and stores an argon2-hashed passphrase. The Fernet master key is generated and stored in your OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service).
 
 ## 3. Start the backend
 
@@ -57,10 +65,12 @@ Vite proxies `/api` to the backend on `:8765`, so the UI talks to your running s
 
 ## 5. Log in
 
-Visit **http://127.0.0.1:5173**. Because the install already has a user (the one `bootstrap-admin` created), the login page defaults to **Log in** mode.
+Visit **http://127.0.0.1:5173**.
 
-- **Email:** `alice@example.com`
-- **Passphrase:** whatever you typed at the CLI prompt
+- **If you used Path B (CLI bootstrap)** — the install already has a user; the login page defaults to **Log in** mode. Enter your email + passphrase.
+- **If you skipped Path B** — the install is empty; the login page defaults to **Create first identity** mode. Fill in display name + email + passphrase and submit. You'll be registered as the Owner and logged in immediately.
+
+After either path the "Need to register?" toggle is always visible so you can switch modes manually. Self-registration is gated on the server: once any user exists, `/api/auth/register` returns `403 self-registration disabled`.
 
 You should land on `/runs` (empty placeholder — Layer B will populate this with actual runs later). From here:
 

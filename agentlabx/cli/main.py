@@ -26,7 +26,12 @@ def cli() -> None:
 def bootstrap_admin(
     display_name: str, email: str, passphrase: str, workspace: Path | None
 ) -> None:
-    """Register the first identity (granted admin capability automatically)."""
+    """Register the first identity (granted admin capability automatically).
+
+    Equivalent to filling the "Create first identity" form shown on the login
+    page of a fresh install. Use this CLI path for headless / automated setups;
+    interactive operators can use the browser shell instead.
+    """
 
     async def _run() -> None:
         settings = AppSettings(workspace=workspace) if workspace else AppSettings()
