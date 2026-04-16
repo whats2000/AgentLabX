@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
       </AuthProvider>
     ),
     children: [
-      { index: true, element: <Navigate to="/settings" replace /> },
+      { index: true, element: <Navigate to="/runs" replace /> },
       { path: "login", element: <LoginPage /> },
       { path: "profile", element: <RequireAuth><ProfilePage /></RequireAuth> },
       { path: "settings", element: <RequireAuth><SettingsPage /></RequireAuth> },
