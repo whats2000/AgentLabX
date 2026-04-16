@@ -7,8 +7,9 @@ from typing import cast
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-from agentlabx.auth.protocol import AuthError, Identity
+from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.db.schema import Capability, OAuthToken, User
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.security.fernet_store import FernetStore
@@ -114,6 +115,11 @@ class OAuthAuther:
 
         normalized_email = email.strip().lower()
         async with self._db.session() as session:
+            existing = (
+                await session.execute(select(User).where(User.email == normalized_email))
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise EmailAlreadyRegisteredError(normalized_email)
             user_count = (
                 await session.execute(select(User).with_only_columns(User.id))
             ).all()
@@ -138,7 +144,11 @@ class OAuthAuther:
             if len(user_count) == 0:
                 session.add(Capability(user_id=user_id, capability="admin"))
                 caps.add("admin")
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise EmailAlreadyRegisteredError(normalized_email) from exc
 
         return Identity(
             id=user_id,

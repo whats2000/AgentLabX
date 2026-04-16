@@ -5,12 +5,13 @@ from pathlib import Path
 import httpx
 import pytest
 
+from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.oauth import (
     DeviceFlowInitiation,
     OAuthAuther,
     OAuthProviderConfig,
 )
-from agentlabx.auth.protocol import AuthError
+from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError
 from agentlabx.db.migrations import apply_migrations
 from agentlabx.db.session import DatabaseHandle
 
@@ -121,5 +122,48 @@ async def test_unknown_provider_raises(tmp_workspace: Path) -> None:
         )
         with pytest.raises(AuthError):
             await auther.initiate(provider="missing")
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_oauth_complete_with_existing_email_raises(tmp_workspace: Path) -> None:
+    """I4: OAuthAuther.complete raises EmailAlreadyRegisteredError for duplicate email."""
+    from cryptography.fernet import Fernet
+
+    from agentlabx.security.fernet_store import FernetStore
+
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        fernet_key = Fernet.generate_key()
+        # Register a default-auth user with a@x.com first.
+        default_auther = DefaultAuther(handle)
+        await default_auther.register(
+            display_name="Existing", email="a@x.com", passphrase="pass1234"
+        )
+        # Now attempt OAuth complete with the same email.
+        oauth_auther = OAuthAuther(
+            db=handle,
+            transport=_mock_transport_with_tokens(),
+            providers={
+                "demo": OAuthProviderConfig(
+                    client_id="c",
+                    device_code_url="https://example.com/device/code",
+                    token_url="https://example.com/token",
+                    scopes=("read",),
+                )
+            },
+            crypto=FernetStore(key=fernet_key),
+        )
+        init = await oauth_auther.initiate(provider="demo")
+        with pytest.raises(EmailAlreadyRegisteredError):
+            await oauth_auther.complete(
+                provider="demo",
+                device_code=init.device_code,
+                display_name="New",
+                email="a@x.com",
+            )
     finally:
         await handle.close()

@@ -4,12 +4,24 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_fk(  # type: ignore[no-untyped-def]
+    dbapi_connection,
+    _connection_record,
+) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 class DatabaseHandle:

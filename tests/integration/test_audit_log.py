@@ -120,6 +120,9 @@ async def test_audit_log_records_auth_and_admin_events(
 async def test_admin_can_clear_audit_log(
     tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
 ) -> None:
+    """I3b: clear archives pre-clear events; only the clear record remains in audit.jsonl."""
+    import json as _json
+
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
@@ -137,18 +140,33 @@ async def test_admin_can_clear_audit_log(
             )
             r = await c.get("/api/settings/admin/events")
             assert r.status_code == 200
-            assert len(r.json()) >= 2  # at least registered + login_success
+            pre_clear_count = len(r.json())
+            assert pre_clear_count >= 2  # at least registered + login_success
 
             # clear
             r = await c.delete("/api/settings/admin/events")
             assert r.status_code == 204
 
-            # after clear, log contains exactly one entry: the clear event itself
+            # after clear, audit.jsonl contains exactly one entry: the clear event itself
             r = await c.get("/api/settings/admin/events")
             assert r.status_code == 200
             events = r.json()
             assert len(events) == 1
             assert events[0]["kind"] == "admin.audit_log_cleared"
             assert events[0]["payload"]["actor_email"] == "a@x.com"
+
+            # I3b: an archive file must exist next to audit.jsonl with the old events
+            events_dir = settings.audit_log_path.parent
+            archives = sorted(events_dir.glob("audit.*.cleared.jsonl"))
+            assert len(archives) == 1, f"expected one archive file, got: {archives}"
+            archive_lines = archives[0].read_text(encoding="utf-8").splitlines()
+            assert len(archive_lines) == pre_clear_count, (
+                f"archive should hold {pre_clear_count} pre-clear lines, "
+                f"got {len(archive_lines)}"
+            )
+            # Every line must be valid JSON with a "kind" field
+            for raw in archive_lines:
+                obj = _json.loads(raw)
+                assert "kind" in obj
     finally:
         await app.state.db.close()

@@ -4,12 +4,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.auth.token import TokenAuther
 from agentlabx.db.schema import Session as SessionRow
+from agentlabx.db.schema import User, UserToken
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.events.bus import Event, EventBus
 from agentlabx.models.api import (
@@ -65,9 +66,51 @@ async def _emit(
     await bus.emit(Event(kind=kind, payload=payload))
 
 
+async def _any_user_exists(db: DatabaseHandle) -> bool:
+    async with db.session() as session:
+        count = (
+            await session.execute(select(func.count()).select_from(User))
+        ).scalar_one()
+    return count > 0
+
+
+async def _issue_session_cookie(
+    db: DatabaseHandle,
+    identity_id: str,
+    request: Request,
+    response: Response,
+) -> None:
+    """Create a new SessionRow and set the session cookie on the response."""
+    cfg: SessionConfig = request.state.session_config
+    session_id = str(uuid.uuid4())
+    async with db.session() as session:
+        session.add(
+            SessionRow(
+                id=session_id,
+                user_id=identity_id,
+                expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=cfg.max_age_seconds),
+            )
+        )
+        await session.commit()
+    cookie_value = request.state.session_serializer.dumps({"sid": session_id})
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=cookie_value,
+        max_age=cfg.max_age_seconds,
+        httponly=True,
+        secure=cfg.secure,
+        samesite="lax",
+    )
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=IdentityResponse)
 async def register(payload: RegisterRequest, request: Request) -> IdentityResponse:
     db: DatabaseHandle = request.state.db
+    if await _any_user_exists(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="self-registration disabled; ask an admin to provision your account",
+        )
     auther = DefaultAuther(db)
     email = payload.email.strip().lower()
     try:
@@ -137,27 +180,20 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
 
     limiter.record_success(payload.email)
 
-    cfg: SessionConfig = request.state.session_config
-    session_id = str(uuid.uuid4())
-    async with db.session() as session:
-        session.add(
-            SessionRow(
-                id=session_id,
-                user_id=identity.id,
-                expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=cfg.max_age_seconds),
-            )
-        )
-        await session.commit()
+    # I2: revoke the session tied to the incoming cookie (session-fixation guard).
+    incoming_sid = _current_session_id(request)
+    if incoming_sid is not None:
+        async with db.session() as session:
+            row = (
+                await session.execute(
+                    select(SessionRow).where(SessionRow.id == incoming_sid)
+                )
+            ).scalar_one_or_none()
+            if row is not None:
+                row.revoked = True
+                await session.commit()
 
-    cookie_value = request.state.session_serializer.dumps({"sid": session_id})
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=cookie_value,
-        max_age=cfg.max_age_seconds,
-        httponly=True,
-        secure=cfg.secure,
-        samesite="lax",
-    )
+    await _issue_session_cookie(db, identity.id, request, response)
     await _emit(
         request,
         "auth.login_success",
@@ -235,6 +271,7 @@ async def update_email(
 async def update_passphrase(
     payload: UpdatePassphraseRequest,
     request: Request,
+    response: Response,
     identity: Identity = Depends(current_identity),
 ) -> IdentityResponse:
     db: DatabaseHandle = request.state.db
@@ -247,6 +284,25 @@ async def update_passphrase(
         )
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    # I1: revoke all existing sessions and tokens for this user.
+    async with db.session() as session:
+        sessions = (
+            await session.execute(
+                select(SessionRow).where(SessionRow.user_id == identity.id)
+            )
+        ).scalars().all()
+        for s in sessions:
+            s.revoked = True
+        tokens = (
+            await session.execute(
+                select(UserToken).where(UserToken.user_id == identity.id)
+            )
+        ).scalars().all()
+        for t in tokens:
+            t.revoked = True
+        await session.commit()
+    # Issue a fresh session cookie so the caller stays logged in.
+    await _issue_session_cookie(db, identity.id, request, response)
     await _emit(
         request,
         "auth.passphrase_updated",

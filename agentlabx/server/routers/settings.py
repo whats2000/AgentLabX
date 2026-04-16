@@ -335,12 +335,16 @@ async def clear_audit_log(
     request: Request,
     admin: Identity = Depends(require_admin),
 ) -> None:
-    """Truncate the JSONL audit log. Emits `admin.audit_log_cleared` AFTER truncation
+    """Archive the JSONL audit log to a timestamped file, then emit the clear event
     so the clearing action becomes the first record of the new log."""
+    from datetime import datetime, timezone
+
     settings: AppSettings = request.app.state.settings
     path = settings.audit_log_path
-    if path.exists():
-        path.write_text("", encoding="utf-8")
+    if path.exists() and path.stat().st_size > 0:
+        ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        archive = path.parent / f"audit.{ts}.cleared.jsonl"
+        path.rename(archive)
     await _emit(
         request,
         "admin.audit_log_cleared",
@@ -355,15 +359,16 @@ async def list_events(
     limit: int = Query(200, ge=1, le=1000),
 ) -> list[EventResponse]:
     """Return the most recent N events from the JSONL audit log (newest first)."""
+    from collections import deque
+
     settings: AppSettings = request.app.state.settings
     path = settings.audit_log_path
     if not path.exists():
         return []
     with path.open("r", encoding="utf-8") as f:
-        lines = f.readlines()
-    recent = lines[-limit:]
+        tail_lines: deque[str] = deque(f, maxlen=limit)
     events: list[EventResponse] = []
-    for line in reversed(recent):
+    for line in reversed(tail_lines):
         data = json.loads(line)
         events.append(
             EventResponse(kind=data["kind"], at=data["at"], payload=data["payload"])
