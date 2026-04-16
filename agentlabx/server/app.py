@@ -12,6 +12,7 @@ from agentlabx.events.logger import JsonlEventSink
 from agentlabx.security.fernet_store import FernetStore
 from agentlabx.security.keyring_store import get_or_create_session_secret
 from agentlabx.server.middleware import SessionConfig, install_session_middleware
+from agentlabx.server.rate_limit import LoginRateLimiter
 from agentlabx.server.routers import auth as auth_router
 from agentlabx.server.routers import health as health_router
 from agentlabx.server.routers import runs as runs_router
@@ -36,12 +37,16 @@ async def create_app(settings: AppSettings) -> FastAPI:
     sink = JsonlEventSink(path=settings.audit_log_path)
     sink.install(bus)
 
+    limiter = LoginRateLimiter()
+    app.state.login_limiter = limiter
+
     @app.middleware("http")
     async def inject_crypto_and_events(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request.state.crypto = crypto
         request.state.events = bus
+        request.state.login_limiter = request.app.state.login_limiter
         return await call_next(request)
 
     app.include_router(health_router.router)

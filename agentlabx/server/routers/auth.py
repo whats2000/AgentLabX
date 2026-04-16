@@ -26,6 +26,7 @@ from agentlabx.models.api import (
 )
 from agentlabx.server.dependencies import current_identity
 from agentlabx.server.middleware import COOKIE_NAME, SessionConfig
+from agentlabx.server.rate_limit import LoginRateLimiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -92,6 +93,20 @@ async def register(payload: RegisterRequest, request: Request) -> IdentityRespon
 
 @router.post("/login", response_model=IdentityResponse)
 async def login(payload: LoginRequest, request: Request, response: Response) -> IdentityResponse:
+    limiter: LoginRateLimiter = request.state.login_limiter
+    retry_after = limiter.check(payload.email)
+    if retry_after is not None:
+        await _emit(
+            request,
+            "auth.login_rate_limited",
+            {"attempted_email": payload.email, "retry_after_seconds": int(retry_after)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"too many failed attempts; retry in {int(retry_after)}s",
+            headers={"Retry-After": str(int(retry_after))},
+        )
+
     db: DatabaseHandle = request.state.db
     auther = DefaultAuther(db)
     try:
@@ -99,12 +114,28 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
             {"email": payload.email, "passphrase": payload.passphrase}
         )
     except AuthError as exc:
+        locked = limiter.record_failure(payload.email)
         await _emit(
             request,
             "auth.login_failed",
             {"attempted_email": payload.email},
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        if locked is not None:
+            await _emit(
+                request,
+                "auth.login_rate_limited",
+                {"attempted_email": payload.email, "retry_after_seconds": int(locked)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"too many failed attempts; retry in {int(locked)}s",
+                headers={"Retry-After": str(int(locked))},
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
+        ) from exc
+
+    limiter.record_success(payload.email)
 
     cfg: SessionConfig = request.state.session_config
     session_id = str(uuid.uuid4())

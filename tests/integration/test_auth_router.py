@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from agentlabx.config.settings import AppSettings
 from agentlabx.server.app import create_app
+from agentlabx.server.rate_limit import LoginRateLimiter
 
 
 @pytest.mark.asyncio
@@ -177,5 +178,45 @@ async def test_update_passphrase_via_api(
                 json={"email": "a@x.com", "passphrase": "new123456"},
             )
             assert r.status_code == 200
+    finally:
+        await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_repeated_failed_logins_trigger_429(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    # Shrink the limiter for the test
+    app.state.login_limiter = LoginRateLimiter(
+        max_failures=3, window_seconds=60, lockout_seconds=30
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            await c.post(
+                "/api/auth/register",
+                json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
+            )
+            # 3 failed attempts → last one triggers 429
+            for i in range(3):
+                r = await c.post(
+                    "/api/auth/login",
+                    json={"email": "a@x.com", "passphrase": "wrong"},
+                )
+                if i < 2:
+                    assert r.status_code == 401
+                else:
+                    assert r.status_code == 429
+                    assert "Retry-After" in r.headers
+            # even correct passphrase is locked out
+            r = await c.post(
+                "/api/auth/login",
+                json={"email": "a@x.com", "passphrase": "p1234567"},
+            )
+            assert r.status_code == 429
     finally:
         await app.state.db.close()
