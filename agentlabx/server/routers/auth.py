@@ -15,6 +15,7 @@ from agentlabx.models.api import (
     IdentityResponse,
     LoginRequest,
     RegisterRequest,
+    SessionResponse,
     UpdateDisplayNameRequest,
     UpdateEmailRequest,
     UpdatePassphraseRequest,
@@ -23,6 +24,21 @@ from agentlabx.server.dependencies import current_identity
 from agentlabx.server.middleware import COOKIE_NAME, SessionConfig
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _current_session_id(request: Request) -> str | None:
+    """Return the session ID from the request cookie, or None if absent / invalid."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if cookie is None:
+        return None
+    try:
+        payload = request.state.session_serializer.loads(cookie)
+    except Exception:
+        return None
+    if isinstance(payload, dict) and "sid" in payload:
+        sid = payload["sid"]
+        return str(sid) if isinstance(sid, str) else None
+    return None
 
 
 def _identity_response(identity: Identity) -> IdentityResponse:
@@ -202,6 +218,64 @@ async def update_passphrase(
         {"actor_id": identity.id, "actor_email": identity.email},
     )
     return _identity_response(updated)
+
+
+@router.get("/me/sessions", response_model=list[SessionResponse])
+async def list_my_sessions(
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> list[SessionResponse]:
+    db: DatabaseHandle = request.state.db
+    current_sid = _current_session_id(request)
+    async with db.session() as session:
+        rows = (
+            await session.execute(
+                select(SessionRow)
+                .where(SessionRow.user_id == identity.id, SessionRow.revoked == False)  # noqa: E712
+                .order_by(SessionRow.last_seen_at.desc())
+            )
+        ).scalars().all()
+    return [
+        SessionResponse(
+            id=r.id,
+            issued_at=r.issued_at.isoformat(),
+            expires_at=r.expires_at.isoformat(),
+            last_seen_at=r.last_seen_at.isoformat(),
+            is_current=(r.id == current_sid),
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_my_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    identity: Identity = Depends(current_identity),
+) -> None:
+    db: DatabaseHandle = request.state.db
+    current_sid = _current_session_id(request)
+    async with db.session() as session:
+        row = (
+            await session.execute(
+                select(SessionRow).where(
+                    SessionRow.id == session_id, SessionRow.user_id == identity.id
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such session")
+        row.revoked = True
+        await session.commit()
+    await _emit(
+        request,
+        "auth.session_revoked",
+        {"actor_id": identity.id, "actor_email": identity.email, "session_id": session_id},
+    )
+    # If they just revoked their own current session, clear the cookie.
+    if session_id == current_sid:
+        response.delete_cookie(COOKIE_NAME)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

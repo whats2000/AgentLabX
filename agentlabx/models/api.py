@@ -65,3 +65,11 @@ class EventResponse(BaseModel):  # type: ignore[explicit-any]
     kind: str
     at: str
     payload: dict[str, str | int | float | bool | None]
+
+
+class SessionResponse(BaseModel):  # type: ignore[explicit-any]
+    id: str
+    issued_at: str
+    expires_at: str
+    last_seen_at: str
+    is_current: bool
