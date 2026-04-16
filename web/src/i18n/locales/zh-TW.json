@@ -107,6 +107,7 @@
     "deleteCredentialTitle": "刪除憑證？",
     "deleteCredentialDesc": "刪除憑證插槽 {{slot}}。使用此插槽的任何已設定提供者將停止運作，直到您重新新增為止。",
     "noCredentials": "尚無憑證。",
+    "providerHint": "插槽名稱對應 LiteLLM 提供者金鑰。查看支援的提供者：",
     "adminHint": "您是管理員。請前往「管理使用者」分頁來建立身分。"
   },
   "admin": {

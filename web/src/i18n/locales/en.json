@@ -107,6 +107,7 @@
     "deleteCredentialTitle": "Delete credential?",
     "deleteCredentialDesc": "Delete credential slot {{slot}}. Any configured provider using this slot will stop working until you add it again.",
     "noCredentials": "No credentials yet.",
+    "providerHint": "Slot names correspond to LiteLLM provider keys. See supported providers:",
     "adminHint": "You are an admin. Visit the Admin users tab to provision identities."
   },
   "admin": {

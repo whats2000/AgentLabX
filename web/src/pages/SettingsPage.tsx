@@ -61,7 +61,27 @@ export function SettingsPage(): React.JSX.Element {
           >
             <div className="space-y-2">
               <Label>{t("settings.slotLabel")}</Label>
-              <Input value={slot} onChange={(e) => { setSlot(e.target.value) }} required />
+              <Input
+                value={slot}
+                onChange={(e) => { setSlot(e.target.value) }}
+                list="provider-suggestions"
+                required
+              />
+              <datalist id="provider-suggestions">
+                <option value="anthropic" />
+                <option value="openai" />
+                <option value="google" />
+                <option value="azure" />
+                <option value="deepseek" />
+                <option value="ollama" />
+                <option value="together-ai" />
+                <option value="groq" />
+                <option value="mistral" />
+                <option value="cohere" />
+                <option value="huggingface" />
+                <option value="aws-bedrock" />
+                <option value="vertex-ai" />
+              </datalist>
             </div>
             <div className="space-y-2">
               <Label>{t("settings.valueLabel")}</Label>
@@ -77,6 +97,17 @@ export function SettingsPage(): React.JSX.Element {
               </div>
             ) : null}
             <Button type="submit" disabled={put.isPending}>{t("settings.saveButton")}</Button>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("settings.providerHint")}{" "}
+              <a
+                href="https://docs.litellm.ai/docs/providers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                LiteLLM Providers ↗
+              </a>
+            </p>
           </form>
         </CardContent>
       </Card>
