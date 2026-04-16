@@ -27,15 +27,15 @@ The end product is a reproducible research artifact — **literature survey · r
 
 ```
   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-  │    DISCOVERY     │──▶│  IMPLEMENTATION  │──▶│     SYNTHESIS    │
+  │    DISCOVERY     │──>│  IMPLEMENTATION  │──>│     SYNTHESIS    │
   ├──────────────────┤   ├──────────────────┤   ├──────────────────┤
   │ literature_review│   │ data_exploration │   │  interpretation  │
   │ plan_formulation │   │ data_preparation │   │  report_writing  │
   │                  │   │  experimentation │   │   peer_review    │
   └──────────────────┘   └──────────────────┘   └──────────────────┘
-           ▲                       ▲                       │
-           │                       │                       │
-           └───────────────────────┴──────── backtrack ────┘
+           ▲                      ▲ │                     │
+           │                      │ │                     │
+           └──────────────────────┴─┴────── backtrack ────┘
                       (any stage may target any earlier stage;
                        stage-owned policy, partial rollback preserves
                        accepted artifacts; PI consulted only at
