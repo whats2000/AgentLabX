@@ -10,9 +10,8 @@
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-91%20passing-brightgreen.svg)](#development)
 
-[Quickstart](docs/quickstart.md) · [Vision](docs/superpowers/specs/2026-04-15-agentlabx-vision.md) · [SRS](docs/superpowers/specs/2026-04-15-agentlabx-srs.md) · [A1 plan](docs/superpowers/plans/2026-04-15-stageA1-foundation-infrastructure.md)
+[Quickstart](docs/quickstart.md) · [Vision](docs/superpowers/specs/2026-04-15-agentlabx-vision.md) · [SRS](docs/superpowers/specs/2026-04-15-agentlabx-srs.md) · [Plans](docs/superpowers/plans/)
 
 </div>
 
@@ -102,25 +101,6 @@ The platform is assembled one stage at a time, each with its own spec, plan, and
 
 ---
 
-## Status
-
-This repository is **Stage A1** of the build roadmap — the foundation every later stage plugs into.
-
-### What Stage A1 ships
-
-- **Multi-user backend.** Three `Auther` implementations (passphrase / bearer token / RFC 8628 OAuth device flow). Per-user encrypted credential store (Fernet + OS keyring). Session cookies + personal API tokens side-by-side.
-- **Owner + admin roles.** First-registered user is the immutable Owner. Admins provision additional users and manage capabilities.
-- **Observable from day one.** In-process event bus + JSONL audit log of every auth, admin, credential, and session mutation. Admin audit view with archive-on-clear.
-- **SQLite + in-place migrations.** SQLAlchemy 2 async, aiosqlite, FK cascades enforced, forward migrations between schema versions. Schema-version mismatch surfaces a clear error instead of silent corruption.
-- **Plugin-registry skeleton.** Python entry-point discovery — later stages (LLM providers, MCP servers, stage implementations, authers) register here.
-- **Minimal web shell.** React 19 + Vite + Tailwind + shadcn/ui. Login, profile self-edit, credentials CRUD with reveal-on-demand, active sessions, personal API tokens, admin user management, audit activity. No research UI yet — that belongs to Layer C.
-- **Three CLI commands.** `agentlabx serve`, `agentlabx bootstrap-admin`, `agentlabx reset-passphrase`.
-- **91 tests.** pytest + pytest-asyncio; ruff + mypy strict; TypeScript strict on the frontend.
-
-**Research agents, LLM calls, MCP tool integration, RAG, orchestration, and reproducible-experiment execution are not yet implemented.** They live in the layers below.
-
----
-
 ## Roadmap
 
 Three layers, built in strict order. Each stage delivers working, testable software; the next stage does not begin until its predecessor's gate passes.
@@ -129,7 +109,7 @@ Three layers, built in strict order. Each stage delivers working, testable softw
 
 Complete the full framework before any research stage exists. All stage I/O contracts are defined upfront in Stage A4 so implementations slot into a known shape rather than reshaping the framework mid-stream.
 
-- [x] **A1 — Foundation infrastructure** — auth, sessions, encrypted credentials, event bus, plugin registry, migrations, CLI, test shell ← **shipped**
+- [ ] **A1 — Foundation infrastructure** — auth, sessions, encrypted credentials, event bus, plugin registry, migrations, CLI, test shell
 - [ ] **A2 — LLM provider module** — LiteLLM router · traced wrapper (events + cost + budget cap) · mock provider · per-user encrypted key wiring
 - [ ] **A3 — MCP host + bundled servers** — arxiv-search · semantic-scholar · code-execution (sandboxed) · browser · filesystem · memory
 - [ ] **A4 — Stage contract framework** — `Stage` Protocol · Pydantic I/O contracts for every pipeline stage upfront · reproducibility-contract dataclass · plugin discovery
@@ -222,7 +202,7 @@ web/                           React frontend (Vite + TypeScript strict + Tailwi
                                RunsPage (placeholder — Layer B will populate)
 
 docs/superpowers/              vision + SRS + per-stage implementation plans
-tests/                         91 tests: 75 unit, 16 integration
+tests/                         pytest suite (unit + integration)
 ```
 
 **Configuration:** environment variables prefixed `AGENTLABX_` override defaults. See [`agentlabx/config/settings.py`](agentlabx/config/settings.py).
@@ -234,7 +214,7 @@ tests/                         91 tests: 75 unit, 16 integration
 ```bash
 # Backend gates
 uv sync --extra dev
-uv run pytest -v                           # 91 passing
+uv run pytest -v
 uv run ruff check agentlabx tests
 uv run mypy agentlabx tests
 uv run agentlabx serve --bind loopback

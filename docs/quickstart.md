@@ -140,7 +140,7 @@ Next `bootstrap-admin` call writes a fresh DB + generates a fresh master key.
 ## Verify gates locally
 
 ```bash
-# Python: 91 tests + strict typing
+# Python: tests + strict typing
 uv run pytest -v
 uv run ruff check agentlabx tests
 uv run mypy agentlabx tests
