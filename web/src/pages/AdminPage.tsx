@@ -130,7 +130,14 @@ export function AdminPage(): React.JSX.Element {
               {users.data.map((u) => (
                 <li key={u.id} className="flex items-center justify-between py-2">
                   <div>
-                    <div className="font-medium">{u.display_name}</div>
+                    <div className="font-medium">
+                      {u.display_name}
+                      {u.capabilities.includes("owner") && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                          Owner
+                        </span>
+                      )}
+                    </div>
                     <div className="text-sm text-slate-500">{u.email}</div>
                     <div className="text-xs text-slate-400">
                       {u.id} · {u.auther_name} · {u.capabilities.join(", ") || "no capabilities"}
@@ -139,6 +146,8 @@ export function AdminPage(): React.JSX.Element {
                   <div className="flex gap-2">
                     {u.id === me?.id ? (
                       <span className="self-center text-xs text-slate-400">(you)</span>
+                    ) : u.capabilities.includes("owner") ? (
+                      <span className="self-center text-xs text-slate-400">(owner)</span>
                     ) : (
                       <>
                         {u.capabilities.includes("admin") ? (

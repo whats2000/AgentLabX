@@ -101,6 +101,15 @@ export function LoginPage(): React.JSX.Element {
           </form>
         </CardContent>
       </Card>
+      {mode === "login" ? (
+        <p className="mt-4 text-xs text-slate-400">
+          Forgot your passphrase? Run{" "}
+          <code className="rounded bg-slate-100 px-1 text-slate-600">
+            agentlabx reset-passphrase --email YOUR_EMAIL
+          </code>{" "}
+          from the server shell.
+        </p>
+      ) : null}
     </div>
   )
 }
