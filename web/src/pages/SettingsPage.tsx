@@ -68,19 +68,21 @@ export function SettingsPage(): React.JSX.Element {
                 required
               />
               <datalist id="provider-suggestions">
-                <option value="anthropic" />
                 <option value="openai" />
-                <option value="google" />
+                <option value="anthropic" />
+                <option value="gemini" />
                 <option value="azure" />
+                <option value="vertex_ai" />
+                <option value="bedrock" />
                 <option value="deepseek" />
                 <option value="ollama" />
-                <option value="together-ai" />
+                <option value="together_ai" />
                 <option value="groq" />
                 <option value="mistral" />
                 <option value="cohere" />
                 <option value="huggingface" />
-                <option value="aws-bedrock" />
-                <option value="vertex-ai" />
+                <option value="openrouter" />
+                <option value="xai" />
               </datalist>
             </div>
             <div className="space-y-2">
