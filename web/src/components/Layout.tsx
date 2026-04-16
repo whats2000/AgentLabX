@@ -12,10 +12,16 @@ export function Layout(): React.JSX.Element {
   return (
     <div className="flex h-full">
       <aside className="w-60 border-r bg-white p-4 space-y-1">
-        <div className="px-2 pb-4">
+        <NavLink
+          to="/profile"
+          className={({ isActive }) =>
+            "block rounded px-2 py-2 mb-4 transition-colors " +
+            (isActive ? "bg-slate-100" : "hover:bg-slate-50")
+          }
+        >
           <div className="text-sm font-medium text-slate-700">{identity.display_name}</div>
           <div className="text-xs text-slate-400">{identity.email}</div>
-        </div>
+        </NavLink>
         <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
           <KeyRound className="h-4 w-4" /> Credentials
         </NavLink>

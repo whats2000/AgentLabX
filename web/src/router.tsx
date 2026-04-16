@@ -6,6 +6,7 @@ import { LoginPage } from "@/auth/LoginPage"
 import { Layout } from "@/components/Layout"
 import { AdminActivityPage } from "@/pages/AdminActivityPage"
 import { AdminPage } from "@/pages/AdminPage"
+import { ProfilePage } from "@/pages/ProfilePage"
 import { RunsPage } from "@/pages/RunsPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/settings" replace /> },
       { path: "login", element: <LoginPage /> },
+      { path: "profile", element: <RequireAuth><ProfilePage /></RequireAuth> },
       { path: "settings", element: <RequireAuth><SettingsPage /></RequireAuth> },
       { path: "admin", element: <RequireAdmin><AdminPage /></RequireAdmin> },
       { path: "admin/activity", element: <RequireAdmin><AdminActivityPage /></RequireAdmin> },
