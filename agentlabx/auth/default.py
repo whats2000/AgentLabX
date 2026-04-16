@@ -69,7 +69,8 @@ class DefaultAuther:
             caps: set[str] = set()
             if len(user_count) == 0:
                 session.add(Capability(user_id=user_id, capability="admin"))
-                caps.add("admin")
+                session.add(Capability(user_id=user_id, capability="owner"))
+                caps.update({"admin", "owner"})
             try:
                 await session.commit()
             except IntegrityError as exc:
@@ -187,3 +188,56 @@ class DefaultAuther:
             row.ciphertext = hash_passphrase(new_passphrase).encode("utf-8")
             await session.commit()
             return await self._load_identity(session, identity_id)
+
+    async def get_identity(self, user_id: str) -> Identity:
+        """Public wrapper to load a fresh Identity by user_id."""
+        async with self._db.session() as session:
+            return await self._load_identity(session, user_id)
+
+
+async def reset_passphrase_by_email(
+    db: DatabaseHandle, *, email: str, new_passphrase: str
+) -> Identity:
+    """Out-of-band passphrase reset by email. Bypasses old-passphrase check.
+    Revokes all sessions + tokens for the user on success.
+    """
+    from agentlabx.db.schema import Session as SessionRow
+    from agentlabx.db.schema import UserToken
+
+    normalized = email.strip().lower()
+    async with db.session() as session:
+        user = (
+            await session.execute(select(User).where(User.email == normalized))
+        ).scalar_one_or_none()
+        if user is None:
+            raise AuthError(f"no identity with email: {email}")
+        # Update passphrase hash
+        row = (
+            await session.execute(
+                select(UserConfig).where(
+                    UserConfig.user_id == user.id,
+                    UserConfig.slot == _PASSPHRASE_SLOT,
+                )
+            )
+        ).scalar_one_or_none()
+        digest = hash_passphrase(new_passphrase).encode("utf-8")
+        if row is None:
+            session.add(UserConfig(user_id=user.id, slot=_PASSPHRASE_SLOT, ciphertext=digest))
+        else:
+            row.ciphertext = digest
+        # Revoke sessions
+        sessions = (
+            await session.execute(select(SessionRow).where(SessionRow.user_id == user.id))
+        ).scalars().all()
+        for s in sessions:
+            s.revoked = True
+        # Revoke tokens
+        tokens = (
+            await session.execute(select(UserToken).where(UserToken.user_id == user.id))
+        ).scalars().all()
+        for t in tokens:
+            t.revoked = True
+        await session.commit()
+    # Re-read identity for return value
+    auther = DefaultAuther(db)
+    return await auther.get_identity(user.id)

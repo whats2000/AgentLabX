@@ -164,3 +164,87 @@ async def test_admin_cannot_revoke_own_admin(
             assert "cannot revoke" in r.json()["detail"]
     finally:
         await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_admin_cannot_delete_owner(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            r = await c.post(
+                "/api/auth/register",
+                json={"display_name": "O", "email": "o@x.com", "passphrase": "p1234567"},
+            )
+            owner_id = r.json()["id"]
+            await c.post(
+                "/api/auth/login",
+                json={"email": "o@x.com", "passphrase": "p1234567"},
+            )
+            r = await c.post(
+                "/api/settings/admin/users",
+                json={"display_name": "A2", "email": "a2@x.com", "passphrase": "p1234567"},
+            )
+            a2_id = r.json()["id"]
+            await c.post(
+                f"/api/settings/admin/users/{a2_id}/capabilities",
+                json={"capability": "admin"},
+            )
+            await c.post("/api/auth/logout")
+            await c.post(
+                "/api/auth/login",
+                json={"email": "a2@x.com", "passphrase": "p1234567"},
+            )
+            r = await c.delete(f"/api/settings/admin/users/{owner_id}")
+            assert r.status_code == 400
+            assert "owner" in r.json()["detail"]
+            r = await c.delete(
+                f"/api/settings/admin/users/{owner_id}/capabilities/admin"
+            )
+            assert r.status_code == 400
+            assert "owner" in r.json()["detail"]
+    finally:
+        await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_owner_capability_cannot_be_granted_or_revoked(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            r = await c.post(
+                "/api/auth/register",
+                json={"display_name": "O", "email": "o@x.com", "passphrase": "p1234567"},
+            )
+            owner_id = r.json()["id"]
+            await c.post(
+                "/api/auth/login",
+                json={"email": "o@x.com", "passphrase": "p1234567"},
+            )
+            r = await c.post(
+                "/api/settings/admin/users",
+                json={"display_name": "U", "email": "u@x.com", "passphrase": "p1234567"},
+            )
+            u_id = r.json()["id"]
+            r = await c.post(
+                f"/api/settings/admin/users/{u_id}/capabilities",
+                json={"capability": "owner"},
+            )
+            assert r.status_code == 400
+            r = await c.delete(
+                f"/api/settings/admin/users/{owner_id}/capabilities/owner"
+            )
+            assert r.status_code == 400
+    finally:
+        await app.state.db.close()

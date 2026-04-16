@@ -6,19 +6,22 @@ from pathlib import Path
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import ConnectionPoolEntry
 
 
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_fk(  # type: ignore[no-untyped-def]
-    dbapi_connection,
-    _connection_record,
+def _enable_sqlite_fk(
+    dbapi_connection: DBAPIConnection,
+    _connection_record: ConnectionPoolEntry,
 ) -> None:
+    """Ensure SQLite enforces FOREIGN KEY constraints (off by default)."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()

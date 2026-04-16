@@ -44,6 +44,45 @@ def bootstrap_admin(
     asyncio.run(_run())
 
 
+@cli.command("reset-passphrase")
+@click.option("--email", required=True, help="Email of the identity whose passphrase to reset.")
+@click.option(
+    "--passphrase",
+    prompt=True,
+    hide_input=True,
+    confirmation_prompt=True,
+    help="New passphrase. Will be prompted twice if omitted.",
+)
+@click.option("--workspace", type=click.Path(path_type=Path), default=None)
+def reset_passphrase(email: str, passphrase: str, workspace: Path | None) -> None:
+    """Reset a user's passphrase from the server shell (bypass old-passphrase check).
+
+    Intended for self-service recovery when the user forgets their passphrase —
+    especially the Owner, for whom no other admin can help. Requires local shell +
+    filesystem access to the workspace + OS keyring.
+    """
+
+    async def _run() -> None:
+        settings = AppSettings(workspace=workspace) if workspace else AppSettings()
+        handle = DatabaseHandle(settings.db_path)
+        await handle.connect()
+        try:
+            await apply_migrations(handle)
+            from agentlabx.auth.default import reset_passphrase_by_email
+
+            identity = await reset_passphrase_by_email(
+                handle, email=email, new_passphrase=passphrase
+            )
+            click.echo(
+                f"Passphrase reset for {identity.email} (id={identity.id}); "
+                f"all sessions and tokens revoked."
+            )
+        finally:
+            await handle.close()
+
+    asyncio.run(_run())
+
+
 @cli.command("serve")
 @click.option("--bind", type=click.Choice(["loopback", "lan"]), default="loopback")
 @click.option("--host", default=None, help="Bind host; defaults by mode.")

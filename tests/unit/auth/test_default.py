@@ -207,3 +207,81 @@ async def test_update_passphrase_wrong_old_raises(tmp_workspace: Path) -> None:
             )
     finally:
         await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_first_registered_gets_owner_and_admin(tmp_workspace: Path) -> None:
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        first = await a.register(display_name="O", email="o@x.com", passphrase="p1234567")
+        second = await a.register(display_name="U", email="u@x.com", passphrase="p1234567")
+        assert "admin" in first.capabilities
+        assert "owner" in first.capabilities
+        assert "admin" not in second.capabilities
+        assert "owner" not in second.capabilities
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_reset_passphrase_by_email(tmp_workspace: Path) -> None:
+    from agentlabx.auth.default import reset_passphrase_by_email
+
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="O", email="o@x.com", passphrase="old123456")
+        updated = await reset_passphrase_by_email(
+            handle, email="O@X.com  ", new_passphrase="new123456"
+        )
+        assert updated.id == ident.id
+        with pytest.raises(AuthError):
+            await a.authenticate({"email": "o@x.com", "passphrase": "old123456"})
+        authed = await a.authenticate({"email": "o@x.com", "passphrase": "new123456"})
+        assert authed.id == ident.id
+    finally:
+        await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_reset_passphrase_revokes_sessions_and_tokens(tmp_workspace: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from agentlabx.auth.default import reset_passphrase_by_email
+    from agentlabx.auth.token import TokenAuther
+    from agentlabx.db.schema import Session as SessionRow
+
+    handle = DatabaseHandle(tmp_workspace / "t.db")
+    await handle.connect()
+    try:
+        await apply_migrations(handle)
+        a = DefaultAuther(handle)
+        ident = await a.register(display_name="O", email="o@x.com", passphrase="old123456")
+        async with handle.session() as session:
+            session.add(
+                SessionRow(
+                    id="s_test",
+                    user_id=ident.id,
+                    expires_at=datetime.now(tz=timezone.utc) + timedelta(hours=1),
+                )
+            )
+            await session.commit()
+        ta = TokenAuther(handle)
+        issued = await ta.issue(identity_id=ident.id, label="t1")
+        await reset_passphrase_by_email(handle, email="o@x.com", new_passphrase="new123456")
+        async with handle.session() as session:
+            row = (
+                await session.execute(select(SessionRow).where(SessionRow.id == "s_test"))
+            ).scalar_one()
+            assert row.revoked is True
+        with pytest.raises(AuthError):
+            await ta.authenticate({"token": issued.token})
+    finally:
+        await handle.close()

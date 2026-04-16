@@ -27,6 +27,18 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 _USER_KEY_PREFIX = "user:key:"
 
 
+async def _is_owner(db: DatabaseHandle, user_id: str) -> bool:
+    async with db.session() as session:
+        row = (
+            await session.execute(
+                select(Capability).where(
+                    Capability.user_id == user_id, Capability.capability == "owner"
+                )
+            )
+        ).scalar_one_or_none()
+    return row is not None
+
+
 def _user_slot(slot: str) -> str:
     return f"{_USER_KEY_PREFIX}{slot}"
 
@@ -216,6 +228,11 @@ async def grant_capability(
     request: Request,
     admin: Identity = Depends(require_admin),
 ) -> None:
+    if payload.capability == "owner":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="owner capability cannot be granted",
+        )
     db: DatabaseHandle = request.state.db
     async with db.session() as session:
         user = (
@@ -256,12 +273,17 @@ async def delete_user(
     admin: Identity = Depends(require_admin),
 ) -> None:
     """Delete a user and cascade their configs/tokens/sessions/capabilities."""
+    db: DatabaseHandle = request.state.db
+    if await _is_owner(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot delete the owner identity",
+        )
     if user_id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="cannot delete your own identity",
         )
-    db: DatabaseHandle = request.state.db
     async with db.session() as session:
         user = (
             await session.execute(select(User).where(User.id == user_id))
@@ -294,12 +316,22 @@ async def revoke_capability(
     admin: Identity = Depends(require_admin),
 ) -> None:
     """Revoke a capability from a user."""
+    if capability == "owner":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot revoke owner capability",
+        )
+    db: DatabaseHandle = request.state.db
+    if capability == "admin" and await _is_owner(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot revoke admin from the owner",
+        )
     if user_id == admin.id and capability == "admin":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="cannot revoke your own admin capability",
         )
-    db: DatabaseHandle = request.state.db
     async with db.session() as session:
         row = (
             await session.execute(
