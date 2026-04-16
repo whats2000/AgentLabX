@@ -118,6 +118,8 @@ A researcher needs an automation platform that *accelerates* their work rather t
 | NFR-7  | Local-first      | "Local-first" means the AgentLabX server runs on user-controlled hardware (a workstation for solo use, an internal lab/corporate host for team use) with no external cloud dependency hosted by the project. The platform shall function fully offline once configured, except for explicit network operations (LLM calls, paper retrieval, MCP tool invocations); no telemetry shall be transmitted off-device. |
 | NFR-9  | Multi-user by default | Every install is multi-user-ready: the `Auther` layer supports multiple identities and the memory MCP server runs for every install (bundled standalone instance on localhost for solo use; lab-hosted instance for team use). Solo use is the degenerate case (one identity, one client), not a distinct code path. Switching from solo to lab deployment shall be a configuration change only (memory-server endpoint, optional switch of `Auther`), with no code changes required. |
 | NFR-8  | Cost-awareness   | Every LLM call shall be tracked with token counts and provider-reported cost; the UI shall expose per-project and per-stage cost summaries; users shall be able to set a per-project budget that pauses execution on overrun. |
+| NFR-10 | Internationalization | The frontend shall support multiple UI languages via type-safe i18n (`react-i18next` with TypeScript module augmentation — `t("nonexistent.key")` is a compile-time error). Ships with English (default) + Traditional Chinese (`zh-TW`). Adding a locale requires only a JSON translation file + one config line; no component changes. Language auto-detected from browser on first visit, user-overridable, persisted in `localStorage`. No RTL support required in this phase. |
+| NFR-11 | Theming            | The frontend shall support light, dark, and system (follows `prefers-color-scheme`) themes via Tailwind `darkMode: "class"` and CSS custom properties. Theme preference persisted in `localStorage`, defaults to system. All shadcn/ui primitives and layout components shall inherit the active palette automatically via the CSS variable system. |
 
 ### 1.7 System Boundaries (Out of Scope)
 
@@ -369,8 +371,10 @@ sequenceDiagram
 ### 3.3 Component Responsibilities
 
 #### 3.3.1 UI Layer
-- **Tech:** React 19 + Vite + TypeScript (`strict: true`) + Tailwind + shadcn/ui + TanStack Query.
+- **Tech:** React 19 + Vite + TypeScript (`strict: true`) + Tailwind + shadcn/ui + TanStack Query + react-i18next (type-safe).
 - **Server-served browser client.** The AgentLabX server binds to loopback by default (solo install: browser and server on the same workstation). With an explicit admin config flip the server may bind to the lab LAN (lab install), in which case TLS is required. The client communicates with the backend via REST (mutations) and WebSocket (event stream), carrying an `Auther`-issued session cookie (`HttpOnly`, `Secure`).
+- **Internationalization (i18n):** `react-i18next` with TypeScript module augmentation so that `t("nonexistent.key")` is a compile-time error. Ships with English (default) + Traditional Chinese (`zh-TW`). Adding a new locale requires only a JSON file + one config line — no component changes. Language preference persisted in `localStorage`, auto-detected from browser locale on first visit. Language switcher in the user popover menu. No RTL support in this phase.
+- **Theme:** light / dark / system. Tailwind `darkMode: "class"` with CSS custom properties (`:root` for light, `.dark` for dark). shadcn/ui components inherit automatically via the variable-backed palette. `useTheme` hook reads/writes `localStorage("agentlabx-theme")`, defaults to `"system"` (follows `prefers-color-scheme`). Theme toggle in the user popover menu. Both theme and language are client-local device preferences — no server storage.
 - **Responsibilities:**
   - Onboarding, login, and credential entry (secrets never leave the submit handler in React state; the server encrypts on receipt).
   - Project / run dashboard, scoped to the active identity.
