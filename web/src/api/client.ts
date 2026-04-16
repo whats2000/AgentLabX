@@ -1,3 +1,11 @@
+export interface SessionDto {
+  id: string
+  issued_at: string
+  expires_at: string
+  last_seen_at: string
+  is_current: boolean
+}
+
 export interface IdentityDto {
   id: string
   email: string
@@ -112,4 +120,9 @@ export const api = {
     }),
   listEvents: (limit = 200) =>
     request<AuditEventDto[]>(`/api/settings/admin/events?limit=${limit}`),
+  listMySessions: () => request<SessionDto[]>("/api/auth/me/sessions"),
+  revokeMySession: (session_id: string) =>
+    request<void>(`/api/auth/me/sessions/${encodeURIComponent(session_id)}`, {
+      method: "DELETE",
+    }),
 }

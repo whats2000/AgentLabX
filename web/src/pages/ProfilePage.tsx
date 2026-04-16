@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
 
-import { api } from "@/api/client"
+import { api, type SessionDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,7 @@ import { PasswordInput } from "@/components/ui/password-input"
 
 export function ProfilePage(): React.JSX.Element {
   const { identity, refresh } = useAuth()
+  const qc = useQueryClient()
 
   // Display name
   const [displayName, setDisplayName] = React.useState("")
@@ -50,6 +52,17 @@ export function ProfilePage(): React.JSX.Element {
       setConfirmP("")
       void refresh()
     },
+  })
+
+  // Sessions
+  const sessions = useQuery<SessionDto[]>({
+    queryKey: ["my-sessions"],
+    queryFn: api.listMySessions,
+  })
+
+  const revokeSession = useMutation({
+    mutationFn: (session_id: string) => api.revokeMySession(session_id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["my-sessions"] }) },
   })
 
   return (
@@ -174,6 +187,59 @@ export function ProfilePage(): React.JSX.Element {
               Save passphrase
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Active sessions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Active sessions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sessions.isLoading ? (
+            <p className="text-sm text-slate-500">Loading sessions…</p>
+          ) : sessions.error ? (
+            <p className="text-sm text-red-600">{sessions.error.message}</p>
+          ) : (
+            <ul className="divide-y">
+              {(sessions.data ?? []).map((s) => (
+                <li key={s.id} className="flex items-start justify-between gap-4 py-3">
+                  <div className="space-y-0.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-700">Signed in: {s.issued_at}</span>
+                      {s.is_current ? (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          this device
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-slate-500">Last seen: {s.last_seen_at}</div>
+                    <div className="text-slate-500">Expires: {s.expires_at}</div>
+                  </div>
+                  <ConfirmDialog
+                    trigger={
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={revokeSession.isPending}
+                      >
+                        {s.is_current ? "Sign out here" : "Sign out of that device"}
+                      </Button>
+                    }
+                    title={s.is_current ? "Sign out here?" : "Sign out of that device?"}
+                    description={
+                      s.is_current
+                        ? "You will be signed out of this device and redirected to the login page."
+                        : "The session on that device will be revoked immediately."
+                    }
+                    confirmLabel={s.is_current ? "Sign out" : "Revoke"}
+                    destructive
+                    onConfirm={() => { revokeSession.mutate(s.id) }}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
     </div>
