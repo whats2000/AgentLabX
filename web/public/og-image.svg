@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="AgentLabX — Open Research Automation Platform">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Flask icon badge -->
+  <g transform="translate(120,175)">
+    <rect width="160" height="160" rx="28" fill="#0f172a"/>
+    <g transform="translate(20,20) scale(5)" fill="none" stroke="#f8fafc" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2v7.31"/>
+      <path d="M14 9.3V1.99"/>
+      <path d="M8.5 2h7"/>
+      <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/>
+      <path d="M5.52 16h12.96"/>
+    </g>
+  </g>
+
+  <!-- Title block -->
+  <text x="330" y="280" fill="#0f172a" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="96" font-weight="700" letter-spacing="-2">AgentLabX</text>
+  <text x="330" y="340" fill="#334155" font-family="ui-sans-serif, system-ui, sans-serif" font-size="34" font-weight="500">Open Research Automation Platform</text>
+
+  <!-- Pipeline chip row -->
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" fill="#475569">
+    <g transform="translate(330,400)">
+      <rect width="180" height="48" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="90" y="32" text-anchor="middle">Literature</text>
+    </g>
+    <g transform="translate(520,400)">
+      <rect width="120" height="48" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="60" y="32" text-anchor="middle">Plan</text>
+    </g>
+    <g transform="translate(650,400)">
+      <rect width="180" height="48" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="90" y="32" text-anchor="middle">Experiments</text>
+    </g>
+    <g transform="translate(840,400)">
+      <rect width="150" height="48" rx="24" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="75" y="32" text-anchor="middle">Report</text>
+    </g>
+    <g transform="translate(1000,400)">
+      <rect width="160" height="48" rx="24" fill="#0f172a"/>
+      <text x="80" y="32" text-anchor="middle" fill="#f8fafc">Peer Review</text>
+    </g>
+  </g>
+
+  <!-- Footer strip -->
+  <text x="330" y="500" fill="#64748b" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">Local-first · Multi-user · Observable · Reproducible</text>
+
+  <!-- Bottom brand bar -->
+  <rect x="0" y="600" width="1200" height="30" fill="#0f172a"/>
+  <text x="600" y="621" text-anchor="middle" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">agentlabx · Stage A1 Foundation</text>
+</svg>
