@@ -103,6 +103,16 @@ async def _issue_session_cookie(
     )
 
 
+@router.get("/bootstrap-status")
+async def bootstrap_status(request: Request) -> dict[str, bool]:
+    """Unauthenticated probe the login UI uses to decide whether to show the
+    register form. Returns `{"needs_bootstrap": true}` when no users exist yet
+    (fresh install), else `{"needs_bootstrap": false}` (self-registration is
+    closed; only admins can provision new users)."""
+    db: DatabaseHandle = request.state.db
+    return {"needs_bootstrap": not await _any_user_exists(db)}
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=IdentityResponse)
 async def register(payload: RegisterRequest, request: Request) -> IdentityResponse:
     db: DatabaseHandle = request.state.db
