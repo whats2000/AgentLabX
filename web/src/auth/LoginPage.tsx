@@ -1,5 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 
 import { api } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
@@ -35,7 +36,11 @@ export function LoginPage(): React.JSX.Element {
         setError("login succeeded but session was not established; please try again")
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      if (msg.startsWith("429:")) {
+        toast.error("Too many failed attempts — try again later")
+      }
     }
   }
 

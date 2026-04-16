@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { toast } from "sonner"
 
 import { api, type AdminUserDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
@@ -25,21 +26,35 @@ export function AdminPage(): React.JSX.Element {
       setEmail("")
       setPass("")
       void qc.invalidateQueries({ queryKey: ["users"] })
+      toast.success("User created")
     },
+    onError: (err: Error) => { toast.error(err.message) },
   })
   const grant = useMutation({
     mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
       api.grantCapability(user_id, capability),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["users"] })
+      toast.success("Admin granted")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
   const revoke = useMutation({
     mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
       api.revokeCapability(user_id, capability),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["users"] })
+      toast.success("Admin revoked")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
   const del = useMutation({
     mutationFn: (user_id: string) => api.deleteUser(user_id),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["users"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["users"] })
+      toast.success("User deleted")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (

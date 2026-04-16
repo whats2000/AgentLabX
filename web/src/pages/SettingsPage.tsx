@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { toast } from "sonner"
 
 import { api, type CredentialSlotDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
@@ -28,11 +29,17 @@ export function SettingsPage(): React.JSX.Element {
       setSlot("")
       setValue("")
       void qc.invalidateQueries({ queryKey: ["credentials"] })
+      toast.success("Credential saved")
     },
+    onError: (err: Error) => { toast.error(err.message) },
   })
   const del = useMutation({
     mutationFn: (s: string) => api.deleteCredential(s),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["credentials"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["credentials"] })
+      toast.success("Credential deleted")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (

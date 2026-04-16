@@ -2,6 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import * as React from "react"
 import ReactDOM from "react-dom/client"
 import { RouterProvider } from "react-router-dom"
+import { Toaster } from "sonner"
 
 import "./globals.css"
 import { router } from "./router"
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
+      <Toaster richColors position="top-right" />
     </QueryClientProvider>
   </React.StrictMode>
 )

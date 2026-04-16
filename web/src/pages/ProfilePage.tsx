@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { toast } from "sonner"
 
 import { api, type IssuedTokenDto, type SessionDto, type TokenRecordDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
@@ -22,7 +23,11 @@ export function ProfilePage(): React.JSX.Element {
 
   const updateName = useMutation({
     mutationFn: () => api.updateDisplayName(displayName),
-    onSuccess: () => { void refresh() },
+    onSuccess: () => {
+      void refresh()
+      toast.success("Display name updated")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   // Email
@@ -35,7 +40,9 @@ export function ProfilePage(): React.JSX.Element {
       setNewEmail("")
       setEmailPass("")
       void refresh()
+      toast.success("Email updated")
     },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   // Passphrase
@@ -51,7 +58,9 @@ export function ProfilePage(): React.JSX.Element {
       setNewP("")
       setConfirmP("")
       void refresh()
+      toast.success("Passphrase changed")
     },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   // Sessions
@@ -62,7 +71,11 @@ export function ProfilePage(): React.JSX.Element {
 
   const revokeSession = useMutation({
     mutationFn: (session_id: string) => api.revokeMySession(session_id),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["my-sessions"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["my-sessions"] })
+      toast.success("Session revoked")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   // API tokens
@@ -80,12 +93,18 @@ export function ProfilePage(): React.JSX.Element {
       setNewlyIssuedToken(issued)
       setTokenLabel("")
       void qc.invalidateQueries({ queryKey: ["my-tokens"] })
+      toast.success("Token issued")
     },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   const revokeToken = useMutation({
     mutationFn: (token_id: string) => api.revokeMyToken(token_id),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["my-tokens"] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["my-tokens"] })
+      toast.success("Token revoked")
+    },
+    onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (
