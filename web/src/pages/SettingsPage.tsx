@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { api, type CredentialSlotDto } from "@/api/client"
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
 export function SettingsPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const { identity } = useAuth()
   const slots = useQuery<CredentialSlotDto[]>({
@@ -29,7 +31,7 @@ export function SettingsPage(): React.JSX.Element {
       setSlot("")
       setValue("")
       void qc.invalidateQueries({ queryKey: ["credentials"] })
-      toast.success("Credential saved")
+      toast.success(t("settings.credentialSaved"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -37,17 +39,17 @@ export function SettingsPage(): React.JSX.Element {
     mutationFn: (s: string) => api.deleteCredential(s),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["credentials"] })
-      toast.success("Credential deleted")
+      toast.success(t("settings.credentialDeleted"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h1 className="text-2xl font-semibold">Credentials</h1>
+      <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Add / update a credential</CardTitle>
+          <CardTitle>{t("settings.addUpdate")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -58,11 +60,11 @@ export function SettingsPage(): React.JSX.Element {
             }}
           >
             <div className="space-y-2">
-              <Label>Slot (e.g., "anthropic")</Label>
+              <Label>{t("settings.slotLabel")}</Label>
               <Input value={slot} onChange={(e) => { setSlot(e.target.value) }} required />
             </div>
             <div className="space-y-2">
-              <Label>Value</Label>
+              <Label>{t("settings.valueLabel")}</Label>
               <PasswordInput
                 value={value}
                 onChange={(e) => { setValue(e.target.value) }}
@@ -74,14 +76,14 @@ export function SettingsPage(): React.JSX.Element {
                 {put.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={put.isPending}>Save</Button>
+            <Button type="submit" disabled={put.isPending}>{t("settings.saveButton")}</Button>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Stored credentials</CardTitle>
+          <CardTitle>{t("settings.storedCredentials")}</CardTitle>
         </CardHeader>
         <CardContent>
           {del.error ? (
@@ -90,14 +92,14 @@ export function SettingsPage(): React.JSX.Element {
             </div>
           ) : null}
           {slots.isLoading ? (
-            <div className="text-sm text-slate-500">Loading…</div>
+            <div className="text-sm text-slate-500">{t("common.loading")}</div>
           ) : slots.data && slots.data.length > 0 ? (
             <ul className="divide-y">
               {slots.data.map((s) => (
                 <li key={s.slot} className="flex items-center justify-between py-2">
                   <div>
                     <div className="font-medium">{s.slot}</div>
-                    <div className="text-xs text-slate-500">updated {s.updated_at}</div>
+                    <div className="text-xs text-slate-500">{t("settings.updatedAt", { date: s.updated_at })}</div>
                     {revealed[s.slot] ? (
                       <div className="mt-1 font-mono text-xs break-all">{revealed[s.slot]}</div>
                     ) : null}
@@ -112,15 +114,15 @@ export function SettingsPage(): React.JSX.Element {
                         })
                       }}
                     >
-                      Reveal
+                      {t("common.reveal")}
                     </Button>
                     <ConfirmDialog
-                      trigger={<Button variant="outline" size="sm">Delete</Button>}
-                      title="Delete credential?"
+                      trigger={<Button variant="outline" size="sm">{t("common.delete")}</Button>}
+                      title={t("settings.deleteCredentialTitle")}
                       description={
-                        <>Delete credential slot <strong>{s.slot}</strong>. Any configured provider using this slot will stop working until you add it again.</>
+                        <>{t("settings.deleteCredentialDesc", { slot: s.slot })}</>
                       }
-                      confirmLabel="Delete"
+                      confirmLabel={t("common.delete")}
                       destructive
                       onConfirm={() => { del.mutate(s.slot) }}
                     />
@@ -129,14 +131,14 @@ export function SettingsPage(): React.JSX.Element {
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-slate-500">No credentials yet.</div>
+            <div className="text-sm text-slate-500">{t("settings.noCredentials")}</div>
           )}
         </CardContent>
       </Card>
 
       {identity?.capabilities.includes("admin") ? (
         <div className="text-sm text-slate-500">
-          You are an admin. Visit the <strong>Admin users</strong> tab to provision identities.
+          {t("settings.adminHint")}
         </div>
       ) : null}
     </div>

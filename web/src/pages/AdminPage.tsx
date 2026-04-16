@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { api, type AdminUserDto } from "@/api/client"
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
 export function AdminPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const { identity: me } = useAuth()
   const users = useQuery<AdminUserDto[]>({ queryKey: ["users"], queryFn: api.listUsers })
@@ -26,7 +28,7 @@ export function AdminPage(): React.JSX.Element {
       setEmail("")
       setPass("")
       void qc.invalidateQueries({ queryKey: ["users"] })
-      toast.success("User created")
+      toast.success(t("admin.userCreated"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -35,7 +37,7 @@ export function AdminPage(): React.JSX.Element {
       api.grantCapability(user_id, capability),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["users"] })
-      toast.success("Admin granted")
+      toast.success(t("admin.adminGranted"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -44,7 +46,7 @@ export function AdminPage(): React.JSX.Element {
       api.revokeCapability(user_id, capability),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["users"] })
-      toast.success("Admin revoked")
+      toast.success(t("admin.adminRevoked"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -52,17 +54,17 @@ export function AdminPage(): React.JSX.Element {
     mutationFn: (user_id: string) => api.deleteUser(user_id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["users"] })
-      toast.success("User deleted")
+      toast.success(t("admin.userDeleted"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h1 className="text-2xl font-semibold">Admin — Users</h1>
+      <h1 className="text-2xl font-semibold">{t("admin.title")}</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Create user</CardTitle>
+          <CardTitle>{t("admin.createUser")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -73,11 +75,11 @@ export function AdminPage(): React.JSX.Element {
             }}
           >
             <div className="space-y-2">
-              <Label>Display name</Label>
+              <Label>{t("admin.displayNameLabel")}</Label>
               <Input value={name} onChange={(e) => { setName(e.target.value) }} required />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label>{t("admin.emailLabel")}</Label>
               <Input
                 type="email"
                 value={email}
@@ -87,7 +89,7 @@ export function AdminPage(): React.JSX.Element {
               />
             </div>
             <div className="space-y-2">
-              <Label>Initial passphrase (user can change later)</Label>
+              <Label>{t("admin.initialPassphrase")}</Label>
               <PasswordInput
                 value={pass}
                 onChange={(e) => { setPass(e.target.value) }}
@@ -100,14 +102,14 @@ export function AdminPage(): React.JSX.Element {
                 {create.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={create.isPending}>Create</Button>
+            <Button type="submit" disabled={create.isPending}>{t("admin.createButton")}</Button>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Users</CardTitle>
+          <CardTitle>{t("admin.usersCard")}</CardTitle>
         </CardHeader>
         <CardContent>
           {grant.error ? (
@@ -134,30 +136,30 @@ export function AdminPage(): React.JSX.Element {
                       {u.display_name}
                       {u.capabilities.includes("owner") && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                          Owner
+                          {t("admin.ownerBadge")}
                         </span>
                       )}
                     </div>
                     <div className="text-sm text-slate-500">{u.email}</div>
                     <div className="text-xs text-slate-400">
-                      {u.id} · {u.auther_name} · {u.capabilities.join(", ") || "no capabilities"}
+                      {u.id} · {u.auther_name} · {u.capabilities.join(", ") || t("admin.noCapabilities")}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     {u.id === me?.id ? (
-                      <span className="self-center text-xs text-slate-400">(you)</span>
+                      <span className="self-center text-xs text-slate-400">{t("common.you")}</span>
                     ) : u.capabilities.includes("owner") ? (
-                      <span className="self-center text-xs text-slate-400">(owner)</span>
+                      <span className="self-center text-xs text-slate-400">{t("common.owner")}</span>
                     ) : (
                       <>
                         {u.capabilities.includes("admin") ? (
                           <ConfirmDialog
-                            trigger={<Button variant="outline" size="sm">Revoke admin</Button>}
-                            title="Revoke admin capability?"
+                            trigger={<Button variant="outline" size="sm">{t("admin.revokeAdmin")}</Button>}
+                            title={t("admin.revokeAdminTitle")}
                             description={
-                              <>Remove admin privileges from <strong>{u.display_name}</strong> ({u.email}). They will no longer be able to manage users or server-wide settings.</>
+                              <>{t("admin.revokeAdminDesc", { name: u.display_name, email: u.email })}</>
                             }
-                            confirmLabel="Revoke"
+                            confirmLabel={t("common.revoke")}
                             destructive
                             onConfirm={() => { revoke.mutate({ user_id: u.id, capability: "admin" }) }}
                           />
@@ -167,16 +169,16 @@ export function AdminPage(): React.JSX.Element {
                             size="sm"
                             onClick={() => { grant.mutate({ user_id: u.id, capability: "admin" }) }}
                           >
-                            Grant admin
+                            {t("admin.grantAdmin")}
                           </Button>
                         )}
                         <ConfirmDialog
-                          trigger={<Button variant="outline" size="sm">Delete</Button>}
-                          title="Delete user?"
+                          trigger={<Button variant="outline" size="sm">{t("admin.deleteUser")}</Button>}
+                          title={t("admin.deleteUserTitle")}
                           description={
-                            <>Delete <strong>{u.display_name}</strong> ({u.email}). All of their credentials, notes, and sessions will be removed. This cannot be undone.</>
+                            <>{t("admin.deleteUserDesc", { name: u.display_name, email: u.email })}</>
                           }
-                          confirmLabel="Delete"
+                          confirmLabel={t("common.delete")}
                           destructive
                           onConfirm={() => { del.mutate(u.id) }}
                         />
@@ -187,7 +189,7 @@ export function AdminPage(): React.JSX.Element {
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-slate-500">No users yet.</div>
+            <div className="text-sm text-slate-500">{t("admin.noUsers")}</div>
           )}
         </CardContent>
       </Card>

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
 export function LoginPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const bootstrap = useQuery({
     queryKey: ["bootstrap-status"],
     queryFn: api.bootstrapStatus,
@@ -44,13 +46,13 @@ export function LoginPage(): React.JSX.Element {
       if (me) {
         nav("/settings")
       } else {
-        setError("login succeeded but session was not established; please try again")
+        setError(t("auth.sessionError"))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
       if (msg.startsWith("429:")) {
-        toast.error("Too many failed attempts — try again later")
+        toast.error(t("auth.tooManyAttempts"))
       }
     }
   }
@@ -67,7 +69,7 @@ export function LoginPage(): React.JSX.Element {
         <Card>
           <CardHeader>
             <CardTitle>
-              {mode === "register" ? "Create first identity" : "Log in"}
+              {mode === "register" ? t("auth.register") : t("auth.login")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -79,7 +81,7 @@ export function LoginPage(): React.JSX.Element {
             >
               {mode === "register" ? (
                 <div className="space-y-2">
-                  <Label>Display name</Label>
+                  <Label>{t("auth.displayName")}</Label>
                   <Input
                     value={displayName}
                     onChange={(e) => {
@@ -91,7 +93,7 @@ export function LoginPage(): React.JSX.Element {
                 </div>
               ) : null}
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label>{t("auth.email")}</Label>
                 <Input
                   type="email"
                   value={email}
@@ -103,7 +105,7 @@ export function LoginPage(): React.JSX.Element {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Passphrase</Label>
+                <Label>{t("auth.passphrase")}</Label>
                 <PasswordInput
                   value={passphrase}
                   onChange={(e) => {
@@ -123,10 +125,10 @@ export function LoginPage(): React.JSX.Element {
               ) : null}
               <div className="flex items-center justify-between">
                 <Button type="submit">
-                  {mode === "register" ? "Create & log in" : "Log in"}
+                  {mode === "register" ? t("auth.loginAndCreate") : t("auth.login")}
                 </Button>
                 <Button type="button" variant="ghost" onClick={toggleMode}>
-                  {mode === "register" ? "Existing? Log in" : "Need to register?"}
+                  {mode === "register" ? t("auth.existingLogin") : t("auth.needRegister")}
                 </Button>
               </div>
             </form>
@@ -134,16 +136,14 @@ export function LoginPage(): React.JSX.Element {
         </Card>
         {mode === "login" ? (
           <p className="px-1 text-xs text-slate-400">
-            Forgot your passphrase? Run{" "}
-            <code className="rounded bg-slate-100 px-1 text-slate-600">
-              agentlabx reset-passphrase --email YOUR_EMAIL
-            </code>{" "}
-            from the server shell.
+            {t("auth.forgotHint", {
+              command: "agentlabx reset-passphrase --email YOUR_EMAIL",
+            })}
           </p>
         ) : null}
         {!needsBootstrap && mode === "login" ? (
           <p className="px-1 text-xs text-slate-400">
-            Need an account? Ask an admin to provision one for you.
+            {t("auth.needAccountHint")}
           </p>
         ) : null}
       </div>

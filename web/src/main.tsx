@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router-dom"
 import { Toaster } from "sonner"
 
 import "./globals.css"
+import "./i18n"
 import { router } from "./router"
 
 const qc = new QueryClient({

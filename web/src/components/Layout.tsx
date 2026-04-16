@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -20,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import i18n from "@/i18n"
 
 function navClass(isActive: boolean): string {
   return (
@@ -31,6 +33,7 @@ function navClass(isActive: boolean): string {
 }
 
 export function Layout(): React.JSX.Element {
+  const { t } = useTranslation()
   const { identity, refresh } = useAuth()
   const nav = useNavigate()
 
@@ -42,10 +45,10 @@ export function Layout(): React.JSX.Element {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" })
       await refresh()
-      toast.success("Logged out")
+      toast.success(t("logout.success"))
       nav("/login")
     } catch {
-      toast.error("Logout failed")
+      toast.error(t("logout.failed"))
     }
   }
 
@@ -55,24 +58,24 @@ export function Layout(): React.JSX.Element {
         {/* Header — app branding */}
         <div className="flex items-center gap-2 px-4 py-4 border-b">
           <FlaskConical className="h-5 w-5 text-slate-700" />
-          <span className="text-sm font-semibold text-slate-800">AgentLabX</span>
+          <span className="text-sm font-semibold text-slate-800">{t("nav.appName")}</span>
         </div>
 
         {/* Primary nav */}
         <nav className="flex-1 overflow-auto p-2 space-y-1">
           <NavLink to="/runs" className={({ isActive }) => navClass(isActive)}>
-            <ListChecks className="h-4 w-4" /> Runs
+            <ListChecks className="h-4 w-4" /> {t("nav.runs")}
           </NavLink>
           {identity.capabilities.includes("admin") && (
             <>
               <NavLink to="/admin" className={({ isActive }) => navClass(isActive)}>
-                <Users className="h-4 w-4" /> Admin Users
+                <Users className="h-4 w-4" /> {t("nav.adminUsers")}
               </NavLink>
               <NavLink
                 to="/admin/activity"
                 className={({ isActive }) => navClass(isActive)}
               >
-                <Activity className="h-4 w-4" /> Activity
+                <Activity className="h-4 w-4" /> {t("nav.activity")}
               </NavLink>
             </>
           )}
@@ -103,17 +106,25 @@ export function Layout(): React.JSX.Element {
               <DropdownMenuLabel>{identity.email}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => { nav("/profile") }}>
-                <User className="h-4 w-4" /> Profile
+                <User className="h-4 w-4" /> {t("nav.profile")}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => { nav("/settings") }}>
-                <KeyRound className="h-4 w-4" /> Credentials
+                <KeyRound className="h-4 w-4" /> {t("nav.credentials")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("nav.language")}</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => { void i18n.changeLanguage("en") }}>
+                English {i18n.language === "en" ? "✓" : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => { void i18n.changeLanguage("zh-TW") }}>
+                繁體中文 {i18n.language.startsWith("zh") ? "✓" : ""}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => { void logout() }}
                 className="text-red-600 focus:bg-red-50 focus:text-red-700"
               >
-                <LogOut className="h-4 w-4" /> Log out
+                <LogOut className="h-4 w-4" /> {t("nav.logout")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

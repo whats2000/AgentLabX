@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { api, type IssuedTokenDto, type SessionDto, type TokenRecordDto } from "@/api/client"
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
 export function ProfilePage(): React.JSX.Element {
+  const { t } = useTranslation()
   const { identity, refresh } = useAuth()
   const qc = useQueryClient()
 
@@ -25,7 +27,7 @@ export function ProfilePage(): React.JSX.Element {
     mutationFn: () => api.updateDisplayName(displayName),
     onSuccess: () => {
       void refresh()
-      toast.success("Display name updated")
+      toast.success(t("profile.displayNameUpdated"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -40,7 +42,7 @@ export function ProfilePage(): React.JSX.Element {
       setNewEmail("")
       setEmailPass("")
       void refresh()
-      toast.success("Email updated")
+      toast.success(t("profile.emailUpdated"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -58,7 +60,7 @@ export function ProfilePage(): React.JSX.Element {
       setNewP("")
       setConfirmP("")
       void refresh()
-      toast.success("Passphrase changed")
+      toast.success(t("profile.passphraseChanged"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -73,7 +75,7 @@ export function ProfilePage(): React.JSX.Element {
     mutationFn: (session_id: string) => api.revokeMySession(session_id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-sessions"] })
-      toast.success("Session revoked")
+      toast.success(t("profile.sessionRevoked"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -93,7 +95,7 @@ export function ProfilePage(): React.JSX.Element {
       setNewlyIssuedToken(issued)
       setTokenLabel("")
       void qc.invalidateQueries({ queryKey: ["my-tokens"] })
-      toast.success("Token issued")
+      toast.success(t("profile.tokenIssued"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -102,17 +104,17 @@ export function ProfilePage(): React.JSX.Element {
     mutationFn: (token_id: string) => api.revokeMyToken(token_id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-tokens"] })
-      toast.success("Token revoked")
+      toast.success(t("profile.tokenRevokedSuccess"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h1 className="text-2xl font-semibold">Profile</h1>
+      <h1 className="text-2xl font-semibold">{t("profile.title")}</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
+          <CardTitle>{t("profile.cardTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Display name */}
@@ -124,7 +126,7 @@ export function ProfilePage(): React.JSX.Element {
             }}
           >
             <div className="space-y-2">
-              <Label>Display name</Label>
+              <Label>{t("profile.displayNameLabel")}</Label>
               <Input
                 value={displayName}
                 onChange={(e) => { setDisplayName(e.target.value) }}
@@ -138,7 +140,7 @@ export function ProfilePage(): React.JSX.Element {
                 {updateName.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={updateName.isPending}>Save display name</Button>
+            <Button type="submit" disabled={updateName.isPending}>{t("profile.saveDisplayName")}</Button>
           </form>
 
           <hr />
@@ -152,7 +154,7 @@ export function ProfilePage(): React.JSX.Element {
             }}
           >
             <div className="space-y-2">
-              <Label>New email</Label>
+              <Label>{t("profile.newEmailLabel")}</Label>
               <Input
                 type="email"
                 value={newEmail}
@@ -163,7 +165,7 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             <div className="space-y-2">
-              <Label>Current passphrase</Label>
+              <Label>{t("profile.currentPassphraseLabel")}</Label>
               <PasswordInput
                 value={emailPass}
                 onChange={(e) => { setEmailPass(e.target.value) }}
@@ -175,7 +177,7 @@ export function ProfilePage(): React.JSX.Element {
                 {updateEmail.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={updateEmail.isPending}>Save email</Button>
+            <Button type="submit" disabled={updateEmail.isPending}>{t("profile.saveEmail")}</Button>
           </form>
 
           <hr />
@@ -189,7 +191,7 @@ export function ProfilePage(): React.JSX.Element {
             }}
           >
             <div className="space-y-2">
-              <Label>Current passphrase</Label>
+              <Label>{t("profile.currentPassphraseLabel")}</Label>
               <PasswordInput
                 value={oldP}
                 onChange={(e) => { setOldP(e.target.value) }}
@@ -197,7 +199,7 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             <div className="space-y-2">
-              <Label>New passphrase</Label>
+              <Label>{t("profile.newPassphraseLabel")}</Label>
               <PasswordInput
                 value={newP}
                 onChange={(e) => { setNewP(e.target.value) }}
@@ -207,7 +209,7 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             <div className="space-y-2">
-              <Label>Confirm new passphrase</Label>
+              <Label>{t("profile.confirmNewPassphraseLabel")}</Label>
               <PasswordInput
                 value={confirmP}
                 onChange={(e) => { setConfirmP(e.target.value) }}
@@ -215,7 +217,7 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             {mismatch ? (
-              <div className="text-sm text-red-600">Passphrases do not match.</div>
+              <div className="text-sm text-red-600">{t("profile.passphraseMismatch")}</div>
             ) : null}
             {updatePass.error ? (
               <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
@@ -226,7 +228,7 @@ export function ProfilePage(): React.JSX.Element {
               type="submit"
               disabled={updatePass.isPending || mismatch || newP.length < 8}
             >
-              Save passphrase
+              {t("profile.savePassphrase")}
             </Button>
           </form>
         </CardContent>
@@ -235,11 +237,11 @@ export function ProfilePage(): React.JSX.Element {
       {/* Active sessions */}
       <Card>
         <CardHeader>
-          <CardTitle>Active sessions</CardTitle>
+          <CardTitle>{t("profile.activeSessions")}</CardTitle>
         </CardHeader>
         <CardContent>
           {sessions.isLoading ? (
-            <p className="text-sm text-slate-500">Loading sessions…</p>
+            <p className="text-sm text-slate-500">{t("profile.loadingSessions")}</p>
           ) : sessions.error ? (
             <p className="text-sm text-red-600">{sessions.error.message}</p>
           ) : (
@@ -248,15 +250,15 @@ export function ProfilePage(): React.JSX.Element {
                 <li key={s.id} className="flex items-start justify-between gap-4 py-3">
                   <div className="space-y-0.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-700">Signed in: {s.issued_at}</span>
+                      <span className="text-slate-700">{t("profile.signedIn", { date: s.issued_at })}</span>
                       {s.is_current ? (
                         <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                          this device
+                          {t("profile.thisDevice")}
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-slate-500">Last seen: {s.last_seen_at}</div>
-                    <div className="text-slate-500">Expires: {s.expires_at}</div>
+                    <div className="text-slate-500">{t("profile.lastSeen", { date: s.last_seen_at })}</div>
+                    <div className="text-slate-500">{t("profile.expires", { date: s.expires_at })}</div>
                   </div>
                   <ConfirmDialog
                     trigger={
@@ -265,16 +267,16 @@ export function ProfilePage(): React.JSX.Element {
                         size="sm"
                         disabled={revokeSession.isPending}
                       >
-                        {s.is_current ? "Sign out here" : "Sign out of that device"}
+                        {s.is_current ? t("profile.signOutHere") : t("profile.signOutDevice")}
                       </Button>
                     }
-                    title={s.is_current ? "Sign out here?" : "Sign out of that device?"}
+                    title={s.is_current ? t("profile.signOutHereTitle") : t("profile.signOutDeviceTitle")}
                     description={
                       s.is_current
-                        ? "You will be signed out of this device and redirected to the login page."
-                        : "The session on that device will be revoked immediately."
+                        ? t("profile.signOutHereDesc")
+                        : t("profile.signOutDeviceDesc")
                     }
-                    confirmLabel={s.is_current ? "Sign out" : "Revoke"}
+                    confirmLabel={s.is_current ? t("profile.signOutConfirm") : t("common.revoke")}
                     destructive
                     onConfirm={() => { revokeSession.mutate(s.id) }}
                   />
@@ -288,15 +290,13 @@ export function ProfilePage(): React.JSX.Element {
       {/* Personal API tokens */}
       <Card>
         <CardHeader>
-          <CardTitle>Personal API tokens</CardTitle>
+          <CardTitle>{t("profile.personalTokens")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-slate-500">
-            Use these tokens to authenticate with{" "}
-            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-              Authorization: Bearer &lt;token&gt;
-            </code>{" "}
-            from scripts or other clients.
+            {t("profile.tokensDesc", {
+              header: "Authorization: Bearer <token>",
+            })}
           </p>
 
           {/* Issue form */}
@@ -308,7 +308,7 @@ export function ProfilePage(): React.JSX.Element {
             }}
           >
             <Input
-              placeholder="Token label (e.g. ci-key)"
+              placeholder={t("profile.tokenLabelPlaceholder")}
               value={tokenLabel}
               onChange={(e) => { setTokenLabel(e.target.value) }}
               required
@@ -317,7 +317,7 @@ export function ProfilePage(): React.JSX.Element {
               className="flex-1"
             />
             <Button type="submit" disabled={issueToken.isPending || tokenLabel.trim().length === 0}>
-              Issue token
+              {t("profile.issueToken")}
             </Button>
           </form>
 
@@ -331,7 +331,7 @@ export function ProfilePage(): React.JSX.Element {
           {newlyIssuedToken ? (
             <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2">
               <p className="text-sm font-medium text-amber-800">
-                Copy now — it will not be shown again.
+                {t("profile.copyNow")}
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 break-all rounded bg-white px-2 py-1 text-xs border border-amber-200 text-slate-800">
@@ -345,7 +345,7 @@ export function ProfilePage(): React.JSX.Element {
                     void navigator.clipboard.writeText(newlyIssuedToken.token)
                   }}
                 >
-                  Copy
+                  {t("common.copy")}
                 </Button>
                 <Button
                   size="sm"
@@ -353,39 +353,39 @@ export function ProfilePage(): React.JSX.Element {
                   type="button"
                   onClick={() => { setNewlyIssuedToken(null) }}
                 >
-                  Dismiss
+                  {t("common.dismiss")}
                 </Button>
               </div>
-              <p className="text-xs text-amber-700">Label: {newlyIssuedToken.label}</p>
+              <p className="text-xs text-amber-700">{t("profile.tokenLabel", { label: newlyIssuedToken.label })}</p>
             </div>
           ) : null}
 
           {/* Token list */}
           {tokens.isLoading ? (
-            <p className="text-sm text-slate-500">Loading tokens…</p>
+            <p className="text-sm text-slate-500">{t("profile.loadingTokens")}</p>
           ) : tokens.error ? (
             <p className="text-sm text-red-600">{tokens.error.message}</p>
           ) : (tokens.data ?? []).length === 0 ? (
-            <p className="text-sm text-slate-400">No tokens issued yet.</p>
+            <p className="text-sm text-slate-400">{t("profile.noTokens")}</p>
           ) : (
             <ul className="divide-y">
-              {(tokens.data ?? []).map((t: TokenRecordDto) => (
-                <li key={t.id} className="flex items-start justify-between gap-4 py-3">
+              {(tokens.data ?? []).map((tk: TokenRecordDto) => (
+                <li key={tk.id} className="flex items-start justify-between gap-4 py-3">
                   <div className="space-y-0.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-800">{t.label}</span>
-                      {t.revoked ? (
+                      <span className="font-medium text-slate-800">{tk.label}</span>
+                      {tk.revoked ? (
                         <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                          revoked
+                          {t("profile.tokenRevoked")}
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-slate-500">Created: {t.created_at}</div>
+                    <div className="text-slate-500">{t("profile.createdAt", { date: tk.created_at })}</div>
                     <div className="text-slate-500">
-                      Last used: {t.last_used_at ?? "never used"}
+                      {t("profile.lastUsed", { date: tk.last_used_at ?? t("profile.neverUsed") })}
                     </div>
                   </div>
-                  {!t.revoked ? (
+                  {!tk.revoked ? (
                     <ConfirmDialog
                       trigger={
                         <Button
@@ -393,14 +393,14 @@ export function ProfilePage(): React.JSX.Element {
                           size="sm"
                           disabled={revokeToken.isPending}
                         >
-                          Revoke
+                          {t("common.revoke")}
                         </Button>
                       }
-                      title="Revoke token?"
-                      description={`Token "${t.label}" will be permanently revoked. Any scripts using it will stop working.`}
-                      confirmLabel="Revoke"
+                      title={t("profile.revokeTokenTitle")}
+                      description={t("profile.revokeTokenDesc", { label: tk.label })}
+                      confirmLabel={t("common.revoke")}
                       destructive
-                      onConfirm={() => { revokeToken.mutate(t.id) }}
+                      onConfirm={() => { revokeToken.mutate(tk.id) }}
                     />
                   ) : null}
                 </li>

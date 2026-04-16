@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { api, type AuditEventDto } from "@/api/client"
+import i18n from "@/i18n"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,30 +21,54 @@ function str(v: string | number | boolean | null | undefined): string {
 }
 
 const SUMMARY: Record<string, (p: Payload) => string> = {
-  "auth.registered": (p) => `${str(p.actor_email)} registered (${str(p.display_name)})`,
-  "auth.login_success": (p) => `${str(p.actor_email)} logged in`,
-  "auth.login_failed": (p) => `Login failed for ${str(p.attempted_email)}`,
+  "auth.registered": (p) =>
+    i18n.t("activity.auth_registered", { actor: str(p.actor_email), display_name: str(p.display_name) }),
+  "auth.login_success": (p) =>
+    i18n.t("activity.auth_login_success", { actor: str(p.actor_email) }),
+  "auth.login_failed": (p) =>
+    i18n.t("activity.auth_login_failed", { email: str(p.attempted_email) }),
   "auth.logout": (p) =>
-    p.actor_email ? `${str(p.actor_email)} logged out` : "Anonymous logout",
+    p.actor_email
+      ? i18n.t("activity.auth_logout", { actor: str(p.actor_email) })
+      : i18n.t("activity.auth_logout_anon"),
   "auth.display_name_updated": (p) =>
-    `${str(p.actor_email)} changed display name to "${str(p.new_display_name)}"`,
+    i18n.t("activity.auth_display_name_updated", {
+      actor: str(p.actor_email),
+      new_display_name: str(p.new_display_name),
+    }),
   "auth.email_updated": (p) =>
-    `${str(p.old_email)} changed email to ${str(p.new_email)}`,
-  "auth.passphrase_updated": (p) => `${str(p.actor_email)} changed passphrase`,
+    i18n.t("activity.auth_email_updated", {
+      old_email: str(p.old_email),
+      new_email: str(p.new_email),
+    }),
+  "auth.passphrase_updated": (p) =>
+    i18n.t("activity.auth_passphrase_updated", { actor: str(p.actor_email) }),
   "credential.stored": (p) =>
-    `${str(p.actor_email)} stored credential in slot "${str(p.slot)}"`,
+    i18n.t("activity.credential_stored", { actor: str(p.actor_email), slot: str(p.slot) }),
   "credential.deleted": (p) =>
-    `${str(p.actor_email)} deleted credential slot "${str(p.slot)}"`,
+    i18n.t("activity.credential_deleted", { actor: str(p.actor_email), slot: str(p.slot) }),
   "admin.user_created": (p) =>
-    `${str(p.actor_email)} created user ${str(p.target_email)} (${str(p.target_display_name)})`,
+    i18n.t("activity.admin_user_created", {
+      actor: str(p.actor_email),
+      target: str(p.target_email),
+      display_name: str(p.target_display_name),
+    }),
   "admin.user_deleted": (p) =>
-    `${str(p.actor_email)} deleted user ${str(p.target_email)}`,
+    i18n.t("activity.admin_user_deleted", { actor: str(p.actor_email), target: str(p.target_email) }),
   "admin.capability_granted": (p) =>
-    `${str(p.actor_email)} granted "${str(p.capability)}" to ${str(p.target_email)}`,
+    i18n.t("activity.admin_capability_granted", {
+      actor: str(p.actor_email),
+      capability: str(p.capability),
+      target: str(p.target_email),
+    }),
   "admin.capability_revoked": (p) =>
-    `${str(p.actor_email)} revoked "${str(p.capability)}" from ${str(p.target_email)}`,
+    i18n.t("activity.admin_capability_revoked", {
+      actor: str(p.actor_email),
+      capability: str(p.capability),
+      target: str(p.target_email),
+    }),
   "admin.audit_log_cleared": (p) =>
-    `${str(p.actor_email)} cleared the audit log`,
+    i18n.t("activity.admin_audit_log_cleared", { actor: str(p.actor_email) }),
 }
 
 function summarise(event: AuditEventDto): string {
@@ -95,6 +121,7 @@ function relativeTime(isoString: string): string {
 // ---------------------------------------------------------------------------
 
 export function AdminActivityPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
 
   const events = useQuery<AuditEventDto[]>({
@@ -107,7 +134,7 @@ export function AdminActivityPage(): React.JSX.Element {
     mutationFn: () => api.clearEvents(),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-events"] })
-      toast.success("Audit log cleared")
+      toast.success(t("activity.logCleared"))
     },
     onError: (err: Error) => {
       toast.error(err.message)
@@ -116,24 +143,24 @@ export function AdminActivityPage(): React.JSX.Element {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h1 className="text-2xl font-semibold">Admin — Activity log</h1>
+      <h1 className="text-2xl font-semibold">{t("activity.title")}</h1>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
-            <CardTitle>Recent events (newest first)</CardTitle>
+            <CardTitle>{t("activity.recentEvents")}</CardTitle>
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground">
-                Showing up to 200 most recent events
+                {t("activity.showingUpTo")}
               </span>
               <ConfirmDialog
                 trigger={
                   <Button variant="destructive" size="sm">
-                    Clear log
+                    {t("activity.clearLog")}
                   </Button>
                 }
-                title="Clear the audit log?"
-                description="All event history will be permanently removed. The clearing action itself will be recorded as the first entry of the new log. This cannot be undone."
-                confirmLabel="Clear log"
+                title={t("activity.clearLogTitle")}
+                description={t("activity.clearLogDesc")}
+                confirmLabel={t("activity.clearLogConfirm")}
                 destructive
                 onConfirm={() => { void clearMutation.mutate() }}
               />
@@ -142,7 +169,7 @@ export function AdminActivityPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {events.isLoading && (
-            <div className="text-sm text-slate-500">Loading…</div>
+            <div className="text-sm text-slate-500">{t("activity.loading")}</div>
           )}
           {events.error instanceof Error && (
             <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
@@ -150,7 +177,7 @@ export function AdminActivityPage(): React.JSX.Element {
             </div>
           )}
           {events.data && events.data.length === 0 && (
-            <div className="text-sm text-slate-500">No events recorded yet.</div>
+            <div className="text-sm text-slate-500">{t("activity.noEvents")}</div>
           )}
           {events.data && events.data.length > 0 && (
             <ul className="divide-y text-sm">

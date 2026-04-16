@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 
 import {
   AlertDialog,
@@ -28,11 +29,12 @@ export function ConfirmDialog({
   trigger,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
 }: ConfirmDialogProps): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
@@ -44,14 +46,14 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel>{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={cn(
               destructive ? buttonVariants({ variant: "destructive" }) : ""
             )}
             onClick={() => { onConfirm() }}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("common.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
