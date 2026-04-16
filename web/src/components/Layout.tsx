@@ -1,4 +1,4 @@
-import { KeyRound, ListChecks, Users } from "lucide-react"
+import { Activity, KeyRound, ListChecks, Users } from "lucide-react"
 import * as React from "react"
 import { NavLink, Outlet } from "react-router-dom"
 
@@ -22,6 +22,11 @@ export function Layout(): React.JSX.Element {
         {identity.capabilities.includes("admin") && (
           <NavLink to="/admin" className={({ isActive }) => navClass(isActive)}>
             <Users className="h-4 w-4" /> Admin users
+          </NavLink>
+        )}
+        {identity.capabilities.includes("admin") && (
+          <NavLink to="/admin/activity" className={({ isActive }) => navClass(isActive)}>
+            <Activity className="h-4 w-4" /> Activity
           </NavLink>
         )}
         <NavLink to="/runs" className={({ isActive }) => navClass(isActive)}>

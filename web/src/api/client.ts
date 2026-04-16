@@ -13,6 +13,12 @@ export interface CredentialSlotDto {
 
 export interface AdminUserDto extends IdentityDto {}
 
+export interface AuditEventDto {
+  kind: string
+  at: string
+  payload: Record<string, string | number | boolean | null>
+}
+
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, { credentials: "include", ...init })
   if (!res.ok) {
@@ -104,4 +110,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ old_passphrase, new_passphrase }),
     }),
+  listEvents: (limit = 200) =>
+    request<AuditEventDto[]>(`/api/settings/admin/events?limit=${limit}`),
 }
