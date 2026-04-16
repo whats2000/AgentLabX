@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
+import { toast } from "sonner"
 
 import { api, type AuditEventDto } from "@/api/client"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 // ---------------------------------------------------------------------------
@@ -38,6 +41,8 @@ const SUMMARY: Record<string, (p: Payload) => string> = {
     `${str(p.actor_email)} granted "${str(p.capability)}" to ${str(p.target_email)}`,
   "admin.capability_revoked": (p) =>
     `${str(p.actor_email)} revoked "${str(p.capability)}" from ${str(p.target_email)}`,
+  "admin.audit_log_cleared": (p) =>
+    `${str(p.actor_email)} cleared the audit log`,
 }
 
 function summarise(event: AuditEventDto): string {
@@ -90,10 +95,23 @@ function relativeTime(isoString: string): string {
 // ---------------------------------------------------------------------------
 
 export function AdminActivityPage(): React.JSX.Element {
+  const queryClient = useQueryClient()
+
   const events = useQuery<AuditEventDto[]>({
     queryKey: ["admin-events"],
     queryFn: () => api.listEvents(200),
     refetchInterval: 15_000,
+  })
+
+  const clearMutation = useMutation({
+    mutationFn: () => api.clearEvents(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-events"] })
+      toast.success("Audit log cleared")
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
 
   return (
@@ -101,7 +119,26 @@ export function AdminActivityPage(): React.JSX.Element {
       <h1 className="text-2xl font-semibold">Admin — Activity log</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Recent events (newest first)</CardTitle>
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle>Recent events (newest first)</CardTitle>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                Showing up to 200 most recent events
+              </span>
+              <ConfirmDialog
+                trigger={
+                  <Button variant="destructive" size="sm">
+                    Clear log
+                  </Button>
+                }
+                title="Clear the audit log?"
+                description="All event history will be permanently removed. The clearing action itself will be recorded as the first entry of the new log. This cannot be undone."
+                confirmLabel="Clear log"
+                destructive
+                onConfirm={() => { void clearMutation.mutate() }}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {events.isLoading && (

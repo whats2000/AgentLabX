@@ -134,6 +134,8 @@ export const api = {
     }),
   listEvents: (limit = 200) =>
     request<AuditEventDto[]>(`/api/settings/admin/events?limit=${limit}`),
+  clearEvents: () =>
+    request<void>("/api/settings/admin/events", { method: "DELETE" }),
   listMySessions: () => request<SessionDto[]>("/api/auth/me/sessions"),
   revokeMySession: (session_id: string) =>
     request<void>(`/api/auth/me/sessions/${encodeURIComponent(session_id)}`, {
