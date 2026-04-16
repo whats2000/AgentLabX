@@ -2,50 +2,54 @@
 
 # AgentLabX
 
-### A modular autonomous research platform
+### Open research-automation platform — Stage A1 foundation
 
-**Coordinates a small team of LLM-backed agents through an 8-stage research pipeline: literature review → plan → experimentation → report → peer review. Every run is reproducible. Every stage is editable. Every artifact is structured.**
+**Multi-user backend + minimal web shell for a future LLM-agent research pipeline. Stage A1 delivers the identity, credential, session, audit, and plugin plumbing that every later stage will plug into.**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev/)
-[![LangGraph](https://img.shields.io/badge/langgraph-0.4+-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-528%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-91%20passing-brightgreen.svg)](#development)
 
-[Quickstart](docs/quickstart.md) · [Spec](docs/superpowers/specs/2026-04-12-agentlabx-platform-design.md) · [Plans](docs/superpowers/plans/) · [API docs](http://localhost:8000/docs)
+[Quickstart](docs/quickstart.md) · [Vision](docs/superpowers/specs/2026-04-15-agentlabx-vision.md) · [SRS](docs/superpowers/specs/2026-04-15-agentlabx-srs.md) · [A1 plan](docs/superpowers/plans/2026-04-15-stageA1-foundation-infrastructure.md)
 
 </div>
 
 ---
 
-## What is this
+## Status — Stage A1 Foundation Infrastructure
 
-A PhD student, a postdoc, an ML engineer, a software engineer, a professor, a panel of blind reviewers, and a supervising PI — each backed by an LLM, each with its own memory scope, each running as a LangGraph node. They collaborate through an 8-stage research pipeline and produce a peer-reviewed paper at the end.
+This repository is a ground-up rewrite of an earlier prototype. **Stage A1 ships the backend foundation and a minimal browser shell to exercise it.** Research agents, LLM calls, MCP tools, and stage orchestration are **not yet implemented** — they live in later stages of the roadmap (see [SRS §4](docs/superpowers/specs/2026-04-15-agentlabx-srs.md#part-4--build-roadmap-stage-sequence)).
 
-You watch the whole thing happen live in the browser. You pause it. You redirect it. You inspect every artifact along the way. Every experiment ships with a reproducibility record so someone else can rerun it.
-
-It runs on your laptop. No cloud. No accounts. One command.
-
-```bash
-uv run agentlabx serve --mock-llm
-# open http://localhost:8000
-```
-
-<div align="center">
+### What A1 delivers
 
 | | |
 |---|---|
-| 🧠 **Differentiated agents** | 7 role-based agents + a supervising PI, each with its own YAML-configured memory scope |
-| 🔄 **LangGraph pipeline** | 8 stages with zone-based routing, typed state, and priority-based transitions |
-| 🔬 **Structured artifacts** | Pydantic models for every output: hypotheses, plans, experiments, reviews |
-| 🧪 **Reproducible by construction** | Seed, env hash, run command, git ref, and dependency snapshot per experiment |
-| 👀 **Human-in-the-loop ready** | Per-stage control levels (auto / notify / approve / edit), flip any stage live |
-| 🧩 **Plugin architecture** | Stages, tools, agents, LLMs, backends — all swappable via a typed registry |
-| ⚡ **Live dashboard** | React 19 + Ant Design + React Flow. WebSocket streams every event to the UI |
-| 💰 **Cost-aware** | Per-session budget ceilings with warning/critical tiers and live gauges |
+| 🔐 **Three authers** | `DefaultAuther` (passphrase + argon2), `TokenAuther` (bearer), `OAuthAuther` (RFC 8628 device flow, library-only) |
+| 👤 **Owner + admin roles** | First-registered user is the immutable Owner; admins provision additional users and manage capabilities |
+| 🔑 **Per-user encrypted credentials** | Fernet-encrypted at rest, master key held in the OS keyring; credentials never touch `.env` |
+| 🍪 **Sessions + API tokens** | `HttpOnly` signed cookies for the browser, `Authorization: Bearer` for scripted clients — live side-by-side |
+| 🧾 **Audit log** | Every auth + admin mutation emits a structured event; JSONL log on disk; admin view + archive-on-clear |
+| 🚦 **Rate-limited login** | Per-email sliding window, 429 + `Retry-After` after 5 failures in 5 minutes, 15-minute lockout |
+| 🗄️ **SQLite + migrations** | SQLAlchemy 2 async, aiosqlite, FK-cascades enforced, in-place forward migrations between schema versions |
+| 🧩 **Plugin registry** | `importlib.metadata` entry-point discovery skeleton — stages, authers, LLM providers, MCP bundles will register here |
+| 🖥️ **Minimal browser shell** | React 19 + Tailwind + shadcn/ui: login, profile, credentials, admin users, audit activity, session management |
+| 🛠️ **Three CLI commands** | `agentlabx serve`, `agentlabx bootstrap-admin`, `agentlabx reset-passphrase` |
+| ✅ **91 tests** | pytest + pytest-asyncio; ruff + mypy strict; TypeScript strict on the frontend |
 
-</div>
+### What's NOT here yet
+
+- Research stages (literature review, plan formulation, experimentation, report writing, peer review) — Layer B
+- LLM provider integration (LiteLLM + traced wrapper + budget cap) — Stage A2
+- MCP host + bundled tool servers (arxiv, semantic-scholar, code-execution, browser, filesystem, memory) — Stage A3
+- Literature RAG with citation verifier — Stage A5
+- Orchestrator with zones, checkpoints, assist mode — Stage A7
+- PI agent + configurable-agent layer — Stage A8
+- `agentlabx reproduce` CLI + end-to-end harness — Stage C2
+- Shared experiment-memory governance — Stage C4
+
+See the [full roadmap in the SRS](docs/superpowers/specs/2026-04-15-agentlabx-srs.md#part-4--build-roadmap-stage-sequence) for the Layer A → Layer B → Layer C sequence.
 
 ---
 
@@ -54,205 +58,152 @@ uv run agentlabx serve --mock-llm
 **Five-minute walkthrough:** [`docs/quickstart.md`](docs/quickstart.md)
 
 ```bash
-# 1. Install (requires Python 3.12+, Node 20+, uv, npm)
+# 1. Install Python + frontend dependencies (requires Python 3.12+, Node 20+, uv, npm)
 uv sync --extra dev
+(cd web && npm install)
 
-# 2. Build the UI once
-cd web && npm install && npm run build && cd ..
+# 2. Create the Owner identity (first and only person who can never be demoted)
+uv run agentlabx bootstrap-admin --display-name "Alice" --email alice@example.com
+# → prompts for a passphrase (entered twice)
 
-# 3. Start the server with a mock LLM — no API keys needed
-uv run agentlabx serve --mock-llm
+# 3. Run the backend on loopback
+uv run agentlabx serve --bind loopback --port 8765
 
-# 4. Open http://localhost:8000 and create a session
+# 4. In another terminal, run the Vite dev server
+(cd web && npm run dev)
+# → open http://127.0.0.1:5173, log in as alice@example.com
 ```
 
-For a real run, copy `.env.example` → `.env`, add one provider key (OpenAI, Anthropic, Gemini, or DeepSeek), and restart without `--mock-llm`.
+> On first start the server writes SQLite + event log under `~/.agentlabx/`. Delete that directory to reset the install.
 
-<details>
-<summary><strong>Dev mode with hot reload</strong></summary>
-
-```bash
-# Terminal 1 — backend
-uv run agentlabx serve --mock-llm
-
-# Terminal 2 — Vite dev server
-cd web && npm run dev
-# open http://localhost:5173 (proxies /api and /ws to :8000)
-```
-
-</details>
+For LAN binding (lab deployment) you pass `--bind lan --tls-cert CERT --tls-key KEY`; TLS is enforced on non-loopback bind.
 
 ---
 
-## The 8-stage pipeline
+## Try out the A1 surface
 
-```
-  ┌──────────────────┐   ┌─────────────────┐   ┌──────────────────┐
-  │   DISCOVERY      │──▶│ IMPLEMENTATION │──▶│     SYNTHESIS    │
-  ├──────────────────┤   ├─────────────────┤   ├──────────────────┤
-  │ literature_review│   │ data_exploration│   │ results_interpret│
-  │ plan_formulation │   │ data_preparation│   │ report_writing   │
-  │                  │   │ experimentation │   │ peer_review      │
-  └──────────────────┘   └─────────────────┘   └──────────────────┘
-                                │                       │
-                                └──── backtrack ────────┘
-                               (PI agent decides when)
+Once you're logged in, the browser shell gives you:
+
+- **Sidebar bottom → click your name** — popover menu with Profile + Credentials + Log out.
+- **Profile** (`/profile`) — update display name / email / passphrase (email + passphrase changes require your current passphrase); issue, list, and revoke personal API tokens; view and revoke active sessions across devices.
+- **Credentials** (`/settings`) — add, reveal, and delete encrypted key slots (e.g. `anthropic`, `openai`). Each slot's plaintext value is only revealed on demand.
+- **Admin Users** (admin-only, `/admin`) — provision additional users, grant/revoke the `admin` capability (Owner row is protected with `(owner)` tag), delete users with confirm-dialog.
+- **Activity** (admin-only, `/admin/activity`) — tail the JSONL audit log, filter newest-first, clear (archived to a timestamped `audit.<ts>.cleared.jsonl` — never truly destroyed).
+
+**Test the bearer-token flow from a shell:**
+
+```bash
+# Issue a token from /profile → Personal API tokens → Issue token
+# Then use it:
+curl -H "Authorization: Bearer ax_..." http://127.0.0.1:8765/api/auth/me
 ```
 
-Each stage is a LangGraph node backed by a `BaseStage` plugin. The PI agent watches the outputs and can backtrack the pipeline to a prior stage when evidence demands it (failed experiments, plateaued scores, negative results). The default sequence is overridable per-session.
+**Locked out?** Reset your own passphrase (or the Owner's) from the server shell:
+
+```bash
+uv run agentlabx reset-passphrase --email alice@example.com
+# revokes all sessions + tokens for the user as a side-effect
+```
 
 ---
 
 ## Architecture
 
 ```
-agentlabx/                     Python backend (FastAPI + LangGraph)
-├── core/                      config, registry, session, PipelineState, event bus
-├── stages/                    StageRunner, PipelineBuilder, TransitionHandler
-├── agents/                    ConfigAgent, PI Agent, ContextAssembler, lab meeting
-├── providers/                 LiteLLM, SQLite, subprocess exec, built-in code agent
-├── tools/                     arXiv, Semantic Scholar, GitHub, HuggingFace, LaTeX
-├── server/                    REST routes, WebSocket, executor, SPA mount
-└── cli/                       `agentlabx serve`
+agentlabx/                     Python backend (FastAPI + SQLAlchemy 2 async)
+├── auth/                      Auther Protocol, Default/Token/OAuth, Identity, AuthError
+├── security/                  argon2 passwords, keyring store, Fernet encrypt/decrypt
+├── config/                    pydantic-settings AppSettings, BindMode, TLS gate
+├── db/                        schema (6 tables), session factory, in-place migrations
+├── events/                    in-process asyncio pub/sub EventBus + JsonlEventSink
+├── plugins/                   PluginRegistry + importlib.metadata discovery
+├── models/                    Pydantic request/response DTOs
+├── server/                    FastAPI app factory, session middleware + Bearer auth,
+│                              dependencies (current_identity, require_admin), routers
+│                              (auth, settings, runs, health), rate limiter
+└── cli/                       `agentlabx serve` + `bootstrap-admin` + `reset-passphrase`
 
-web/                           React frontend (Vite + TypeScript + Ant Design 5)
-├── src/api/                   openapi-fetch client, WS service, registry singleton
-├── src/hooks/                 TanStack Query hooks, useWebSocket
-├── src/stores/                Zustand (client-only: wsStore + uiStore)
-├── src/pages/                 Session List / Create / Detail, Plugins, Settings
-└── src/components/session/    PipelineGraph, ActivityFeed, ControlBar, CostTracker...
+web/                           React frontend (Vite + TypeScript strict + Tailwind + shadcn/ui)
+├── src/api/                   fetch-based client with FastAPI detail-parsing
+├── src/auth/                  AuthProvider + LoginPage (bootstrap-aware default mode)
+├── src/components/            Layout (Claude-style sidebar), ui/ (shadcn primitives),
+│                              confirm-dialog, password-input
+└── src/pages/                 SettingsPage (credentials), ProfilePage (self-edit + tokens +
+                               sessions), AdminPage (users), AdminActivityPage (audit),
+                               RunsPage (placeholder — Layer B will populate)
 
-config/                        YAML defaults (overridable via AGENTLABX_* env)
-docs/                          spec + implementation plans
-tests/   web/tests/            pytest (426) + vitest (102) = 528 tests
+docs/superpowers/              vision + SRS + Stage A1 implementation plan
+tests/                         91 tests: 75 unit, 16 integration
 ```
 
-**Configuration precedence:** process env → `AGENTLABX_*` → `config/default.yaml` → model defaults.
-
----
-
-## Core principles
-
-<table>
-<tr>
-<td width="33%" valign="top">
-
-**🔁 Reproducibility**
-
-Every experiment records a `ReproducibilityRecord`: random seed, environment hash, run command, container image, git ref, full dependency snapshot. Runs can be replayed or audited.
-
-</td>
-<td width="33%" valign="top">
-
-**📦 Structured artifacts**
-
-Agents emit typed Pydantic models (`ResearchPlan`, `Hypothesis`, `ExperimentResult`, `ReportResult`), not free-form text. Cross-stage data flows through LangGraph state with reducer annotations.
-
-</td>
-<td width="33%" valign="top">
-
-**🧬 Hypothesis loop**
-
-Hypotheses are first-class state — `active`, `supported`, `refuted`, `abandoned` — with `evidence_for` and `evidence_against` links into specific experiments. The PI consults them before backtracking.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-**🔒 Memory scopes**
-
-Every agent declares what it can read and write. Reviewers can't see the plan they're reviewing. PhD students can't rewrite methodology. `ContextAssembler` enforces scopes before every LLM call.
-
-</td>
-<td valign="top">
-
-**🎛️ Oversight**
-
-Per-stage control: `auto` / `notify` / `approve` / `edit`. Flip any stage live mid-run. The backend owns a cooperative pause event — pressing Pause actually halts the next stage, not the queue.
-
-</td>
-<td valign="top">
-
-**🔍 Traceability**
-
-Every LLM call, tool call, cost update, and transition goes through the event bus and out over WebSocket. `AsyncSqliteSaver` checkpoints state after every node so server restarts replay cleanly.
-
-</td>
-</tr>
-</table>
-
----
-
-## Status
-
-**✅ Done** — Plans 1–5 shipped, 528 tests green, MVP functional end-to-end
-
-- Core engine: registry, typed state, event bus, base classes
-- 8-stage pipeline with zone-based routing and priority-based transitions
-- 7 YAML-configured agents + PI agent with JSON-mode structured output
-- LiteLLM provider (retry + cost tracking); SQLite storage with session namespacing
-- 7 research tools: arXiv, Semantic Scholar, GitHub, HuggingFace, session artifact search, code executor, LaTeX
-- FastAPI server: 13 REST endpoints + WebSocket, cooperative pause, AsyncSqliteSaver checkpointing
-- React 19 frontend with OpenWebUI-inspired aesthetic, live pipeline graph, activity feed, cost tracker, checkpoint modal
-- One-process deployment: `agentlabx serve` delivers the full UI from FastAPI
-
-**🔜 Deferred** — post-MVP
-
-- Docker execution backend + Compose deployment
-- PostgreSQL + MinIO storage (architecture-ready)
-- OAuth / JWT auth (single-user today)
-- Streaming `agent_thinking` events (wire format exists, agents don't stream yet)
-- Full HITL interrupt — CheckpointModal ships observable (records the action, backend logs it); real LangGraph interrupt resume lands in a later plan
-- Hard budget-ceiling enforcement (warning/critical tiers work; nothing halts spend at 100%)
-- Third-party plugin auto-discovery via `entry-points`
-- Dark mode, i18n, mobile layouts
+**Configuration:** environment variables prefixed `AGENTLABX_` override defaults. See [`agentlabx/config/settings.py`](agentlabx/config/settings.py).
 
 ---
 
 ## Development
 
 ```bash
-# Backend
+# Backend gates
 uv sync --extra dev
-uv run pytest                              # 426 passing
+uv run pytest -v                           # 91 passing
 uv run ruff check agentlabx tests
-uv run agentlabx serve --mock-llm
+uv run mypy agentlabx tests
+uv run agentlabx serve --bind loopback
 
-# Frontend
+# Frontend gates
 cd web
 npm install
-npm run typecheck
-npm run lint
-npm test -- --run                          # 102 passing
-npm run dev                                # Vite at :5173 with HMR
-npm run build                              # emits web/dist/ for FastAPI
-npm run codegen                            # regenerate src/api/generated.ts from live /openapi.json
+npm run lint                               # tsc --noEmit
+npm run build                              # emits web/dist/ for production serve
+npm run dev                                # Vite at :5173, proxies /api to :8765
 ```
 
 ### Tech stack
 
 |              | |
 |--------------|-|
-| **Backend**  | Python 3.12, LangGraph 0.4+, FastAPI, uvicorn, LiteLLM, Pydantic v2, SQLAlchemy 2 async, aiosqlite, AsyncSqliteSaver |
-| **Frontend** | React 19, TypeScript 5.5, Vite 6, Ant Design 5, @xyflow/react (React Flow), @ant-design/plots, Zustand 5, TanStack Query 5, openapi-fetch |
-| **Testing**  | pytest + pytest-asyncio (backend), vitest + React Testing Library (frontend) |
-| **Tooling**  | uv, ruff, eslint flat config, openapi-typescript |
+| **Backend**  | Python 3.12 · FastAPI · uvicorn · SQLAlchemy 2 async + aiosqlite · Pydantic 2 · argon2-cffi · cryptography (Fernet) · keyring · itsdangerous · click · httpx |
+| **Frontend** | React 19 · Vite 5 · TypeScript 5 strict · Tailwind 3 · shadcn/ui · @radix-ui (alert-dialog, dropdown-menu, label, slot) · TanStack Query 5 · React Router 6 · lucide-react · sonner |
+| **Testing**  | pytest 8 · pytest-asyncio · httpx · ruff (`ANN` incl. `ANN401`) · mypy strict (`disallow_any_explicit`, `disallow_any_generics`) · tsc --noEmit |
+| **Tooling**  | uv (Python deps/lockfile), npm (JS deps), Vite (bundler) |
 
-### Contributing
+### Project memory
 
-The codebase follows a **plan → execute → review** workflow documented in [`docs/superpowers/`](docs/superpowers/). New features land as a plan doc + task-by-task implementation with tests and commits. Small bug fixes or tooling tweaks can skip the plan step.
+This project follows a **spec → plan → subagent-driven execution → review** workflow. Authoritative docs:
 
-Open an issue before starting anything non-trivial so we can align on scope.
+- **Vision** — [`docs/superpowers/specs/2026-04-15-agentlabx-vision.md`](docs/superpowers/specs/2026-04-15-agentlabx-vision.md) — north star, non-negotiable principles.
+- **SRS** — [`docs/superpowers/specs/2026-04-15-agentlabx-srs.md`](docs/superpowers/specs/2026-04-15-agentlabx-srs.md) — full system requirements, architecture, and build roadmap (Layer A / Layer B / Layer C).
+- **A1 plan** — [`docs/superpowers/plans/2026-04-15-stageA1-foundation-infrastructure.md`](docs/superpowers/plans/2026-04-15-stageA1-foundation-infrastructure.md) — 29-task implementation plan that delivered A1.
+
+New features land as a spec amendment (if the SRS diverges) + a plan doc + task-by-task subagent execution with tests and commits. Small fixes can skip the plan step.
 
 ---
 
-## Documentation
+## Roadmap
 
-- 📖 [**Quickstart**](docs/quickstart.md) — five-minute path from clone to a running session
-- 📐 [**Platform spec**](docs/superpowers/specs/2026-04-12-agentlabx-platform-design.md) — the full design document
-- 📋 [**Implementation plans**](docs/superpowers/plans/) — five plans covering core engine → pipeline → providers → server → frontend
-- 🔌 **API docs** — live at `/docs` when the server is running
+**Layer A — Backend framework** (foundation before any research stage)
+
+- [x] **A1 — Foundation infrastructure** ← you are here
+- [ ] A2 — LLM provider module (LiteLLM + traced wrapper + budget cap)
+- [ ] A3 — MCP host + bundled servers (arxiv, semantic-scholar, code-exec, browser, filesystem, memory)
+- [ ] A4 — Stage contract framework (all stage I/O Pydantic contracts defined upfront)
+- [ ] A5 — RAG component (Chroma + three-index + citation verifier)
+- [ ] A6 — Orchestrator + traffic engine + zones + checkpoint/resume + assist mode
+- [ ] A7 — Current-run experiment notes
+- [ ] A8 — Configurable agent layer (PI as user's decision proxy)
+
+**Layer B — Research stage implementations** (happy-path order, each gated by its own real-LLM harness)
+
+- [ ] B1 — literature_review  ·  B2 — plan_formulation  ·  B3 — data_exploration
+- [ ] B4 — data_preparation  ·  B5 — experimentation  ·  B6 — interpretation
+- [ ] B7 — report_writing  ·  B8 — peer_review
+
+**Layer C — Frontend, reproducibility, hardening, memory governance**
+
+- [ ] C1 — Full frontend (main graph, inner stage views, PI decision panel)
+- [ ] C2 — `agentlabx reproduce` CLI + e2e semantic-fact assertion harness
+- [ ] C3 — Multi-user-on-one-install adversarial hardening
+- [ ] C4 — Shared experiment memory governance (curator workflow, taxonomy from observed material)
 
 ---
 
