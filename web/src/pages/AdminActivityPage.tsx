@@ -82,12 +82,12 @@ function summarise(event: AuditEventDto): string {
 // ---------------------------------------------------------------------------
 
 function kindColour(kind: string): string {
-  if (kind.startsWith("auth.login_failed")) return "bg-red-100 text-red-700"
-  if (kind.startsWith("admin.user_deleted")) return "bg-red-100 text-red-700"
-  if (kind.startsWith("admin.")) return "bg-amber-100 text-amber-700"
-  if (kind.startsWith("auth.")) return "bg-blue-100 text-blue-700"
-  if (kind.startsWith("credential.")) return "bg-slate-100 text-slate-600"
-  return "bg-slate-100 text-slate-500"
+  if (kind.startsWith("auth.login_failed")) return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+  if (kind.startsWith("admin.user_deleted")) return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+  if (kind.startsWith("admin.")) return "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+  if (kind.startsWith("auth.")) return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+  if (kind.startsWith("credential.")) return "bg-muted text-muted-foreground"
+  return "bg-muted text-muted-foreground"
 }
 
 function KindPill({ kind }: { kind: string }): React.JSX.Element {
@@ -169,25 +169,25 @@ export function AdminActivityPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {events.isLoading && (
-            <div className="text-sm text-slate-500">{t("activity.loading")}</div>
+            <div className="text-sm text-muted-foreground">{t("activity.loading")}</div>
           )}
           {events.error instanceof Error && (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {events.error.message}
             </div>
           )}
           {events.data && events.data.length === 0 && (
-            <div className="text-sm text-slate-500">{t("activity.noEvents")}</div>
+            <div className="text-sm text-muted-foreground">{t("activity.noEvents")}</div>
           )}
           {events.data && events.data.length > 0 && (
-            <ul className="divide-y text-sm">
+            <ul className="divide-y divide-border text-sm">
               {events.data.map((ev, i) => (
                 <li key={i} className="flex items-start gap-3 py-2">
-                  <span className="w-16 shrink-0 text-xs text-slate-400 pt-0.5">
+                  <span className="w-16 shrink-0 text-xs text-muted-foreground pt-0.5">
                     {relativeTime(ev.at)}
                   </span>
                   <KindPill kind={ev.kind} />
-                  <span className="text-slate-700">{summarise(ev)}</span>
+                  <span className="text-foreground">{summarise(ev)}</span>
                 </li>
               ))}
             </ul>

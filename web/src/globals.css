@@ -2,5 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-hover: 210 40% 96%;
+    --sidebar-active: 210 40% 93%;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+    --card: 224 50% 8%;
+    --card-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+    --ring: 212 100% 67%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --sidebar: 224 50% 6%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-hover: 217 33% 14%;
+    --sidebar-active: 217 33% 17%;
+  }
+}
+
 html, body, #root { height: 100%; }
-body { font-family: ui-sans-serif, system-ui, sans-serif; background: #fafafa; color: #0f172a; }
+body {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}

@@ -98,7 +98,7 @@ export function AdminPage(): React.JSX.Element {
               />
             </div>
             {create.error ? (
-              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {create.error.message}
               </div>
             ) : null}
@@ -113,43 +113,43 @@ export function AdminPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {grant.error ? (
-            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {grant.error.message}
             </div>
           ) : null}
           {revoke.error ? (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {revoke.error.message}
             </div>
           ) : null}
           {del.error ? (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {del.error.message}
             </div>
           ) : null}
           {users.data && users.data.length > 0 ? (
-            <ul className="divide-y">
+            <ul className="divide-y divide-border">
               {users.data.map((u) => (
                 <li key={u.id} className="flex items-center justify-between py-2">
                   <div>
                     <div className="font-medium">
                       {u.display_name}
                       {u.capabilities.includes("owner") && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
                           {t("admin.ownerBadge")}
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-slate-500">{u.email}</div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-sm text-muted-foreground">{u.email}</div>
+                    <div className="text-xs text-muted-foreground">
                       {u.id} · {u.auther_name} · {u.capabilities.join(", ") || t("admin.noCapabilities")}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     {u.id === me?.id ? (
-                      <span className="self-center text-xs text-slate-400">{t("common.you")}</span>
+                      <span className="self-center text-xs text-muted-foreground">{t("common.you")}</span>
                     ) : u.capabilities.includes("owner") ? (
-                      <span className="self-center text-xs text-slate-400">{t("common.owner")}</span>
+                      <span className="self-center text-xs text-muted-foreground">{t("common.owner")}</span>
                     ) : (
                       <>
                         {u.capabilities.includes("admin") ? (
@@ -189,7 +189,7 @@ export function AdminPage(): React.JSX.Element {
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-slate-500">{t("admin.noUsers")}</div>
+            <div className="text-sm text-muted-foreground">{t("admin.noUsers")}</div>
           )}
         </CardContent>
       </Card>

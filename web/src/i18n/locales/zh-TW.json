@@ -168,6 +168,11 @@
     "show": "顯示密碼",
     "hide": "隱藏密碼"
   },
+  "preferences": {
+    "title": "偏好設定",
+    "language": "語言",
+    "theme": "主題"
+  },
   "logout": {
     "success": "已登出",
     "failed": "登出失敗"

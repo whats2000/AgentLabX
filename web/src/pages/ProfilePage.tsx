@@ -136,14 +136,14 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             {updateName.error ? (
-              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {updateName.error.message}
               </div>
             ) : null}
             <Button type="submit" disabled={updateName.isPending}>{t("profile.saveDisplayName")}</Button>
           </form>
 
-          <hr />
+          <hr className="border-border" />
 
           {/* Email */}
           <form
@@ -173,14 +173,14 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             {updateEmail.error ? (
-              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {updateEmail.error.message}
               </div>
             ) : null}
             <Button type="submit" disabled={updateEmail.isPending}>{t("profile.saveEmail")}</Button>
           </form>
 
-          <hr />
+          <hr className="border-border" />
 
           {/* Passphrase */}
           <form
@@ -217,10 +217,10 @@ export function ProfilePage(): React.JSX.Element {
               />
             </div>
             {mismatch ? (
-              <div className="text-sm text-red-600">{t("profile.passphraseMismatch")}</div>
+              <div className="text-sm text-red-600 dark:text-red-400">{t("profile.passphraseMismatch")}</div>
             ) : null}
             {updatePass.error ? (
-              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {updatePass.error.message}
               </div>
             ) : null}
@@ -241,24 +241,24 @@ export function ProfilePage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {sessions.isLoading ? (
-            <p className="text-sm text-slate-500">{t("profile.loadingSessions")}</p>
+            <p className="text-sm text-muted-foreground">{t("profile.loadingSessions")}</p>
           ) : sessions.error ? (
-            <p className="text-sm text-red-600">{sessions.error.message}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{sessions.error.message}</p>
           ) : (
-            <ul className="divide-y">
+            <ul className="divide-y divide-border">
               {(sessions.data ?? []).map((s) => (
                 <li key={s.id} className="flex items-start justify-between gap-4 py-3">
                   <div className="space-y-0.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-700">{t("profile.signedIn", { date: s.issued_at })}</span>
+                      <span className="text-foreground">{t("profile.signedIn", { date: s.issued_at })}</span>
                       {s.is_current ? (
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
                           {t("profile.thisDevice")}
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-slate-500">{t("profile.lastSeen", { date: s.last_seen_at })}</div>
-                    <div className="text-slate-500">{t("profile.expires", { date: s.expires_at })}</div>
+                    <div className="text-muted-foreground">{t("profile.lastSeen", { date: s.last_seen_at })}</div>
+                    <div className="text-muted-foreground">{t("profile.expires", { date: s.expires_at })}</div>
                   </div>
                   <ConfirmDialog
                     trigger={
@@ -293,7 +293,7 @@ export function ProfilePage(): React.JSX.Element {
           <CardTitle>{t("profile.personalTokens")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {t("profile.tokensDesc", {
               header: "Authorization: Bearer <token>",
             })}
@@ -322,19 +322,19 @@ export function ProfilePage(): React.JSX.Element {
           </form>
 
           {issueToken.error ? (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {issueToken.error.message}
             </div>
           ) : null}
 
           {/* One-shot reveal banner */}
           {newlyIssuedToken ? (
-            <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2">
-              <p className="text-sm font-medium text-amber-800">
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2 dark:border-amber-700 dark:bg-amber-950">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
                 {t("profile.copyNow")}
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 break-all rounded bg-white px-2 py-1 text-xs border border-amber-200 text-slate-800">
+                <code className="flex-1 break-all rounded bg-card px-2 py-1 text-xs border border-border text-foreground">
                   {newlyIssuedToken.token}
                 </code>
                 <Button
@@ -356,32 +356,32 @@ export function ProfilePage(): React.JSX.Element {
                   {t("common.dismiss")}
                 </Button>
               </div>
-              <p className="text-xs text-amber-700">{t("profile.tokenLabel", { label: newlyIssuedToken.label })}</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">{t("profile.tokenLabel", { label: newlyIssuedToken.label })}</p>
             </div>
           ) : null}
 
           {/* Token list */}
           {tokens.isLoading ? (
-            <p className="text-sm text-slate-500">{t("profile.loadingTokens")}</p>
+            <p className="text-sm text-muted-foreground">{t("profile.loadingTokens")}</p>
           ) : tokens.error ? (
-            <p className="text-sm text-red-600">{tokens.error.message}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{tokens.error.message}</p>
           ) : (tokens.data ?? []).length === 0 ? (
-            <p className="text-sm text-slate-400">{t("profile.noTokens")}</p>
+            <p className="text-sm text-muted-foreground">{t("profile.noTokens")}</p>
           ) : (
-            <ul className="divide-y">
+            <ul className="divide-y divide-border">
               {(tokens.data ?? []).map((tk: TokenRecordDto) => (
                 <li key={tk.id} className="flex items-start justify-between gap-4 py-3">
                   <div className="space-y-0.5 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-800">{tk.label}</span>
+                      <span className="font-medium text-foreground">{tk.label}</span>
                       {tk.revoked ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">
                           {t("profile.tokenRevoked")}
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-slate-500">{t("profile.createdAt", { date: tk.created_at })}</div>
-                    <div className="text-slate-500">
+                    <div className="text-muted-foreground">{t("profile.createdAt", { date: tk.created_at })}</div>
+                    <div className="text-muted-foreground">
                       {t("profile.lastUsed", { date: tk.last_used_at ?? t("profile.neverUsed") })}
                     </div>
                   </div>
@@ -409,7 +409,7 @@ export function ProfilePage(): React.JSX.Element {
           )}
 
           {revokeToken.error ? (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {revokeToken.error.message}
             </div>
           ) : null}

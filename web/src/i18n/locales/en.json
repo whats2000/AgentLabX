@@ -168,6 +168,11 @@
     "show": "Show password",
     "hide": "Hide password"
   },
+  "preferences": {
+    "title": "Preferences",
+    "language": "Language",
+    "theme": "Theme"
+  },
   "logout": {
     "success": "Logged out",
     "failed": "Logout failed"

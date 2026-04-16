@@ -4,6 +4,7 @@ import {
   KeyRound,
   ListChecks,
   LogOut,
+  Settings,
   User,
   Users,
 } from "lucide-react"
@@ -21,14 +22,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import i18n from "@/i18n"
 
 function navClass(isActive: boolean): string {
   return (
     "flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors " +
     (isActive
-      ? "bg-slate-100 text-slate-900"
-      : "text-slate-600 hover:bg-slate-50")
+      ? "bg-sidebar-active text-sidebar-foreground"
+      : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground")
   )
 }
 
@@ -54,11 +54,11 @@ export function Layout(): React.JSX.Element {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-60 flex-col border-r bg-white">
+      <aside className="flex w-60 flex-col border-r border-sidebar-border bg-sidebar">
         {/* Header — app branding */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b">
-          <FlaskConical className="h-5 w-5 text-slate-700" />
-          <span className="text-sm font-semibold text-slate-800">{t("nav.appName")}</span>
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-sidebar-border">
+          <FlaskConical className="h-5 w-5 text-sidebar-foreground" />
+          <span className="text-sm font-semibold text-sidebar-foreground">{t("nav.appName")}</span>
         </div>
 
         {/* Primary nav */}
@@ -82,21 +82,21 @@ export function Layout(): React.JSX.Element {
         </nav>
 
         {/* Bottom: user button + popup */}
-        <div className="border-t p-2">
+        <div className="border-t border-sidebar-border p-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                className="flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-sidebar-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-medium text-white">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-xs font-medium text-background">
                   {initial}
                 </span>
                 <span className="flex-1 overflow-hidden">
-                  <span className="block truncate text-sm font-medium text-slate-800">
+                  <span className="block truncate text-sm font-medium text-sidebar-foreground">
                     {identity.display_name}
                   </span>
-                  <span className="block truncate text-xs text-slate-400">
+                  <span className="block truncate text-xs text-muted-foreground">
                     {identity.email}
                   </span>
                 </span>
@@ -111,13 +111,8 @@ export function Layout(): React.JSX.Element {
               <DropdownMenuItem onSelect={() => { nav("/settings") }}>
                 <KeyRound className="h-4 w-4" /> {t("nav.credentials")}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>{t("nav.language")}</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => { void i18n.changeLanguage("en") }}>
-                English {i18n.language === "en" ? "✓" : ""}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { void i18n.changeLanguage("zh-TW") }}>
-                繁體中文 {i18n.language.startsWith("zh") ? "✓" : ""}
+              <DropdownMenuItem onSelect={() => { nav("/preferences") }}>
+                <Settings className="h-4 w-4" /> {t("preferences.title")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -131,7 +126,7 @@ export function Layout(): React.JSX.Element {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-slate-50 p-8">
+      <main className="flex-1 overflow-auto bg-background p-8">
         <Outlet />
       </main>
     </div>

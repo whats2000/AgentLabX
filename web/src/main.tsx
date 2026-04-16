@@ -6,6 +6,7 @@ import { Toaster } from "sonner"
 
 import "./globals.css"
 import "./i18n"
+import { useTheme } from "@/lib/use-theme"
 import { router } from "./router"
 
 const qc = new QueryClient({
@@ -26,11 +27,20 @@ const qc = new QueryClient({
   }),
 })
 
+function AppRoot(): React.JSX.Element {
+  const { resolvedTheme } = useTheme()
+  return (
+    <>
+      <RouterProvider router={router} />
+      <Toaster richColors position="top-right" theme={resolvedTheme} />
+    </>
+  )
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
-      <Toaster richColors position="top-right" />
+      <AppRoot />
     </QueryClientProvider>
   </React.StrictMode>
 )

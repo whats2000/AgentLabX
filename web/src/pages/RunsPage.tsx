@@ -13,7 +13,7 @@ export function RunsPage(): React.JSX.Element {
           <CardTitle>{t("runs.emptyTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {t("runs.emptyDesc")}
           </p>
         </CardContent>

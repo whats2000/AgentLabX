@@ -72,7 +72,7 @@ export function SettingsPage(): React.JSX.Element {
               />
             </div>
             {put.error ? (
-              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                 {put.error.message}
               </div>
             ) : null}
@@ -87,19 +87,19 @@ export function SettingsPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {del.error ? (
-            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <div className="mb-4 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               {del.error.message}
             </div>
           ) : null}
           {slots.isLoading ? (
-            <div className="text-sm text-slate-500">{t("common.loading")}</div>
+            <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
           ) : slots.data && slots.data.length > 0 ? (
-            <ul className="divide-y">
+            <ul className="divide-y divide-border">
               {slots.data.map((s) => (
                 <li key={s.slot} className="flex items-center justify-between py-2">
                   <div>
                     <div className="font-medium">{s.slot}</div>
-                    <div className="text-xs text-slate-500">{t("settings.updatedAt", { date: s.updated_at })}</div>
+                    <div className="text-xs text-muted-foreground">{t("settings.updatedAt", { date: s.updated_at })}</div>
                     {revealed[s.slot] ? (
                       <div className="mt-1 font-mono text-xs break-all">{revealed[s.slot]}</div>
                     ) : null}
@@ -131,13 +131,13 @@ export function SettingsPage(): React.JSX.Element {
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-slate-500">{t("settings.noCredentials")}</div>
+            <div className="text-sm text-muted-foreground">{t("settings.noCredentials")}</div>
           )}
         </CardContent>
       </Card>
 
       {identity?.capabilities.includes("admin") ? (
-        <div className="text-sm text-slate-500">
+        <div className="text-sm text-muted-foreground">
           {t("settings.adminHint")}
         </div>
       ) : null}

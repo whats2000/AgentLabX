@@ -32,7 +32,7 @@ export function LoginPage(): React.JSX.Element {
   const { refresh } = useAuth()
   const nav = useNavigate()
 
-  async function submit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+  async function submit(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()
     setError(null)
     try {
@@ -119,7 +119,7 @@ export function LoginPage(): React.JSX.Element {
                 />
               </div>
               {error ? (
-                <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                   {error}
                 </div>
               ) : null}
@@ -135,14 +135,14 @@ export function LoginPage(): React.JSX.Element {
           </CardContent>
         </Card>
         {mode === "login" ? (
-          <p className="px-1 text-xs text-slate-400">
+          <p className="px-1 text-xs text-muted-foreground">
             {t("auth.forgotHint", {
               command: "agentlabx reset-passphrase --email YOUR_EMAIL",
             })}
           </p>
         ) : null}
         {!needsBootstrap && mode === "login" ? (
-          <p className="px-1 text-xs text-slate-400">
+          <p className="px-1 text-xs text-muted-foreground">
             {t("auth.needAccountHint")}
           </p>
         ) : null}
