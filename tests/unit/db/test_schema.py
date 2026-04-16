@@ -11,7 +11,7 @@ from agentlabx.db.session import DatabaseHandle
 
 
 @pytest.mark.asyncio
-async def test_all_six_tables_created(tmp_workspace: Path) -> None:
+async def test_all_tables_created(tmp_workspace: Path) -> None:
     handle = DatabaseHandle(tmp_workspace / "t.db")
     await handle.connect()
     try:
@@ -29,6 +29,7 @@ async def test_all_six_tables_created(tmp_workspace: Path) -> None:
                 "oauth_tokens",
                 "sessions",
                 "user_configs",
+                "user_tokens",
                 "users",
             ]
         )

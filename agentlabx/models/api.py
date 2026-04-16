@@ -73,3 +73,21 @@ class SessionResponse(BaseModel):  # type: ignore[explicit-any]
     expires_at: str
     last_seen_at: str
     is_current: bool
+
+
+class IssueTokenRequest(BaseModel):  # type: ignore[explicit-any]
+    label: str = Field(min_length=1, max_length=128)
+
+
+class IssuedTokenResponse(BaseModel):  # type: ignore[explicit-any]
+    id: str
+    label: str
+    token: str  # plaintext — surfaced ONCE on issue
+
+
+class TokenRecordResponse(BaseModel):  # type: ignore[explicit-any]
+    id: str
+    label: str
+    created_at: str
+    last_used_at: str | None
+    revoked: bool

@@ -44,7 +44,25 @@ def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: Database
             if isinstance(payload, dict) and "sid" in payload:
                 identity = await _load_identity_for_session(db, payload["sid"])
                 request.state.identity = identity
+
+        if request.state.identity is None:
+            header = request.headers.get("Authorization", "")
+            if header.startswith("Bearer "):
+                token = header[len("Bearer "):].strip()
+                if token:
+                    request.state.identity = await _load_identity_for_bearer(db, token)
+
         return await call_next(request)
+
+
+async def _load_identity_for_bearer(db: DatabaseHandle, token: str) -> Identity | None:
+    from agentlabx.auth.protocol import AuthError
+    from agentlabx.auth.token import TokenAuther
+
+    try:
+        return await TokenAuther(db).authenticate({"token": token})
+    except AuthError:
+        return None
 
 
 async def _load_identity_for_session(db: DatabaseHandle, session_id: str) -> Identity | None:

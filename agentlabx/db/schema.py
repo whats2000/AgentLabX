@@ -44,6 +44,9 @@ class User(Base):
     sessions: Mapped[list[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    tokens_v2: Mapped[list[UserToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserConfig(Base):
@@ -111,6 +114,29 @@ class Session(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class UserToken(Base):
+    __tablename__ = "user_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_user_tokens_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # uuid
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # sha256 hex
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    user: Mapped[User] = relationship(back_populates="tokens_v2")
 
 
 class Capability(Base):

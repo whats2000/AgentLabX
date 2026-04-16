@@ -2,30 +2,52 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from agentlabx.auth.protocol import AuthError, Identity
-from agentlabx.db.schema import Capability, User, UserConfig
+from agentlabx.db.schema import Capability, User, UserToken
 from agentlabx.db.session import DatabaseHandle
-
-_TOKEN_SLOT_PREFIX = "auth:token:"
 
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class IssuedToken:
+    """Returned once on issue so the caller can display/store it."""
+
+    id: str
+    label: str
+    token: str  # the plaintext token — never stored server-side
+
+
+@dataclass(frozen=True)
+class TokenRecord:
+    """Server-side view of a token for listing."""
+
+    id: str
+    label: str
+    created_at: datetime
+    last_used_at: datetime | None
+    revoked: bool
+
+
 class TokenAuther:
-    """Bearer-token auther. Tokens are opaque; only hashes are stored."""
+    """Bearer-token auther. Token plaintext is returned once on issue and never stored."""
 
     name = "token"
 
     def __init__(self, db: DatabaseHandle) -> None:
         self._db = db
 
-    async def issue(self, *, identity_id: str) -> str:
+    async def issue(self, *, identity_id: str, label: str) -> IssuedToken:
         token = "ax_" + secrets.token_urlsafe(32)
+        token_id = str(uuid.uuid4())
         async with self._db.session() as session:
             user = (
                 await session.execute(select(User).where(User.id == identity_id))
@@ -33,40 +55,63 @@ class TokenAuther:
             if user is None:
                 raise AuthError("unknown identity")
             session.add(
-                UserConfig(
+                UserToken(
+                    id=token_id,
                     user_id=identity_id,
-                    slot=f"{_TOKEN_SLOT_PREFIX}{_hash_token(token)}",
-                    ciphertext=b"active",
+                    token_hash=_hash_token(token),
+                    label=label,
                 )
             )
             await session.commit()
-        return token
+        return IssuedToken(id=token_id, label=label, token=token)
 
-    async def revoke(self, token: str) -> None:
-        slot = f"{_TOKEN_SLOT_PREFIX}{_hash_token(token)}"
+    async def list_for(self, *, identity_id: str) -> list[TokenRecord]:
+        async with self._db.session() as session:
+            rows = (
+                await session.execute(
+                    select(UserToken)
+                    .where(UserToken.user_id == identity_id)
+                    .order_by(UserToken.created_at.desc())
+                )
+            ).scalars().all()
+        return [
+            TokenRecord(
+                id=r.id,
+                label=r.label,
+                created_at=r.created_at,
+                last_used_at=r.last_used_at,
+                revoked=r.revoked,
+            )
+            for r in rows
+        ]
+
+    async def revoke(self, *, identity_id: str, token_id: str) -> None:
         async with self._db.session() as session:
             row = (
                 await session.execute(
-                    select(UserConfig).where(UserConfig.slot == slot)
+                    select(UserToken).where(
+                        UserToken.id == token_id, UserToken.user_id == identity_id
+                    )
                 )
             ).scalar_one_or_none()
-            if row is not None:
-                row.ciphertext = b"revoked"
-                await session.commit()
+            if row is None:
+                raise AuthError("no such token")
+            row.revoked = True
+            await session.commit()
 
     async def authenticate(self, credentials: dict[str, str]) -> Identity:
         token = credentials.get("token")
         if token is None:
             raise AuthError("token required")
-        slot = f"{_TOKEN_SLOT_PREFIX}{_hash_token(token)}"
         async with self._db.session() as session:
             row = (
                 await session.execute(
-                    select(UserConfig).where(UserConfig.slot == slot)
+                    select(UserToken).where(UserToken.token_hash == _hash_token(token))
                 )
             ).scalar_one_or_none()
-            if row is None or row.ciphertext != b"active":
+            if row is None or row.revoked:
                 raise AuthError("invalid or revoked token")
+            row.last_used_at = datetime.now(tz=timezone.utc)
             user = (
                 await session.execute(select(User).where(User.id == row.user_id))
             ).scalar_one()
@@ -75,10 +120,11 @@ class TokenAuther:
                     select(Capability.capability).where(Capability.user_id == user.id)
                 )
             ).scalars().all()
+            await session.commit()
             return Identity(
                 id=user.id,
+                email=user.email,
                 auther_name=self.name,
                 display_name=user.display_name,
-                email=user.email,
                 capabilities=frozenset(caps),
             )

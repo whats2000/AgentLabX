@@ -8,14 +8,18 @@ from sqlalchemy import select
 
 from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
+from agentlabx.auth.token import TokenAuther
 from agentlabx.db.schema import Session as SessionRow
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.events.bus import Event, EventBus
 from agentlabx.models.api import (
     IdentityResponse,
+    IssuedTokenResponse,
+    IssueTokenRequest,
     LoginRequest,
     RegisterRequest,
     SessionResponse,
+    TokenRecordResponse,
     UpdateDisplayNameRequest,
     UpdateEmailRequest,
     UpdatePassphraseRequest,
@@ -308,3 +312,69 @@ async def logout(request: Request, response: Response) -> None:
         )
     else:
         await _emit(request, "auth.logout", {})
+
+
+@router.post(
+    "/me/tokens", status_code=status.HTTP_201_CREATED, response_model=IssuedTokenResponse
+)
+async def issue_my_token(
+    payload: IssueTokenRequest,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IssuedTokenResponse:
+    db: DatabaseHandle = request.state.db
+    ta = TokenAuther(db)
+    issued = await ta.issue(identity_id=identity.id, label=payload.label)
+    await _emit(
+        request,
+        "auth.token_issued",
+        {
+            "actor_id": identity.id,
+            "actor_email": identity.email,
+            "token_id": issued.id,
+            "label": issued.label,
+        },
+    )
+    return IssuedTokenResponse(id=issued.id, label=issued.label, token=issued.token)
+
+
+@router.get("/me/tokens", response_model=list[TokenRecordResponse])
+async def list_my_tokens(
+    request: Request, identity: Identity = Depends(current_identity)
+) -> list[TokenRecordResponse]:
+    ta = TokenAuther(request.state.db)
+    rows = await ta.list_for(identity_id=identity.id)
+    return [
+        TokenRecordResponse(
+            id=r.id,
+            label=r.label,
+            created_at=r.created_at.isoformat(),
+            last_used_at=r.last_used_at.isoformat() if r.last_used_at else None,
+            revoked=r.revoked,
+        )
+        for r in rows
+    ]
+
+
+@router.delete(
+    "/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def revoke_my_token(
+    token_id: str,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> None:
+    ta = TokenAuther(request.state.db)
+    try:
+        await ta.revoke(identity_id=identity.id, token_id=token_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await _emit(
+        request,
+        "auth.token_revoked",
+        {
+            "actor_id": identity.id,
+            "actor_email": identity.email,
+            "token_id": token_id,
+        },
+    )
