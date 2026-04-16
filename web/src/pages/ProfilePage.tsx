@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
 
-import { api, type SessionDto } from "@/api/client"
+import { api, type IssuedTokenDto, type SessionDto, type TokenRecordDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
@@ -63,6 +63,29 @@ export function ProfilePage(): React.JSX.Element {
   const revokeSession = useMutation({
     mutationFn: (session_id: string) => api.revokeMySession(session_id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["my-sessions"] }) },
+  })
+
+  // API tokens
+  const [tokenLabel, setTokenLabel] = React.useState("")
+  const [newlyIssuedToken, setNewlyIssuedToken] = React.useState<IssuedTokenDto | null>(null)
+
+  const tokens = useQuery<TokenRecordDto[]>({
+    queryKey: ["my-tokens"],
+    queryFn: api.listMyTokens,
+  })
+
+  const issueToken = useMutation({
+    mutationFn: () => api.issueMyToken(tokenLabel),
+    onSuccess: (issued) => {
+      setNewlyIssuedToken(issued)
+      setTokenLabel("")
+      void qc.invalidateQueries({ queryKey: ["my-tokens"] })
+    },
+  })
+
+  const revokeToken = useMutation({
+    mutationFn: (token_id: string) => api.revokeMyToken(token_id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["my-tokens"] }) },
   })
 
   return (
@@ -240,6 +263,137 @@ export function ProfilePage(): React.JSX.Element {
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Personal API tokens */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Personal API tokens</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Use these tokens to authenticate with{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+              Authorization: Bearer &lt;token&gt;
+            </code>{" "}
+            from scripts or other clients.
+          </p>
+
+          {/* Issue form */}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              issueToken.mutate()
+            }}
+          >
+            <Input
+              placeholder="Token label (e.g. ci-key)"
+              value={tokenLabel}
+              onChange={(e) => { setTokenLabel(e.target.value) }}
+              required
+              minLength={1}
+              maxLength={128}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={issueToken.isPending || tokenLabel.trim().length === 0}>
+              Issue token
+            </Button>
+          </form>
+
+          {issueToken.error ? (
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {issueToken.error.message}
+            </div>
+          ) : null}
+
+          {/* One-shot reveal banner */}
+          {newlyIssuedToken ? (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm font-medium text-amber-800">
+                Copy now — it will not be shown again.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all rounded bg-white px-2 py-1 text-xs border border-amber-200 text-slate-800">
+                  {newlyIssuedToken.token}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(newlyIssuedToken.token)
+                  }}
+                >
+                  Copy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => { setNewlyIssuedToken(null) }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+              <p className="text-xs text-amber-700">Label: {newlyIssuedToken.label}</p>
+            </div>
+          ) : null}
+
+          {/* Token list */}
+          {tokens.isLoading ? (
+            <p className="text-sm text-slate-500">Loading tokens…</p>
+          ) : tokens.error ? (
+            <p className="text-sm text-red-600">{tokens.error.message}</p>
+          ) : (tokens.data ?? []).length === 0 ? (
+            <p className="text-sm text-slate-400">No tokens issued yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {(tokens.data ?? []).map((t: TokenRecordDto) => (
+                <li key={t.id} className="flex items-start justify-between gap-4 py-3">
+                  <div className="space-y-0.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-800">{t.label}</span>
+                      {t.revoked ? (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                          revoked
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-slate-500">Created: {t.created_at}</div>
+                    <div className="text-slate-500">
+                      Last used: {t.last_used_at ?? "never used"}
+                    </div>
+                  </div>
+                  {!t.revoked ? (
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={revokeToken.isPending}
+                        >
+                          Revoke
+                        </Button>
+                      }
+                      title="Revoke token?"
+                      description={`Token "${t.label}" will be permanently revoked. Any scripts using it will stop working.`}
+                      confirmLabel="Revoke"
+                      destructive
+                      onConfirm={() => { revokeToken.mutate(t.id) }}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {revokeToken.error ? (
+            <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+              {revokeToken.error.message}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

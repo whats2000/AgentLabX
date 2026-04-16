@@ -1,3 +1,17 @@
+export interface TokenRecordDto {
+  id: string
+  label: string
+  created_at: string
+  last_used_at: string | null
+  revoked: boolean
+}
+
+export interface IssuedTokenDto {
+  id: string
+  label: string
+  token: string  // plaintext — shown once
+}
+
 export interface SessionDto {
   id: string
   issued_at: string
@@ -123,6 +137,17 @@ export const api = {
   listMySessions: () => request<SessionDto[]>("/api/auth/me/sessions"),
   revokeMySession: (session_id: string) =>
     request<void>(`/api/auth/me/sessions/${encodeURIComponent(session_id)}`, {
+      method: "DELETE",
+    }),
+  listMyTokens: () => request<TokenRecordDto[]>("/api/auth/me/tokens"),
+  issueMyToken: (label: string) =>
+    request<IssuedTokenDto>("/api/auth/me/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    }),
+  revokeMyToken: (token_id: string) =>
+    request<void>(`/api/auth/me/tokens/${encodeURIComponent(token_id)}`, {
       method: "DELETE",
     }),
 }
