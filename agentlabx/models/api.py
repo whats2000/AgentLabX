@@ -59,3 +59,9 @@ class UpdatePassphraseRequest(BaseModel):  # type: ignore[explicit-any]
 
 class RunsListResponse(BaseModel):  # type: ignore[explicit-any]
     runs: list[str]  # placeholder — no runs in A1
+
+
+class EventResponse(BaseModel):  # type: ignore[explicit-any]
+    kind: str
+    at: str
+    payload: dict[str, str | int | float | bool | None]

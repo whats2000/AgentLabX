@@ -30,6 +30,10 @@ class AppSettings(BaseSettings):  # type: ignore[explicit-any]
     def db_path(self) -> Path:
         return self.workspace / "agentlabx.db"
 
+    @property
+    def audit_log_path(self) -> Path:
+        return self.workspace / "events" / "audit.jsonl"
+
     @model_validator(mode="after")
     def _validate_bind_and_tls(self) -> AppSettings:
         if self.bind_mode is BindMode.LAN:

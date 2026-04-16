@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request, Response
 from agentlabx.config.settings import AppSettings, BindMode
 from agentlabx.db.migrations import apply_migrations
 from agentlabx.db.session import DatabaseHandle
+from agentlabx.events.bus import EventBus
+from agentlabx.events.logger import JsonlEventSink
 from agentlabx.security.fernet_store import FernetStore
 from agentlabx.security.keyring_store import get_or_create_session_secret
 from agentlabx.server.middleware import SessionConfig, install_session_middleware
@@ -29,11 +31,17 @@ async def create_app(settings: AppSettings) -> FastAPI:
     )
     install_session_middleware(app, cfg=cfg, db=db)
 
+    # Event bus + JSONL sink
+    bus = EventBus()
+    sink = JsonlEventSink(path=settings.audit_log_path)
+    sink.install(bus)
+
     @app.middleware("http")
-    async def inject_crypto(
+    async def inject_crypto_and_events(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request.state.crypto = crypto
+        request.state.events = bus
         return await call_next(request)
 
     app.include_router(health_router.router)
@@ -44,4 +52,5 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.state.db = db
     app.state.settings = settings
     app.state.crypto = crypto
+    app.state.events = bus
     return app
