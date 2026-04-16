@@ -18,18 +18,17 @@ export function LoginPage(): React.JSX.Element {
   })
   const needsBootstrap = bootstrap.data?.needs_bootstrap ?? false
 
-  const [mode, setMode] = React.useState<"login" | "register">("login")
+  // `override` is the user's explicit choice via the toggle button; when null,
+  // mode derives from server state (register on fresh installs, login otherwise).
+  const [override, setOverride] = React.useState<"login" | "register" | null>(null)
+  const mode: "login" | "register" = override ?? (needsBootstrap ? "register" : "login")
+
   const [email, setEmail] = React.useState("")
   const [displayName, setDisplayName] = React.useState("")
   const [passphrase, setPassphrase] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const { refresh } = useAuth()
   const nav = useNavigate()
-
-  // When bootstrap status resolves, default to register mode on a fresh install.
-  React.useEffect(() => {
-    if (needsBootstrap) setMode("register")
-  }, [needsBootstrap])
 
   async function submit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()
@@ -57,7 +56,7 @@ export function LoginPage(): React.JSX.Element {
   }
 
   function toggleMode(): void {
-    setMode(mode === "register" ? "login" : "register")
+    setOverride(mode === "register" ? "login" : "register")
     setError(null)
     setPassphrase("")
   }
@@ -126,11 +125,9 @@ export function LoginPage(): React.JSX.Element {
                 <Button type="submit">
                   {mode === "register" ? "Create & log in" : "Log in"}
                 </Button>
-                {needsBootstrap ? (
-                  <Button type="button" variant="ghost" onClick={toggleMode}>
-                    {mode === "register" ? "Existing? Log in" : "Need to register?"}
-                  </Button>
-                ) : null}
+                <Button type="button" variant="ghost" onClick={toggleMode}>
+                  {mode === "register" ? "Existing? Log in" : "Need to register?"}
+                </Button>
               </div>
             </form>
           </CardContent>
