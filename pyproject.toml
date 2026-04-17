@@ -78,6 +78,7 @@ asyncio_mode = "auto"
 env_files = [".env"]
 markers = [
     "integration: marks integration tests (use `-m integration` to run only these)",
+    "real_llm: marks tests that require a real LLM provider API key",
 ]
 
 [tool.hatch.build.targets.wheel]
