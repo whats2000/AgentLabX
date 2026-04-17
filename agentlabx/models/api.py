@@ -58,6 +58,19 @@ class UpdatePassphraseRequest(BaseModel):  # type: ignore[explicit-any]
     new_passphrase: str = Field(min_length=8, max_length=256)
 
 
+class ModelResponse(BaseModel):  # type: ignore[explicit-any]
+    id: str
+    display_name: str
+    provider: str
+
+
+class ProviderResponse(BaseModel):  # type: ignore[explicit-any]
+    name: str
+    display_name: str
+    credential_slot: str
+    models: list[ModelResponse]
+
+
 class RunsListResponse(BaseModel):  # type: ignore[explicit-any]
     runs: list[str]  # placeholder — no runs in A1
 
