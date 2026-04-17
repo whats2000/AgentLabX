@@ -398,7 +398,7 @@ sequenceDiagram
 - **What it does not do:** call LLMs, execute tools, draft text. Pure routing.
 
 #### 3.3.3 LLM Module
-- **Tech:** LiteLLM as the universal client; provider catalog in `providers.yaml`; per-user selection + encrypted key in the user config store.
+- **Tech:** LiteLLM as the universal client; provider catalog in `providers.yaml` (path configurable via `AppSettings`, shipped default resolved via `importlib.resources`; admin edits the file at the configured path); per-user selection + encrypted key in the user config store.
 - **Providers:** Anthropic, OpenAI, Azure OpenAI, Google, Ollama, vLLM, custom OpenAI-compatible endpoints.
 - **Responsibilities:**
   - Route a `complete()` call to the user's selected provider.
