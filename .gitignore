@@ -40,5 +40,8 @@ data/
 .claude
 .cursor
 
+# Git worktrees
+.worktrees/
+
 # Temporary files
 _tmp*
