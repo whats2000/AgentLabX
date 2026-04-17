@@ -150,7 +150,7 @@ async def test_traced_emits_error_event_on_failure() -> None:
         async def complete(self, request: LLMRequest) -> LLMResponse:
             raise RuntimeError("LLM exploded")
 
-    traced = TracedLLMProvider(inner=_FailingProvider(), bus=bus)  # type: ignore[arg-type]
+    traced = TracedLLMProvider(inner=_FailingProvider(), bus=bus)
     req = LLMRequest(
         model="m",
         messages=[{"role": MessageRole.USER, "content": "hi"}],

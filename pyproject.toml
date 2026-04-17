@@ -1,7 +1,7 @@
 [project]
 name = "agentlabx"
 version = "0.1.0"
-description = "AgentLabX — Stage A1 foundation infrastructure"
+description = "AgentLabX — LLM-driven research automation platform"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7,<3.0",
@@ -32,6 +32,9 @@ dev = [
     "mypy>=1.11",
     "types-PyYAML>=6.0",
 ]
+
+[project.entry-points."agentlabx.llm_providers"]
+litellm = "agentlabx.llm.litellm_provider:LiteLLMProvider"
 
 [build-system]
 requires = ["hatchling"]
