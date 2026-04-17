@@ -42,8 +42,9 @@ tests/
 │       ├── __init__.py
 │       ├── test_protocol.py        # LLMRequest/LLMResponse construction + validation
 │       ├── test_traced_provider.py # TracedLLMProvider event emission + redaction (inline stub)
-│       ├── test_budget.py          # BudgetTracker arithmetic + cap enforcement
-│       ├── test_catalog.py         # ProviderCatalog loading + validation
+│       ├── test_budget.py          # BudgetTracker arithmetic + cap enforcement + async concurrency
+│       ├── test_catalog.py         # ProviderCatalog loading + validation + malformed YAML
+│       ├── test_litellm_helpers.py # _scoped_env + _build_messages unit tests
 │       └── test_key_resolver.py    # key decryption from credential store
 └── integration/
     ├── test_llm_mock_server.py     # LiteLLMProvider end-to-end against mock server
@@ -328,6 +329,7 @@ class MockServerState:
     default_content: str = "This is a mock response."
     response_map: dict[str, str] = field(default_factory=dict)
     history: list[ChatCompletionRequest] = field(default_factory=list)
+    fail_next_n: int = 0  # return 429 for the next N requests, then succeed
 
 
 def create_mock_app(state: MockServerState | None = None) -> FastAPI:
@@ -337,8 +339,19 @@ def create_mock_app(state: MockServerState | None = None) -> FastAPI:
     app.state.mock = server_state
 
     @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-    async def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def chat_completions(
+        req: ChatCompletionRequest,
+    ) -> ChatCompletionResponse:
         server_state.history.append(req)
+
+        # Simulate transient failures (429 rate-limit) for retry testing
+        if server_state.fail_next_n > 0:
+            server_state.fail_next_n -= 1
+            from fastapi.responses import JSONResponse
+            return JSONResponse(  # type: ignore[return-value]
+                status_code=429,
+                content={"error": {"message": "Rate limit exceeded", "type": "rate_limit"}},
+            )
 
         # Determine response content
         content = server_state.default_content
@@ -484,6 +497,8 @@ git commit -m "test(llm): add standalone mock LLM server — OpenAI-compatible H
 # tests/unit/llm/test_budget.py
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from agentlabx.llm.budget import BudgetTracker
@@ -561,6 +576,31 @@ def test_summary() -> None:
     assert summary["cap_usd"] == 10.0
     assert summary["remaining_usd"] == 5.0
     assert summary["call_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_record_async_is_concurrency_safe() -> None:
+    """Multiple concurrent record_async calls produce correct totals."""
+    tracker = BudgetTracker(cap_usd=None)
+
+    async def record_many(n: int, cost: float) -> None:
+        for _ in range(n):
+            await tracker.record_async(cost_usd=cost)
+
+    await asyncio.gather(
+        record_many(100, 0.01),
+        record_many(100, 0.01),
+    )
+    assert tracker.call_count == 200
+    assert abs(tracker.spent_usd - 2.0) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_check_async_raises_when_exceeded() -> None:
+    tracker = BudgetTracker(cap_usd=1.0)
+    await tracker.record_async(cost_usd=2.0)
+    with pytest.raises(BudgetExceededError):
+        await tracker.check_async()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -574,16 +614,23 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'agentlabx.llm.budget'`
 # agentlabx/llm/budget.py
 from __future__ import annotations
 
+import asyncio
+
 from agentlabx.llm.protocol import BudgetExceededError
 
 
 class BudgetTracker:
-    """Per-project LLM cost tracker with optional cap enforcement."""
+    """Per-project LLM cost tracker with optional cap enforcement.
+
+    Thread-safe under asyncio: record() and check() acquire an internal
+    lock so concurrent calls cannot interleave spend updates.
+    """
 
     def __init__(self, *, cap_usd: float | None) -> None:
         self._cap_usd = cap_usd
         self._spent_usd: float = 0.0
         self._call_count: int = 0
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     @property
     def spent_usd(self) -> float:
@@ -600,14 +647,25 @@ class BudgetTracker:
         return self._call_count
 
     def record(self, *, cost_usd: float) -> None:
-        """Record the cost of an LLM call."""
+        """Record the cost of an LLM call (sync — callers use record_async for lock)."""
         self._spent_usd += cost_usd
         self._call_count += 1
+
+    async def record_async(self, *, cost_usd: float) -> None:
+        """Record cost under the internal lock (concurrency-safe)."""
+        async with self._lock:
+            self._spent_usd += cost_usd
+            self._call_count += 1
 
     def check(self) -> None:
         """Raise BudgetExceededError if spending has strictly exceeded the cap."""
         if self._cap_usd is not None and self._spent_usd > self._cap_usd:
             raise BudgetExceededError(spent=self._spent_usd, cap=self._cap_usd)
+
+    async def check_async(self) -> None:
+        """Check budget under the internal lock (concurrency-safe)."""
+        async with self._lock:
+            self.check()
 
     def summary(self) -> dict[str, float | int | None]:
         """Return a summary dict suitable for event payloads."""
@@ -622,7 +680,7 @@ class BudgetTracker:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/llm/test_budget.py -v`
-Expected: All 9 tests PASS
+Expected: All 11 tests PASS
 
 - [ ] **Step 5: Run linters**
 
@@ -804,6 +862,29 @@ def test_provider_entry_fields() -> None:
     assert entry.name == "test"
     assert entry.env_var == "TEST_API_KEY"
     assert entry.credential_slot == "test"
+
+
+def test_malformed_yaml_missing_providers_key() -> None:
+    """YAML with no 'providers' key yields an empty catalog."""
+    catalog = ProviderCatalog.from_yaml("something_else: true\n")
+    assert len(catalog.providers) == 0
+
+
+def test_malformed_yaml_missing_model_fields() -> None:
+    """Provider entry with missing model fields is skipped gracefully."""
+    yaml_content = """\
+providers:
+  - name: broken
+    display_name: Broken Provider
+    env_var: X
+    credential_slot: x
+    models:
+      - not_a_valid_model: true
+"""
+    catalog = ProviderCatalog.from_yaml(yaml_content)
+    assert len(catalog.providers) == 1
+    # The malformed model entry should be skipped (no 'id' key)
+    assert len(catalog.providers[0].models) == 0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -882,7 +963,7 @@ class ProviderCatalog:
             models: list[ModelEntry] = []
             if isinstance(models_raw, list):
                 for m in models_raw:
-                    if isinstance(m, dict):
+                    if isinstance(m, dict) and "id" in m and "display_name" in m:
                         models.append(
                             ModelEntry(
                                 id=str(m["id"]),
@@ -926,7 +1007,7 @@ class ProviderCatalog:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/llm/test_catalog.py -v`
-Expected: All 8 tests PASS
+Expected: All 10 tests PASS
 
 - [ ] **Step 6: Run linters**
 
@@ -1471,9 +1552,9 @@ class TracedLLMProvider:
         return text
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        # Pre-call budget check
+        # Pre-call budget check (concurrency-safe)
         if self._budget is not None:
-            self._budget.check()
+            await self._budget.check_async()
 
         try:
             response = await self._inner.complete(request)
@@ -1490,9 +1571,9 @@ class TracedLLMProvider:
             )
             raise
 
-        # Record cost in budget tracker
+        # Record cost in budget tracker (concurrency-safe)
         if self._budget is not None:
-            self._budget.record(cost_usd=response.cost_usd)
+            await self._budget.record_async(cost_usd=response.cost_usd)
 
         # Emit success event
         await self._bus.emit(
@@ -1535,6 +1616,7 @@ git commit -m "feat(llm): add TracedLLMProvider — event emission + prompt reda
 
 **Files:**
 - Create: `agentlabx/llm/litellm_provider.py`
+- Create: `tests/unit/llm/test_litellm_helpers.py`
 - Modify: `pyproject.toml` (add `litellm` dependency + mypy override)
 - Create: `tests/integration/test_llm_mock_server.py`
 
@@ -1560,6 +1642,7 @@ Run: `uv sync`
 # agentlabx/llm/litellm_provider.py
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -1567,6 +1650,12 @@ from contextlib import contextmanager
 import litellm
 
 from agentlabx.llm.protocol import LLMRequest, LLMResponse
+
+# Lock for providers that require env-var-based key injection.
+# LiteLLM's api_key param covers most providers, but some read from
+# env vars directly.  The lock serialises env mutations so concurrent
+# async calls cannot leak one user's key to another.
+_env_lock = asyncio.Lock()
 
 
 def _build_messages(
@@ -1588,10 +1677,8 @@ def _build_messages(
 def _scoped_env(api_key: str | None, env_var: str | None) -> Iterator[None]:
     """Temporarily set an environment variable for the duration of the call.
 
-    This prevents one user's key from leaking into another user's concurrent call
-    via process-global state.  For true multi-user concurrency a pool of subprocess
-    workers is the right long-term answer, but env-scoping is sufficient for the
-    single-worker design in Stage A2.
+    Only used for providers that read keys from env vars rather than the
+    api_key parameter.  Callers must hold _env_lock before entering.
     """
     if api_key is None or env_var is None or env_var == "":
         yield
@@ -1644,7 +1731,15 @@ class LiteLLMProvider:
         if self._api_base is not None:
             kwargs["api_base"] = self._api_base
 
-        with _scoped_env(self._api_key, self._env_var):
+        # Primary path: api_key param (concurrency-safe, no env mutation).
+        # Fallback path: env-var injection under lock (for providers that
+        # ignore the api_key param and read from env vars directly).
+        needs_env = self._env_var is not None and self._env_var != ""
+        if needs_env:
+            async with _env_lock:
+                with _scoped_env(self._api_key, self._env_var):
+                    response = await litellm.acompletion(**kwargs)  # type: ignore[arg-type]
+        else:
             response = await litellm.acompletion(**kwargs)  # type: ignore[arg-type]
 
         # Extract usage
@@ -1675,6 +1770,65 @@ class LiteLLMProvider:
             total_tokens=total_tokens,
             cost_usd=cost_usd,
         )
+```
+
+- [ ] **Step 2b: Write unit tests for `_scoped_env` and `_build_messages`**
+
+```python
+# tests/unit/llm/test_litellm_helpers.py
+from __future__ import annotations
+
+import os
+
+from agentlabx.llm.litellm_provider import _build_messages, _scoped_env
+from agentlabx.llm.protocol import LLMRequest, Message, MessageRole
+
+
+def test_scoped_env_sets_and_restores() -> None:
+    """_scoped_env restores the previous value after the block."""
+    os.environ["TEST_SCOPED_KEY"] = "original"
+    with _scoped_env("new-value", "TEST_SCOPED_KEY"):
+        assert os.environ["TEST_SCOPED_KEY"] == "new-value"
+    assert os.environ["TEST_SCOPED_KEY"] == "original"
+    del os.environ["TEST_SCOPED_KEY"]
+
+
+def test_scoped_env_pops_when_no_previous() -> None:
+    """_scoped_env removes the var if it did not exist before."""
+    os.environ.pop("TEST_SCOPED_NEW", None)
+    with _scoped_env("temp-value", "TEST_SCOPED_NEW"):
+        assert os.environ["TEST_SCOPED_NEW"] == "temp-value"
+    assert "TEST_SCOPED_NEW" not in os.environ
+
+
+def test_scoped_env_noop_when_none() -> None:
+    """_scoped_env is a no-op when api_key or env_var is None."""
+    with _scoped_env(None, "ANY_VAR"):
+        pass  # should not raise
+    with _scoped_env("key", None):
+        pass
+    with _scoped_env("key", ""):
+        pass
+
+
+def test_build_messages_with_system_prompt() -> None:
+    req = LLMRequest(
+        model="m",
+        messages=[{"role": MessageRole.USER, "content": "hi"}],
+        system_prompt="Be helpful.",
+    )
+    msgs = _build_messages(req)
+    assert msgs[0] == {"role": "system", "content": "Be helpful."}
+    assert msgs[1] == {"role": "user", "content": "hi"}
+
+
+def test_build_messages_with_message_dataclass() -> None:
+    req = LLMRequest(
+        model="m",
+        messages=[Message(role=MessageRole.USER, content="typed msg")],
+    )
+    msgs = _build_messages(req)
+    assert msgs[0] == {"role": "user", "content": "typed msg"}
 ```
 
 - [ ] **Step 3: Write integration tests against the mock server**
@@ -1811,28 +1965,92 @@ async def test_mock_server_records_history(
 
     assert len(mock_llm_server.state.history) == 2
     assert mock_llm_server.state.history[0].messages[-1].content == "track this"
+
+
+@pytest.mark.asyncio
+async def test_litellm_retries_on_429(
+    mock_llm_server: MockLLMService,
+) -> None:
+    """LiteLLM retries on 429 and eventually succeeds."""
+    mock_llm_server.state.fail_next_n = 1  # fail first request, succeed on retry
+    provider = LiteLLMProvider(
+        api_key="mock-key",
+        api_base=mock_llm_server.base_url,
+        retry_count=2,
+    )
+    req = LLMRequest(
+        model="openai/mock-model",
+        messages=[{"role": MessageRole.USER, "content": "retry me"}],
+    )
+    resp = await provider.complete(req)
+    assert resp.content == "This is a mock response."
+
+
+@pytest.mark.asyncio
+async def test_litellm_provider_with_system_prompt(
+    mock_llm_server: MockLLMService,
+) -> None:
+    """system_prompt is prepended as a system message in _build_messages."""
+    provider = LiteLLMProvider(
+        api_key="mock-key",
+        api_base=mock_llm_server.base_url,
+    )
+    req = LLMRequest(
+        model="openai/mock-model",
+        messages=[{"role": MessageRole.USER, "content": "hello"}],
+        system_prompt="You are a test assistant.",
+    )
+    resp = await provider.complete(req)
+    assert isinstance(resp, LLMResponse)
+    # Verify the mock server received the system message
+    last_req = mock_llm_server.state.history[-1]
+    assert last_req.messages[0].role == "system"
+    assert last_req.messages[0].content == "You are a test assistant."
+
+
+@pytest.mark.asyncio
+async def test_litellm_provider_with_message_dataclass(
+    mock_llm_server: MockLLMService,
+) -> None:
+    """Message dataclass objects are correctly converted by _build_messages."""
+    from agentlabx.llm.protocol import Message
+
+    provider = LiteLLMProvider(
+        api_key="mock-key",
+        api_base=mock_llm_server.base_url,
+    )
+    req = LLMRequest(
+        model="openai/mock-model",
+        messages=[Message(role=MessageRole.USER, content="dataclass msg")],
+    )
+    resp = await provider.complete(req)
+    assert resp.content == "This is a mock response."
+    last_req = mock_llm_server.state.history[-1]
+    assert last_req.messages[-1].content == "dataclass msg"
 ```
 
 - [ ] **Step 4: Run the integration tests**
 
 Run: `uv run pytest tests/integration/test_llm_mock_server.py -v`
-Expected: All 5 tests PASS
+Expected: All 9 tests PASS
 
 - [ ] **Step 5: Run linters**
 
-Run: `uv run ruff check agentlabx/llm/litellm_provider.py tests/integration/test_llm_mock_server.py && uv run mypy agentlabx/llm/litellm_provider.py tests/integration/test_llm_mock_server.py`
+Run: `uv run ruff check agentlabx/llm/litellm_provider.py tests/unit/llm/test_litellm_helpers.py tests/integration/test_llm_mock_server.py && uv run mypy agentlabx/llm/litellm_provider.py tests/unit/llm/test_litellm_helpers.py tests/integration/test_llm_mock_server.py`
 Expected: No errors
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentlabx/llm/litellm_provider.py tests/integration/test_llm_mock_server.py pyproject.toml
+git add agentlabx/llm/litellm_provider.py tests/unit/llm/test_litellm_helpers.py tests/integration/test_llm_mock_server.py pyproject.toml
 git commit -m "feat(llm): add LiteLLMProvider + mock server integration tests"
 ```
 
 ---
 
 ## Task 8: Wire LLM module into FastAPI — `/api/llm/*` router + app factory
+
+> **Note:** No `/api/llm/complete` endpoint — completion is invoked server-side by stages via the Python API, not by the frontend. A REST completion endpoint may be added in a later stage if needed.
 
 **Files:**
 - Create: `agentlabx/server/routers/llm.py`
@@ -2022,22 +2240,41 @@ async def list_models(
 
 - [ ] **Step 5: Wire into app factory**
 
+In `agentlabx/config/settings.py`, add to `AppSettings`:
+```python
+    catalog_path: Path | None = None  # None → resolve from package data
+```
+
 In `agentlabx/server/app.py`, add imports:
 ```python
-from pathlib import Path
+import importlib.resources
+import logging
 
 from agentlabx.llm.catalog import ProviderCatalog
 from agentlabx.server.routers import llm as llm_router
+
+_log = logging.getLogger(__name__)
 ```
 
 After the event bus setup and before `app.include_router(health_router.router)`, add:
 ```python
-    # Provider catalog
-    catalog_path = Path(__file__).resolve().parent.parent.parent / "providers.yaml"
-    if catalog_path.exists():
+    # Provider catalog — resolve from settings, fall back to package data
+    catalog_path = settings.catalog_path
+    if catalog_path is not None and catalog_path.exists():
         catalog = ProviderCatalog.from_file(catalog_path)
     else:
-        catalog = ProviderCatalog(providers=[])
+        # Try shipped package data via importlib.resources
+        try:
+            ref = importlib.resources.files("agentlabx") / ".." / "providers.yaml"
+            with importlib.resources.as_file(ref) as p:  # type: ignore[arg-type]
+                if p.exists():
+                    catalog = ProviderCatalog.from_file(p)
+                else:
+                    _log.warning("providers.yaml not found — catalog is empty")
+                    catalog = ProviderCatalog(providers=[])
+        except (FileNotFoundError, TypeError):
+            _log.warning("providers.yaml not found — catalog is empty")
+            catalog = ProviderCatalog(providers=[])
     app.state.catalog = catalog
 ```
 
