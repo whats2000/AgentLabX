@@ -29,8 +29,13 @@ export function LoginPage(): React.JSX.Element {
   const [displayName, setDisplayName] = React.useState("")
   const [passphrase, setPassphrase] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
-  const { refresh } = useAuth()
+  const { identity, refresh } = useAuth()
   const nav = useNavigate()
+
+  // Already logged in — redirect away from the login page.
+  React.useEffect(() => {
+    if (identity) nav("/runs", { replace: true })
+  }, [identity, nav])
 
   async function submit(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()
