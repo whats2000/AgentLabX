@@ -109,7 +109,7 @@ Three layers, built in strict order. Each stage delivers working, testable softw
 
 Complete the full framework before any research stage exists. All stage I/O contracts are defined upfront in Stage A4 so implementations slot into a known shape rather than reshaping the framework mid-stream.
 
-- [ ] **A1 — Foundation infrastructure** — auth, sessions, encrypted credentials, event bus, plugin registry, migrations, CLI, test shell
+- [x] **A1 — Foundation infrastructure** — auth, sessions, encrypted credentials, event bus, plugin registry, migrations, CLI, test shell
 - [ ] **A2 — LLM provider module** — LiteLLM router · traced wrapper (events + cost + budget cap) · mock provider · per-user encrypted key wiring
 - [ ] **A3 — MCP host + bundled servers** — arxiv-search · semantic-scholar · code-execution (sandboxed) · browser · filesystem · memory
 - [ ] **A4 — Stage contract framework** — `Stage` Protocol · Pydantic I/O contracts for every pipeline stage upfront · reproducibility-contract dataclass · plugin discovery
