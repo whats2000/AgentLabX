@@ -37,7 +37,7 @@
     "needAccountHint": "需要帳號？請聯絡管理員為您建立。",
     "sessionError": "登入成功，但未能建立工作階段，請再試一次",
     "tooManyAttempts": "嘗試次數過多 — 請稍後再試",
-    "rememberMe": "記住我 30 天"
+    "rememberMe": "記住我 {{days}} 天"
   },
   "nav": {
     "runs": "執行",

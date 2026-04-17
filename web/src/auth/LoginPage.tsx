@@ -124,15 +124,17 @@ export function LoginPage(): React.JSX.Element {
                   }
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => { setRememberMe(e.target.checked) }}
-                  className="h-4 w-4 rounded border-input accent-foreground"
-                />
-                {t("auth.rememberMe")}
-              </label>
+              {mode === "login" ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => { setRememberMe(e.target.checked) }}
+                    className="h-4 w-4 rounded border-input accent-foreground"
+                  />
+                  {t("auth.rememberMe", { days: 30 })}
+                </label>
+              ) : null}
               {error ? (
                 <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                   {error}

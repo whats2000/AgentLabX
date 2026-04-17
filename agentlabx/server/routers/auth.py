@@ -95,7 +95,7 @@ async def _issue_session_cookie(
             )
         )
         await session.commit()
-    cookie_value = request.state.session_serializer.dumps({"sid": session_id})
+    cookie_value = request.state.session_serializer.dumps({"sid": session_id, "rm": remember_me})
     response.set_cookie(
         key=COOKIE_NAME,
         value=cookie_value,
@@ -317,7 +317,9 @@ async def update_passphrase(
             t.revoked = True
         await session.commit()
     # Issue a fresh session cookie so the caller stays logged in.
-    await _issue_session_cookie(db, identity.id, request, response)
+    # Preserve remember-me state from the incoming cookie if present.
+    incoming_rm = getattr(request.state, "session_remember_me", False)
+    await _issue_session_cookie(db, identity.id, request, response, remember_me=incoming_rm)
     await _emit(
         request,
         "auth.passphrase_updated",

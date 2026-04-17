@@ -37,7 +37,7 @@
     "needAccountHint": "Need an account? Ask an admin to provision one for you.",
     "sessionError": "login succeeded but session was not established; please try again",
     "tooManyAttempts": "Too many failed attempts — try again later",
-    "rememberMe": "Remember me for 30 days"
+    "rememberMe": "Remember me for {{days}} days"
   },
   "nav": {
     "runs": "Runs",
