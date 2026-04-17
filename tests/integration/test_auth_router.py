@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from agentlabx.config.settings import AppSettings
+from agentlabx.db.schema import Session as SessionRow
 from agentlabx.server.app import create_app
 from agentlabx.server.rate_limit import LoginRateLimiter
 
@@ -393,5 +396,73 @@ async def test_repeated_failed_logins_trigger_429(
                 json={"email": "a@x.com", "passphrase": "p1234567"},
             )
             assert r.status_code == 429
+    finally:
+        await app.state.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_remember_me_extends_session_lifetime(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    """Login with remember_me=true should issue a 30-day session instead of 12h."""
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            await c.post(
+                "/api/auth/register",
+                json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
+            )
+
+            def _extract_max_age(response: object) -> int:
+                from httpx import Response as HttpxResponse
+
+                assert isinstance(response, HttpxResponse)
+                for val in response.headers.get_list("set-cookie"):
+                    if "agentlabx_session" in val:
+                        for part in val.split(";"):
+                            if part.strip().lower().startswith("max-age="):
+                                return int(part.strip().split("=")[1])
+                raise AssertionError("agentlabx_session cookie not found in Set-Cookie")
+
+            # Normal login (remember_me=false) → 12h cookie
+            r = await c.post(
+                "/api/auth/login",
+                json={"email": "a@x.com", "passphrase": "p1234567"},
+            )
+            assert r.status_code == 200
+            normal_max_age = _extract_max_age(r)
+            assert normal_max_age == settings.session_max_age_seconds
+
+            # Remember-me login → 30-day cookie
+            r = await c.post(
+                "/api/auth/login",
+                json={"email": "a@x.com", "passphrase": "p1234567", "remember_me": True},
+            )
+            assert r.status_code == 200
+            remember_max_age = _extract_max_age(r)
+            assert remember_max_age == settings.remember_me_max_age_seconds
+            assert remember_max_age > normal_max_age
+
+            # Verify DB session row: the most recent session should expire ~30 days from now
+            db = app.state.db
+            async with db.session() as session:
+                rows = (
+                    await session.execute(
+                        select(SessionRow)
+                        .where(SessionRow.revoked.is_(False))
+                        .order_by(SessionRow.issued_at.desc())
+                    )
+                ).scalars().all()
+                latest = rows[0]
+                expires_at = latest.expires_at
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                remaining = (expires_at - datetime.now(tz=timezone.utc)).total_seconds()
+                # Should be close to 30 days (~2592000s), definitely more than 12h (43200s)
+                assert remaining > 86400  # at least 1 day
     finally:
         await app.state.db.close()

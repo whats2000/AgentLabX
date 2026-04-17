@@ -21,6 +21,7 @@ class SessionConfig:
     secret: bytes
     secure: bool  # True on LAN bind; False on loopback
     max_age_seconds: int = 60 * 60 * 12  # 12h
+    remember_me_max_age_seconds: int = 60 * 60 * 24 * 30  # 30 days
 
 
 def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: DatabaseHandle) -> None:
@@ -38,7 +39,7 @@ def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: Database
         cookie = request.cookies.get(COOKIE_NAME)
         if cookie is not None:
             try:
-                payload = serializer.loads(cookie, max_age=cfg.max_age_seconds)
+                payload = serializer.loads(cookie, max_age=max(cfg.max_age_seconds, cfg.remember_me_max_age_seconds))
             except BadSignature:
                 payload = None
             if isinstance(payload, dict) and "sid" in payload:

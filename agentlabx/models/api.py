@@ -12,6 +12,7 @@ class RegisterRequest(BaseModel):  # type: ignore[explicit-any]
 class LoginRequest(BaseModel):  # type: ignore[explicit-any]
     email: str
     passphrase: str
+    remember_me: bool = False
 
 
 class IdentityResponse(BaseModel):  # type: ignore[explicit-any]

@@ -29,6 +29,8 @@ async def create_app(settings: AppSettings) -> FastAPI:
     cfg = SessionConfig(
         secret=get_or_create_session_secret(),
         secure=(settings.bind_mode is BindMode.LAN),
+        max_age_seconds=settings.session_max_age_seconds,
+        remember_me_max_age_seconds=settings.remember_me_max_age_seconds,
     )
     install_session_middleware(app, cfg=cfg, db=db)
 

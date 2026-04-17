@@ -79,16 +79,19 @@ async def _issue_session_cookie(
     identity_id: str,
     request: Request,
     response: Response,
+    *,
+    remember_me: bool = False,
 ) -> None:
     """Create a new SessionRow and set the session cookie on the response."""
     cfg: SessionConfig = request.state.session_config
+    max_age = cfg.remember_me_max_age_seconds if remember_me else cfg.max_age_seconds
     session_id = str(uuid.uuid4())
     async with db.session() as session:
         session.add(
             SessionRow(
                 id=session_id,
                 user_id=identity_id,
-                expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=cfg.max_age_seconds),
+                expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=max_age),
             )
         )
         await session.commit()
@@ -96,7 +99,7 @@ async def _issue_session_cookie(
     response.set_cookie(
         key=COOKIE_NAME,
         value=cookie_value,
-        max_age=cfg.max_age_seconds,
+        max_age=max_age,
         httponly=True,
         secure=cfg.secure,
         samesite="lax",
@@ -203,7 +206,9 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
                 row.revoked = True
                 await session.commit()
 
-    await _issue_session_cookie(db, identity.id, request, response)
+    await _issue_session_cookie(
+        db, identity.id, request, response, remember_me=payload.remember_me
+    )
     await _emit(
         request,
         "auth.login_success",

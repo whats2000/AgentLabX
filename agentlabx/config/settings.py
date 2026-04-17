@@ -25,6 +25,8 @@ class AppSettings(BaseSettings):  # type: ignore[explicit-any]
     bind_port: int = 8765
     tls_cert: Path | None = None
     tls_key: Path | None = None
+    session_max_age_seconds: int = 60 * 60 * 12  # 12 hours
+    remember_me_max_age_seconds: int = 60 * 60 * 24 * 30  # 30 days
 
     @property
     def db_path(self) -> Path:

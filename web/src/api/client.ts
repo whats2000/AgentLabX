@@ -73,11 +73,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ display_name, email, passphrase }),
     }),
-  login: (email: string, passphrase: string) =>
+  login: (email: string, passphrase: string, remember_me = false) =>
     request<IdentityDto>("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, passphrase }),
+      body: JSON.stringify({ email, passphrase, remember_me }),
     }),
   me: () => request<IdentityDto>("/api/auth/me"),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
