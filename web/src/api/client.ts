@@ -66,7 +66,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   bootstrapStatus: () =>
-    request<{ needs_bootstrap: boolean }>("/api/auth/bootstrap-status"),
+    request<{ needs_bootstrap: boolean; remember_me_days: number }>("/api/auth/bootstrap-status"),
   register: (display_name: string, email: string, passphrase: string) =>
     request<IdentityDto>("/api/auth/register", {
       method: "POST",

@@ -182,7 +182,7 @@ async def test_expired_normal_cookie_rejected_but_remember_me_accepted(
         rm_cookie = serializer.dumps({"sid": "s_remember", "rm": True})
 
         # Wait for the normal cookie to expire at the itsdangerous level
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2.0)
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from itsdangerous import BadSignature
 from sqlalchemy import func, select
 
 from agentlabx.auth.default import DefaultAuther
@@ -37,9 +38,12 @@ def _current_session_id(request: Request) -> str | None:
     cookie = request.cookies.get(COOKIE_NAME)
     if cookie is None:
         return None
+    cfg: SessionConfig = request.state.session_config
     try:
-        payload = request.state.session_serializer.loads(cookie)
-    except Exception:
+        payload = request.state.session_serializer.loads(
+            cookie, max_age=cfg.remember_me_max_age_seconds
+        )
+    except BadSignature:
         return None
     if isinstance(payload, dict) and "sid" in payload:
         sid = payload["sid"]
@@ -107,13 +111,20 @@ async def _issue_session_cookie(
 
 
 @router.get("/bootstrap-status")
-async def bootstrap_status(request: Request) -> dict[str, bool]:
+async def bootstrap_status(
+    request: Request,
+) -> dict[str, bool | int]:
     """Unauthenticated probe the login UI uses to decide whether to show the
-    register form. Returns `{"needs_bootstrap": true}` when no users exist yet
-    (fresh install), else `{"needs_bootstrap": false}` (self-registration is
-    closed; only admins can provision new users)."""
+    register form and to read server-side session configuration.
+
+    Returns `needs_bootstrap` (true on fresh install) and
+    `remember_me_days` (duration the "remember me" checkbox grants)."""
     db: DatabaseHandle = request.state.db
-    return {"needs_bootstrap": not await _any_user_exists(db)}
+    cfg: SessionConfig = request.state.session_config
+    return {
+        "needs_bootstrap": not await _any_user_exists(db),
+        "remember_me_days": cfg.remember_me_max_age_seconds // 86400,
+    }
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=IdentityResponse)

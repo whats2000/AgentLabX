@@ -19,6 +19,7 @@ export function LoginPage(): React.JSX.Element {
     queryFn: api.bootstrapStatus,
   })
   const needsBootstrap = bootstrap.data?.needs_bootstrap ?? false
+  const rememberMeDays = bootstrap.data?.remember_me_days ?? 30
 
   // `override` is the user's explicit choice via the toggle button; when null,
   // mode derives from server state (register on fresh installs, login otherwise).
@@ -132,7 +133,7 @@ export function LoginPage(): React.JSX.Element {
                     onChange={(e) => { setRememberMe(e.target.checked) }}
                     className="h-4 w-4 rounded border-input accent-foreground"
                   />
-                  {t("auth.rememberMe", { days: 30 })}
+                  {t("auth.rememberMe", { days: rememberMeDays })}
                 </label>
               ) : null}
               {error ? (
