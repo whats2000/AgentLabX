@@ -231,12 +231,12 @@ async def reset_passphrase_by_email(
         ).scalars().all()
         for s in sessions:
             s.revoked = True
-        # Revoke tokens
+        # Delete tokens (hard-delete — GitHub model)
         tokens = (
             await session.execute(select(UserToken).where(UserToken.user_id == user.id))
         ).scalars().all()
         for t in tokens:
-            t.revoked = True
+            await session.delete(t)
         await session.commit()
     # Re-read identity for return value
     auther = DefaultAuther(db)

@@ -100,11 +100,11 @@ export function ProfilePage(): React.JSX.Element {
     onError: (err: Error) => { toast.error(err.message) },
   })
 
-  const revokeToken = useMutation({
-    mutationFn: (token_id: string) => api.revokeMyToken(token_id),
+  const deleteToken = useMutation({
+    mutationFn: (token_id: string) => api.deleteMyToken(token_id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-tokens"] })
-      toast.success(t("profile.tokenRevokedSuccess"))
+      toast.success(t("profile.tokenDeleted"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -115,15 +115,6 @@ export function ProfilePage(): React.JSX.Element {
       setNewlyIssuedToken(issued)
       void qc.invalidateQueries({ queryKey: ["my-tokens"] })
       toast.success(t("profile.tokenRefreshed"))
-    },
-    onError: (err: Error) => { toast.error(err.message) },
-  })
-
-  const deleteToken = useMutation({
-    mutationFn: (token_id: string) => api.deleteMyTokenPermanently(token_id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["my-tokens"] })
-      toast.success(t("profile.tokenDeleted"))
     },
     onError: (err: Error) => { toast.error(err.message) },
   })
@@ -391,81 +382,53 @@ export function ProfilePage(): React.JSX.Element {
               {(tokens.data ?? []).map((tk: TokenRecordDto) => (
                 <li key={tk.id} className="flex items-start justify-between gap-4 py-3">
                   <div className="space-y-0.5 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">{tk.label}</span>
-                      {tk.revoked ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">
-                          {t("profile.tokenRevoked")}
-                        </span>
-                      ) : null}
-                    </div>
+                    <div className="font-medium text-foreground">{tk.label}</div>
                     <div className="text-muted-foreground">{t("profile.createdAt", { date: tk.created_at })}</div>
                     <div className="text-muted-foreground">
                       {t("profile.lastUsed", { date: tk.last_used_at ?? t("profile.neverUsed") })}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {!tk.revoked ? (
-                      <>
-                        <ConfirmDialog
-                          trigger={
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={refreshToken.isPending}
-                            >
-                              {t("profile.refreshToken")}
-                            </Button>
-                          }
-                          title={t("profile.refreshTokenTitle")}
-                          description={t("profile.refreshTokenDesc", { label: tk.label })}
-                          confirmLabel={t("profile.refreshToken")}
-                          onConfirm={() => { refreshToken.mutate(tk.id) }}
-                        />
-                        <ConfirmDialog
-                          trigger={
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={revokeToken.isPending}
-                            >
-                              {t("common.revoke")}
-                            </Button>
-                          }
-                          title={t("profile.revokeTokenTitle")}
-                          description={t("profile.revokeTokenDesc", { label: tk.label })}
-                          confirmLabel={t("common.revoke")}
-                          destructive
-                          onConfirm={() => { revokeToken.mutate(tk.id) }}
-                        />
-                      </>
-                    ) : (
-                      <ConfirmDialog
-                        trigger={
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={deleteToken.isPending}
-                          >
-                            {t("profile.deleteToken")}
-                          </Button>
-                        }
-                        title={t("profile.deleteTokenTitle")}
-                        description={t("profile.deleteTokenDesc", { label: tk.label })}
-                        confirmLabel={t("common.delete")}
-                        destructive
-                        onConfirm={() => { deleteToken.mutate(tk.id) }}
-                      />
-                    )}
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={refreshToken.isPending}
+                        >
+                          {t("profile.refreshToken")}
+                        </Button>
+                      }
+                      title={t("profile.refreshTokenTitle")}
+                      description={t("profile.refreshTokenDesc", { label: tk.label })}
+                      confirmLabel={t("profile.refreshToken")}
+                      onConfirm={() => { refreshToken.mutate(tk.id) }}
+                    />
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={deleteToken.isPending}
+                        >
+                          {t("profile.deleteToken")}
+                        </Button>
+                      }
+                      title={t("profile.deleteTokenTitle")}
+                      description={t("profile.deleteTokenDesc", { label: tk.label })}
+                      confirmLabel={t("common.delete")}
+                      destructive
+                      onConfirm={() => { deleteToken.mutate(tk.id) }}
+                    />
                   </div>
                 </li>
               ))}
             </ul>
           )}
 
-          {revokeToken.error ? (
+          {deleteToken.error ? (
             <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-              {revokeToken.error.message}
+              {deleteToken.error.message}
             </div>
           ) : null}
         </CardContent>

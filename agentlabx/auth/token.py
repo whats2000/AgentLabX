@@ -34,7 +34,6 @@ class TokenRecord:
     label: str
     created_at: datetime
     last_used_at: datetime | None
-    revoked: bool
 
 
 class TokenAuther:
@@ -80,12 +79,12 @@ class TokenAuther:
                 label=r.label,
                 created_at=r.created_at,
                 last_used_at=r.last_used_at,
-                revoked=r.revoked,
             )
             for r in rows
         ]
 
-    async def revoke(self, *, identity_id: str, token_id: str) -> None:
+    async def delete(self, *, identity_id: str, token_id: str) -> None:
+        """Hard-delete a token. Immediately invalidates it."""
         async with self._db.session() as session:
             row = (
                 await session.execute(
@@ -96,24 +95,19 @@ class TokenAuther:
             ).scalar_one_or_none()
             if row is None:
                 raise AuthError("no such token")
-            row.revoked = True
+            await session.delete(row)
             await session.commit()
 
-    async def delete_permanently(self, *, identity_id: str, token_id: str) -> None:
-        """Hard-delete a token row. Only allowed if already revoked."""
+    async def delete_all_for(self, *, identity_id: str) -> None:
+        """Hard-delete all tokens for a user (e.g. on passphrase reset)."""
         async with self._db.session() as session:
-            row = (
+            rows = (
                 await session.execute(
-                    select(UserToken).where(
-                        UserToken.id == token_id, UserToken.user_id == identity_id
-                    )
+                    select(UserToken).where(UserToken.user_id == identity_id)
                 )
-            ).scalar_one_or_none()
-            if row is None:
-                raise AuthError("no such token")
-            if not row.revoked:
-                raise AuthError("token must be revoked before permanent deletion")
-            await session.delete(row)
+            ).scalars().all()
+            for r in rows:
+                await session.delete(r)
             await session.commit()
 
     async def refresh(self, *, identity_id: str, token_id: str) -> IssuedToken:
@@ -128,8 +122,6 @@ class TokenAuther:
             ).scalar_one_or_none()
             if row is None:
                 raise AuthError("no such token")
-            if row.revoked:
-                raise AuthError("cannot refresh a revoked token")
             label = row.label
             await session.delete(row)
             await session.commit()
@@ -145,8 +137,8 @@ class TokenAuther:
                     select(UserToken).where(UserToken.token_hash == _hash_token(token))
                 )
             ).scalar_one_or_none()
-            if row is None or row.revoked:
-                raise AuthError("invalid or revoked token")
+            if row is None:
+                raise AuthError("invalid token")
             row.last_used_at = datetime.now(tz=timezone.utc)
             user = (
                 await session.execute(select(User).where(User.id == row.user_id))

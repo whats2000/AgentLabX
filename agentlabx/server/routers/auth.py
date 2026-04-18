@@ -310,7 +310,7 @@ async def update_passphrase(
         )
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    # I1: revoke all existing sessions and tokens for this user.
+    # I1: revoke all existing sessions and delete all tokens for this user.
     async with db.session() as session:
         sessions = (
             await session.execute(
@@ -325,7 +325,7 @@ async def update_passphrase(
             )
         ).scalars().all()
         for t in tokens:
-            t.revoked = True
+            await session.delete(t)
         await session.commit()
     # Issue a fresh session cookie so the caller stays logged in.
     # Preserve remember-me state from the incoming cookie if present.
@@ -465,7 +465,6 @@ async def list_my_tokens(
             label=r.label,
             created_at=r.created_at.isoformat(),
             last_used_at=r.last_used_at.isoformat() if r.last_used_at else None,
-            revoked=r.revoked,
         )
         for r in rows
     ]
@@ -474,41 +473,17 @@ async def list_my_tokens(
 @router.delete(
     "/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def revoke_my_token(
+async def delete_my_token(
     token_id: str,
     request: Request,
     identity: Identity = Depends(current_identity),
 ) -> None:
+    """Hard-delete a token. Immediately invalidates it."""
     ta = TokenAuther(request.state.db)
     try:
-        await ta.revoke(identity_id=identity.id, token_id=token_id)
+        await ta.delete(identity_id=identity.id, token_id=token_id)
     except AuthError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await _emit(
-        request,
-        "auth.token_revoked",
-        {
-            "actor_id": identity.id,
-            "actor_email": identity.email,
-            "token_id": token_id,
-        },
-    )
-
-
-@router.delete(
-    "/me/tokens/{token_id}/permanently", status_code=status.HTTP_204_NO_CONTENT
-)
-async def delete_my_token_permanently(
-    token_id: str,
-    request: Request,
-    identity: Identity = Depends(current_identity),
-) -> None:
-    """Hard-delete a revoked token. Must be revoked first."""
-    ta = TokenAuther(request.state.db)
-    try:
-        await ta.delete_permanently(identity_id=identity.id, token_id=token_id)
-    except AuthError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _emit(
         request,
         "auth.token_deleted",

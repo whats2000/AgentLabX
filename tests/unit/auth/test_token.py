@@ -47,7 +47,7 @@ async def test_list_and_revoke(tmp_workspace: Path) -> None:
         rows = await ta.list_for(identity_id=ident.id)
         assert len(rows) == 2
         assert {r.label for r in rows} == {"ci", "deploy"}
-        await ta.revoke(identity_id=ident.id, token_id=a.id)
+        await ta.delete(identity_id=ident.id, token_id=a.id)
         with pytest.raises(AuthError):
             await ta.authenticate({"token": a.token})
         # b still works

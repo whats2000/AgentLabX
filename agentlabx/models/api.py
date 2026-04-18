@@ -104,4 +104,3 @@ class TokenRecordResponse(BaseModel):  # type: ignore[explicit-any]
     label: str
     created_at: str
     last_used_at: str | None
-    revoked: bool

@@ -10,7 +10,7 @@ from sqlalchemy.sql.schema import Table  # noqa: TC002 — used for cast below
 from agentlabx.db.schema import AppState, Base, UserToken
 from agentlabx.db.session import DatabaseHandle
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 class SchemaVersionMismatchError(Exception):
@@ -49,9 +49,24 @@ async def _migrate_v2_to_v3(conn: AsyncConnection) -> None:
     await conn.run_sync(lambda sync_conn: tbl.create(sync_conn, checkfirst=True))
 
 
+async def _migrate_v3_to_v4(conn: AsyncConnection) -> None:
+    """Drop the `revoked` column from `user_tokens` — tokens are now hard-deleted
+    on revoke (GitHub model). Delete any currently-revoked rows first.
+
+    The column may already be absent if v2→v3 ran against the current ORM model
+    (which no longer declares `revoked`), so check before dropping.
+    """
+    columns = await conn.execute(text("PRAGMA table_info(user_tokens)"))
+    col_names = [row[1] for row in columns]
+    if "revoked" in col_names:
+        await conn.execute(text("DELETE FROM user_tokens WHERE revoked = 1"))
+        await conn.execute(text("ALTER TABLE user_tokens DROP COLUMN revoked"))
+
+
 _MIGRATIONS: tuple[Migration, ...] = (
     Migration(from_version=1, to_version=2, name="add_email_column", apply=_migrate_v1_to_v2),
     Migration(from_version=2, to_version=3, name="add_user_tokens", apply=_migrate_v2_to_v3),
+    Migration(from_version=3, to_version=4, name="drop_token_revoked", apply=_migrate_v3_to_v4),
 )
 
 
