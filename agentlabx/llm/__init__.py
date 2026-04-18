@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from agentlabx.llm.budget import BudgetTracker
-from agentlabx.llm.catalog import ModelEntry, ProviderCatalog, ProviderEntry
 from agentlabx.llm.key_resolver import KeyResolver, NoCredentialError
 from agentlabx.llm.litellm_provider import LiteLLMProvider
 from agentlabx.llm.protocol import (
@@ -24,9 +23,6 @@ __all__ = [
     "LiteLLMProvider",
     "Message",
     "MessageRole",
-    "ModelEntry",
     "NoCredentialError",
-    "ProviderCatalog",
-    "ProviderEntry",
     "TracedLLMProvider",
 ]

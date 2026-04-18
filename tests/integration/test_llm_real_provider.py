@@ -105,7 +105,9 @@ async def test_real_llm_budget_cap_halts() -> None:
     resp1 = await traced.complete(req)
     assert resp1.content
 
-    # Budget should now be exceeded (cap is $0.0001)
-    if budget.spent_usd > 0.0001:
-        with pytest.raises(BudgetExceededError):
-            await traced.complete(req)
+    # Force budget over the cap (some providers report cost=0 for cheap calls)
+    if budget.spent_usd <= 0.0001:
+        budget.record(cost_usd=1.0)
+
+    with pytest.raises(BudgetExceededError):
+        await traced.complete(req)
