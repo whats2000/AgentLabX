@@ -99,6 +99,42 @@ class TokenAuther:
             row.revoked = True
             await session.commit()
 
+    async def delete_permanently(self, *, identity_id: str, token_id: str) -> None:
+        """Hard-delete a token row. Only allowed if already revoked."""
+        async with self._db.session() as session:
+            row = (
+                await session.execute(
+                    select(UserToken).where(
+                        UserToken.id == token_id, UserToken.user_id == identity_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise AuthError("no such token")
+            if not row.revoked:
+                raise AuthError("token must be revoked before permanent deletion")
+            await session.delete(row)
+            await session.commit()
+
+    async def refresh(self, *, identity_id: str, token_id: str) -> IssuedToken:
+        """Revoke an existing token and issue a new one with the same label."""
+        async with self._db.session() as session:
+            row = (
+                await session.execute(
+                    select(UserToken).where(
+                        UserToken.id == token_id, UserToken.user_id == identity_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise AuthError("no such token")
+            if row.revoked:
+                raise AuthError("cannot refresh a revoked token")
+            label = row.label
+            row.revoked = True
+            await session.commit()
+        return await self.issue(identity_id=identity_id, label=label)
+
     async def authenticate(self, credentials: dict[str, str]) -> Identity:
         token = credentials.get("token")
         if token is None:

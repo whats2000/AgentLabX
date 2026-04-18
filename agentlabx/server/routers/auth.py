@@ -493,3 +493,58 @@ async def revoke_my_token(
             "token_id": token_id,
         },
     )
+
+
+@router.delete(
+    "/me/tokens/{token_id}/permanently", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_my_token_permanently(
+    token_id: str,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> None:
+    """Hard-delete a revoked token. Must be revoked first."""
+    ta = TokenAuther(request.state.db)
+    try:
+        await ta.delete_permanently(identity_id=identity.id, token_id=token_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _emit(
+        request,
+        "auth.token_deleted",
+        {
+            "actor_id": identity.id,
+            "actor_email": identity.email,
+            "token_id": token_id,
+        },
+    )
+
+
+@router.post(
+    "/me/tokens/{token_id}/refresh",
+    status_code=status.HTTP_201_CREATED,
+    response_model=IssuedTokenResponse,
+)
+async def refresh_my_token(
+    token_id: str,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IssuedTokenResponse:
+    """Revoke an existing token and issue a new one with the same label."""
+    ta = TokenAuther(request.state.db)
+    try:
+        issued = await ta.refresh(identity_id=identity.id, token_id=token_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _emit(
+        request,
+        "auth.token_refreshed",
+        {
+            "actor_id": identity.id,
+            "actor_email": identity.email,
+            "old_token_id": token_id,
+            "new_token_id": issued.id,
+            "label": issued.label,
+        },
+    )
+    return IssuedTokenResponse(id=issued.id, label=issued.label, token=issued.token)
