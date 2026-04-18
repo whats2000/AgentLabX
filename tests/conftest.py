@@ -40,7 +40,9 @@ def mock_llm_server() -> Iterator[MockLLMService]:
     state = MockServerState()
     app = create_mock_app(state)
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", ws="none"
+    )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
