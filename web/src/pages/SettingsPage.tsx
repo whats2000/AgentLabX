@@ -129,8 +129,8 @@ export function SettingsPage(): React.JSX.Element {
           ) : slots.data && slots.data.length > 0 ? (
             <ul className="divide-y divide-border">
               {slots.data.map((s) => (
-                <li key={s.slot} className="flex items-center justify-between py-2">
-                  <div>
+                <li key={s.slot} className="flex items-center justify-between py-2 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium">{s.slot}</div>
                     <div className="text-xs text-muted-foreground">{t("settings.updatedAt", { date: s.updated_at })}</div>
                     {revealed[s.slot] ? (

@@ -257,7 +257,7 @@ export function ProfilePage(): React.JSX.Element {
           ) : (
             <ul className="divide-y divide-border">
               {(sessions.data ?? []).map((s) => (
-                <li key={s.id} className="flex items-start justify-between gap-4 py-3">
+                <li key={s.id} className="flex items-start justify-between gap-4 py-3 min-w-0">
                   <div className="space-y-0.5 text-sm">
                     <div className="flex items-center gap-2">
                       <span className="text-foreground">{t("profile.signedIn", { date: s.issued_at })}</span>
@@ -380,7 +380,7 @@ export function ProfilePage(): React.JSX.Element {
           ) : (
             <ul className="divide-y divide-border">
               {(tokens.data ?? []).map((tk: TokenRecordDto) => (
-                <li key={tk.id} className="flex items-start justify-between gap-4 py-3">
+                <li key={tk.id} className="flex items-start justify-between gap-4 py-3 min-w-0">
                   <div className="space-y-0.5 text-sm">
                     <div className="font-medium text-foreground">{tk.label}</div>
                     <div className="text-muted-foreground">{t("profile.createdAt", { date: tk.created_at })}</div>

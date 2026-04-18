@@ -182,12 +182,12 @@ export function AdminActivityPage(): React.JSX.Element {
           {events.data && events.data.length > 0 && (
             <ul className="divide-y divide-border text-sm">
               {events.data.map((ev, i) => (
-                <li key={i} className="flex items-start gap-3 py-2">
+                <li key={i} className="flex items-start gap-3 py-2 min-w-0">
                   <span className="w-16 shrink-0 text-xs text-muted-foreground pt-0.5">
                     {relativeTime(ev.at)}
                   </span>
                   <KindPill kind={ev.kind} />
-                  <span className="text-foreground">{summarise(ev)}</span>
+                  <span className="min-w-0 break-words text-foreground">{summarise(ev)}</span>
                 </li>
               ))}
             </ul>
