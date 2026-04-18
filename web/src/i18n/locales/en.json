@@ -93,7 +93,15 @@
     "tokenRevoked": "revoked",
     "revokeTokenTitle": "Revoke token?",
     "revokeTokenDesc": "Token \"{{label}}\" will be permanently revoked. Any scripts using it will stop working.",
-    "tokenRevokedSuccess": "Token revoked"
+    "tokenRevokedSuccess": "Token revoked",
+    "refreshToken": "Refresh",
+    "refreshTokenTitle": "Refresh token?",
+    "refreshTokenDesc": "Token \"{{label}}\" will be replaced with a new one. The old token stops working immediately. Copy the new token when prompted.",
+    "tokenRefreshed": "Token refreshed — copy the new token now",
+    "deleteToken": "Delete",
+    "deleteTokenTitle": "Permanently delete token?",
+    "deleteTokenDesc": "Token \"{{label}}\" will be permanently removed from the server. This cannot be undone.",
+    "tokenDeleted": "Token deleted"
   },
   "settings": {
     "title": "Credentials",

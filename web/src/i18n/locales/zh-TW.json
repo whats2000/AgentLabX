@@ -93,7 +93,15 @@
     "tokenRevoked": "已撤銷",
     "revokeTokenTitle": "撤銷金鑰？",
     "revokeTokenDesc": "金鑰「{{label}}」將被永久撤銷。使用此金鑰的腳本將無法繼續運作。",
-    "tokenRevokedSuccess": "金鑰已撤銷"
+    "tokenRevokedSuccess": "金鑰已撤銷",
+    "refreshToken": "更新",
+    "refreshTokenTitle": "更新金鑰？",
+    "refreshTokenDesc": "金鑰「{{label}}」將被替換為新的金鑰。舊金鑰將立即失效。請在提示時複製新金鑰。",
+    "tokenRefreshed": "金鑰已更新 — 請立即複製新金鑰",
+    "deleteToken": "刪除",
+    "deleteTokenTitle": "永久刪除金鑰？",
+    "deleteTokenDesc": "金鑰「{{label}}」將從伺服器永久移除。此操作無法復原。",
+    "tokenDeleted": "金鑰已刪除"
   },
   "settings": {
     "title": "憑證",

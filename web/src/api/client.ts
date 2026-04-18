@@ -154,4 +154,14 @@ export const api = {
     request<void>(`/api/auth/me/tokens/${encodeURIComponent(token_id)}`, {
       method: "DELETE",
     }),
+  deleteMyTokenPermanently: (token_id: string) =>
+    request<void>(
+      `/api/auth/me/tokens/${encodeURIComponent(token_id)}/permanently`,
+      { method: "DELETE" },
+    ),
+  refreshMyToken: (token_id: string) =>
+    request<IssuedTokenDto>(
+      `/api/auth/me/tokens/${encodeURIComponent(token_id)}/refresh`,
+      { method: "POST" },
+    ),
 }

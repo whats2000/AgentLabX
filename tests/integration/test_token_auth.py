@@ -149,7 +149,7 @@ async def test_permanent_delete_rejects_active_token(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_refresh_token_revokes_old_issues_new(
+async def test_refresh_token_deletes_old_issues_new(
     tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
 ) -> None:
     settings = AppSettings(workspace=tmp_workspace)
@@ -170,7 +170,7 @@ async def test_refresh_token_revokes_old_issues_new(
             old_token = r.json()["token"]
             old_id = r.json()["id"]
 
-            # Refresh
+            # Refresh — old token deleted, new one issued with same label
             r = await c.post(f"/api/auth/me/tokens/{old_id}/refresh")
             assert r.status_code == 201
             new_token = r.json()["token"]
@@ -178,6 +178,12 @@ async def test_refresh_token_revokes_old_issues_new(
             assert r.json()["label"] == "my-token"  # same label
             assert new_id != old_id
             assert new_token != old_token
+
+            # Old token should be gone from the list (deleted, not just revoked)
+            r = await c.get("/api/auth/me/tokens")
+            ids = [t["id"] for t in r.json()]
+            assert old_id not in ids
+            assert new_id in ids
 
         # Old token should be rejected
         async with AsyncClient(

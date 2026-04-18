@@ -109,6 +109,25 @@ export function ProfilePage(): React.JSX.Element {
     onError: (err: Error) => { toast.error(err.message) },
   })
 
+  const refreshToken = useMutation({
+    mutationFn: (token_id: string) => api.refreshMyToken(token_id),
+    onSuccess: (issued) => {
+      setNewlyIssuedToken(issued)
+      void qc.invalidateQueries({ queryKey: ["my-tokens"] })
+      toast.success(t("profile.tokenRefreshed"))
+    },
+    onError: (err: Error) => { toast.error(err.message) },
+  })
+
+  const deleteToken = useMutation({
+    mutationFn: (token_id: string) => api.deleteMyTokenPermanently(token_id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["my-tokens"] })
+      toast.success(t("profile.tokenDeleted"))
+    },
+    onError: (err: Error) => { toast.error(err.message) },
+  })
+
   return (
     <div className="max-w-3xl space-y-6">
       <h1 className="text-2xl font-semibold">{t("profile.title")}</h1>
@@ -385,24 +404,60 @@ export function ProfilePage(): React.JSX.Element {
                       {t("profile.lastUsed", { date: tk.last_used_at ?? t("profile.neverUsed") })}
                     </div>
                   </div>
-                  {!tk.revoked ? (
-                    <ConfirmDialog
-                      trigger={
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={revokeToken.isPending}
-                        >
-                          {t("common.revoke")}
-                        </Button>
-                      }
-                      title={t("profile.revokeTokenTitle")}
-                      description={t("profile.revokeTokenDesc", { label: tk.label })}
-                      confirmLabel={t("common.revoke")}
-                      destructive
-                      onConfirm={() => { revokeToken.mutate(tk.id) }}
-                    />
-                  ) : null}
+                  <div className="flex gap-2">
+                    {!tk.revoked ? (
+                      <>
+                        <ConfirmDialog
+                          trigger={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={refreshToken.isPending}
+                            >
+                              {t("profile.refreshToken")}
+                            </Button>
+                          }
+                          title={t("profile.refreshTokenTitle")}
+                          description={t("profile.refreshTokenDesc", { label: tk.label })}
+                          confirmLabel={t("profile.refreshToken")}
+                          onConfirm={() => { refreshToken.mutate(tk.id) }}
+                        />
+                        <ConfirmDialog
+                          trigger={
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={revokeToken.isPending}
+                            >
+                              {t("common.revoke")}
+                            </Button>
+                          }
+                          title={t("profile.revokeTokenTitle")}
+                          description={t("profile.revokeTokenDesc", { label: tk.label })}
+                          confirmLabel={t("common.revoke")}
+                          destructive
+                          onConfirm={() => { revokeToken.mutate(tk.id) }}
+                        />
+                      </>
+                    ) : (
+                      <ConfirmDialog
+                        trigger={
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deleteToken.isPending}
+                          >
+                            {t("profile.deleteToken")}
+                          </Button>
+                        }
+                        title={t("profile.deleteTokenTitle")}
+                        description={t("profile.deleteTokenDesc", { label: tk.label })}
+                        confirmLabel={t("common.delete")}
+                        destructive
+                        onConfirm={() => { deleteToken.mutate(tk.id) }}
+                      />
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

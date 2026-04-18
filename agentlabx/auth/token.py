@@ -117,7 +117,7 @@ class TokenAuther:
             await session.commit()
 
     async def refresh(self, *, identity_id: str, token_id: str) -> IssuedToken:
-        """Revoke an existing token and issue a new one with the same label."""
+        """Delete an existing token and issue a new one with the same label."""
         async with self._db.session() as session:
             row = (
                 await session.execute(
@@ -131,7 +131,7 @@ class TokenAuther:
             if row.revoked:
                 raise AuthError("cannot refresh a revoked token")
             label = row.label
-            row.revoked = True
+            await session.delete(row)
             await session.commit()
         return await self.issue(identity_id=identity_id, label=label)
 
