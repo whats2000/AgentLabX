@@ -62,16 +62,11 @@ async def create_app(settings: AppSettings) -> FastAPI:
     if catalog_path is not None and catalog_path.exists():
         catalog = ProviderCatalog.from_file(catalog_path)
     else:
-        # Try shipped package data via importlib.resources
         try:
-            ref = importlib.resources.files("agentlabx") / ".." / "providers.yaml"
+            ref = importlib.resources.files("agentlabx.data").joinpath("providers.yaml")
             with importlib.resources.as_file(ref) as p:
-                if p.exists():
-                    catalog = ProviderCatalog.from_file(p)
-                else:
-                    _log.warning("providers.yaml not found — catalog is empty")
-                    catalog = ProviderCatalog(providers=[])
-        except (FileNotFoundError, TypeError):
+                catalog = ProviderCatalog.from_file(p)
+        except (FileNotFoundError, TypeError, ModuleNotFoundError):
             _log.warning("providers.yaml not found — catalog is empty")
             catalog = ProviderCatalog(providers=[])
     app.state.catalog = catalog

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 
 import litellm
 
 from agentlabx.llm.protocol import LLMRequest, LLMResponse
+
+_log = logging.getLogger(__name__)
 
 _env_lock = asyncio.Lock()
 
@@ -97,8 +100,11 @@ class LiteLLMProvider:
         content: str = response.choices[0].message.content or ""
 
         cost_usd: float = 0.0
-        with suppress(Exception):
+        try:
             cost_usd = float(litellm.completion_cost(completion_response=response))
+        except Exception:
+            # litellm raises bare Exception for unknown models (not ValueError/NotFoundError)
+            _log.debug("cost calculation unavailable for model %s", request.model)
 
         model_returned: str = getattr(response, "model", request.model) or request.model
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
 import yaml
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,11 @@ class ProviderCatalog:
         providers: list[ProviderEntry] = []
         if not isinstance(data, dict):
             return cls(providers)
-        for p in data.get("providers", []):
+        raw_providers = data.get("providers", [])
+        if not isinstance(raw_providers, list):
+            _log.warning("providers.yaml: 'providers' is not a list — catalog is empty")
+            return cls(providers)
+        for p in raw_providers:
             if not isinstance(p, dict):
                 continue
             models_raw = p.get("models", [])
