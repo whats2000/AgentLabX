@@ -31,6 +31,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML>=6.0",
+    "pre-commit>=4.0",
 ]
 
 [project.entry-points."agentlabx.llm_providers"]
