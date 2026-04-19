@@ -4,6 +4,7 @@ import logging
 from collections.abc import Iterable
 
 import litellm
+from litellm.exceptions import BadRequestError
 from sqlalchemy import select
 
 from agentlabx.db.schema import UserConfig
@@ -53,7 +54,7 @@ class KeyResolver:
         """
         try:
             _model, provider, _key, _base = litellm.get_llm_provider(model)
-        except Exception:
+        except BadRequestError:
             _log.debug("cannot resolve provider for model %s — falling back to env", model)
             return None
 

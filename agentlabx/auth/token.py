@@ -111,7 +111,13 @@ class TokenAuther:
             await session.commit()
 
     async def refresh(self, *, identity_id: str, token_id: str) -> IssuedToken:
-        """Delete an existing token and issue a new one with the same label."""
+        """Delete an existing token and issue a new one with the same label.
+
+        Atomic: the delete + insert happen in a single transaction so a crash
+        between them cannot leave the user without any token.
+        """
+        new_token = "ax_" + secrets.token_urlsafe(32)
+        new_token_id = str(uuid.uuid4())
         async with self._db.session() as session:
             row = (
                 await session.execute(
@@ -124,8 +130,16 @@ class TokenAuther:
                 raise AuthError("no such token")
             label = row.label
             await session.delete(row)
+            session.add(
+                UserToken(
+                    id=new_token_id,
+                    user_id=identity_id,
+                    token_hash=_hash_token(new_token),
+                    label=label,
+                )
+            )
             await session.commit()
-        return await self.issue(identity_id=identity_id, label=label)
+        return IssuedToken(id=new_token_id, label=label, token=new_token)
 
     async def authenticate(self, credentials: dict[str, str]) -> Identity:
         token = credentials.get("token")

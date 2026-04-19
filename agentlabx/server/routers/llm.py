@@ -25,7 +25,6 @@ async def list_providers(
             ProviderResponse(
                 name=provider_name,
                 display_name=provider_name,
-                credential_slot=provider_name,
                 models=models,
             )
         )

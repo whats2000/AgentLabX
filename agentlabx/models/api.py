@@ -67,7 +67,6 @@ class ModelResponse(BaseModel):  # type: ignore[explicit-any]
 class ProviderResponse(BaseModel):  # type: ignore[explicit-any]
     name: str
     display_name: str
-    credential_slot: str
     models: list[ModelResponse]
 
 
