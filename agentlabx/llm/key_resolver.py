@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 
 import litellm
 from sqlalchemy import select
@@ -10,9 +11,6 @@ from agentlabx.db.session import DatabaseHandle
 from agentlabx.security.fernet_store import FernetStore
 
 _log = logging.getLogger(__name__)
-
-# Providers that run locally and never need an API key.
-_LOCAL_PROVIDERS = frozenset({"ollama", "ollama_chat", "vllm"})
 
 
 class NoCredentialError(Exception):
@@ -31,6 +29,8 @@ class KeyResolver:
 
     Uses LiteLLM's built-in model registry to determine which provider
     owns a model, then looks up the user's encrypted key for that provider.
+    The set of "local" providers (no key required) is configurable via
+    ``AppSettings.local_providers``.
     """
 
     def __init__(
@@ -38,9 +38,11 @@ class KeyResolver:
         *,
         db: DatabaseHandle,
         crypto: FernetStore,
+        local_providers: Iterable[str] = (),
     ) -> None:
         self._db = db
         self._crypto = crypto
+        self._local_providers = frozenset(local_providers)
 
     async def resolve(self, *, user_id: str, model: str) -> str | None:
         """Return the decrypted API key for the provider owning ``model``.
@@ -55,7 +57,7 @@ class KeyResolver:
             _log.debug("cannot resolve provider for model %s — falling back to env", model)
             return None
 
-        if provider in _LOCAL_PROVIDERS:
+        if provider in self._local_providers:
             return None
 
         slot = f"user:key:{provider}"

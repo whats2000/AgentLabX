@@ -60,7 +60,7 @@ async def test_resolve_returns_decrypted_key(
 ) -> None:
     # "anthropic" is the provider name litellm.get_llm_provider returns for claude models
     await _store_credential(db, crypto, "user-1", "anthropic", "sk-test-secret")
-    resolver = KeyResolver(db=db, crypto=crypto)
+    resolver = KeyResolver(db=db, crypto=crypto, local_providers=("ollama",))
     key = await resolver.resolve(user_id="user-1", model="claude-sonnet-4-6")
     assert key == "sk-test-secret"
 
@@ -69,7 +69,7 @@ async def test_resolve_returns_decrypted_key(
 async def test_resolve_raises_when_no_credential(
     db: DatabaseHandle, crypto: FernetStore
 ) -> None:
-    resolver = KeyResolver(db=db, crypto=crypto)
+    resolver = KeyResolver(db=db, crypto=crypto, local_providers=("ollama",))
     with pytest.raises(NoCredentialError, match="anthropic"):
         await resolver.resolve(user_id="user-1", model="claude-sonnet-4-6")
 
@@ -79,7 +79,7 @@ async def test_resolve_returns_none_for_local_provider(
     db: DatabaseHandle, crypto: FernetStore
 ) -> None:
     """Local providers (e.g. ollama) need no key."""
-    resolver = KeyResolver(db=db, crypto=crypto)
+    resolver = KeyResolver(db=db, crypto=crypto, local_providers=("ollama",))
     key = await resolver.resolve(user_id="user-1", model="ollama/llama3")
     assert key is None
 
@@ -90,6 +90,6 @@ async def test_resolve_isolates_users(
 ) -> None:
     await _store_credential(db, crypto, "user-A", "anthropic", "key-A")
     await _store_credential(db, crypto, "user-B", "anthropic", "key-B")
-    resolver = KeyResolver(db=db, crypto=crypto)
+    resolver = KeyResolver(db=db, crypto=crypto, local_providers=("ollama",))
     assert await resolver.resolve(user_id="user-A", model="claude-sonnet-4-6") == "key-A"
     assert await resolver.resolve(user_id="user-B", model="claude-sonnet-4-6") == "key-B"
