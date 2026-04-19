@@ -67,12 +67,16 @@ class TokenAuther:
     async def list_for(self, *, identity_id: str) -> list[TokenRecord]:
         async with self._db.session() as session:
             rows = (
-                await session.execute(
-                    select(UserToken)
-                    .where(UserToken.user_id == identity_id)
-                    .order_by(UserToken.created_at.desc())
+                (
+                    await session.execute(
+                        select(UserToken)
+                        .where(UserToken.user_id == identity_id)
+                        .order_by(UserToken.created_at.desc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [
             TokenRecord(
                 id=r.id,
@@ -102,10 +106,10 @@ class TokenAuther:
         """Hard-delete all tokens for a user (e.g. on passphrase reset)."""
         async with self._db.session() as session:
             rows = (
-                await session.execute(
-                    select(UserToken).where(UserToken.user_id == identity_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(UserToken).where(UserToken.user_id == identity_id)))
+                .scalars()
+                .all()
+            )
             for r in rows:
                 await session.delete(r)
             await session.commit()
@@ -154,14 +158,16 @@ class TokenAuther:
             if row is None:
                 raise AuthError("invalid token")
             row.last_used_at = datetime.now(tz=timezone.utc)
-            user = (
-                await session.execute(select(User).where(User.id == row.user_id))
-            ).scalar_one()
+            user = (await session.execute(select(User).where(User.id == row.user_id))).scalar_one()
             caps = (
-                await session.execute(
-                    select(Capability.capability).where(Capability.user_id == user.id)
+                (
+                    await session.execute(
+                        select(Capability.capability).where(Capability.user_id == user.id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             await session.commit()
             return Identity(
                 id=user.id,

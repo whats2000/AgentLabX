@@ -7,6 +7,7 @@ Responses are deterministic: the reply content is always a fixed string
 (configurable), token counts are based on simple character-length heuristics,
 and cost is always 0.
 """
+
 from __future__ import annotations
 
 import time

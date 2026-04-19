@@ -8,7 +8,7 @@ export interface TokenRecordDto {
 export interface IssuedTokenDto {
   id: string
   label: string
-  token: string  // plaintext — shown once
+  token: string // plaintext — shown once
 }
 
 export interface SessionDto {
@@ -103,7 +103,7 @@ export const api = {
     request<void>(`/api/settings/credentials/${encodeURIComponent(slot)}`, { method: "DELETE" }),
   revealCredential: (slot: string) =>
     request<{ slot: string; value: string }>(
-      `/api/settings/credentials/${encodeURIComponent(slot)}/reveal`
+      `/api/settings/credentials/${encodeURIComponent(slot)}/reveal`,
     ),
   listUsers: () => request<AdminUserDto[]>("/api/settings/admin/users"),
   createUser: (display_name: string, email: string, passphrase: string) =>
@@ -125,7 +125,7 @@ export const api = {
   revokeCapability: (user_id: string, capability: string) =>
     request<void>(
       `/api/settings/admin/users/${encodeURIComponent(user_id)}/capabilities/${encodeURIComponent(capability)}`,
-      { method: "DELETE" }
+      { method: "DELETE" },
     ),
   updateDisplayName: (display_name: string) =>
     request<IdentityDto>("/api/auth/me/display-name", {
@@ -147,8 +147,7 @@ export const api = {
     }),
   listEvents: (limit = 200) =>
     request<AuditEventDto[]>(`/api/settings/admin/events?limit=${limit}`),
-  clearEvents: () =>
-    request<void>("/api/settings/admin/events", { method: "DELETE" }),
+  clearEvents: () => request<void>("/api/settings/admin/events", { method: "DELETE" }),
   listMySessions: () => request<SessionDto[]>("/api/auth/me/sessions"),
   revokeMySession: (session_id: string) =>
     request<void>(`/api/auth/me/sessions/${encodeURIComponent(session_id)}`, {
@@ -168,8 +167,7 @@ export const api = {
   listLLMProviders: () => request<LLMProviderDto[]>("/api/llm/providers"),
   listLLMModels: () => request<LLMModelDto[]>("/api/llm/models"),
   refreshMyToken: (token_id: string) =>
-    request<IssuedTokenDto>(
-      `/api/auth/me/tokens/${encodeURIComponent(token_id)}/refresh`,
-      { method: "POST" },
-    ),
+    request<IssuedTokenDto>(`/api/auth/me/tokens/${encodeURIComponent(token_id)}/refresh`, {
+      method: "POST",
+    }),
 }

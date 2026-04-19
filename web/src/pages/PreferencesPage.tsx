@@ -56,9 +56,11 @@ export function PreferencesPage(): React.JSX.Element {
                     type="button"
                     className={cn(
                       "flex w-full items-center justify-between px-2 py-3 text-sm transition-colors rounded hover:bg-muted",
-                      isActive && "font-medium text-foreground"
+                      isActive && "font-medium text-foreground",
                     )}
-                    onClick={() => { void i18n.changeLanguage(locale) }}
+                    onClick={() => {
+                      void i18n.changeLanguage(locale)
+                    }}
                   >
                     <span>{nativeName}</span>
                     {isActive ? <Check className="h-4 w-4 text-foreground" /> : null}
@@ -83,12 +85,14 @@ export function PreferencesPage(): React.JSX.Element {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => { setTheme(value) }}
+                  onClick={() => {
+                    setTheme(value)
+                  }}
                   className={cn(
                     "flex flex-col items-center gap-2 rounded-lg border p-4 text-sm transition-colors hover:bg-muted",
                     isActive
                       ? "border-foreground bg-muted font-medium text-foreground"
-                      : "border-border text-muted-foreground"
+                      : "border-border text-muted-foreground",
                   )}
                 >
                   <Icon className="h-5 w-5" />

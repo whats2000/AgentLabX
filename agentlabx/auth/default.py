@@ -24,16 +24,18 @@ class DefaultAuther:
 
     async def _load_identity(self, session: AsyncSession, user_id: str) -> Identity:
         """Re-query user + capabilities and return a fresh Identity."""
-        user = (
-            await session.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if user is None:
             raise AuthError("unknown identity")
         caps = (
-            await session.execute(
-                select(Capability.capability).where(Capability.user_id == user_id)
+            (
+                await session.execute(
+                    select(Capability.capability).where(Capability.user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return Identity(
             id=user.id,
             auther_name=user.auther_name,
@@ -52,9 +54,7 @@ class DefaultAuther:
             ).scalar_one_or_none()
             if existing is not None:
                 raise EmailAlreadyRegisteredError(normalized_email)
-            user_count = (
-                await session.execute(select(User).with_only_columns(User.id))
-            ).all()
+            user_count = (await session.execute(select(User).with_only_columns(User.id))).all()
             user = User(
                 id=user_id,
                 display_name=display_name,
@@ -63,9 +63,7 @@ class DefaultAuther:
             )
             session.add(user)
             ciphertext = digest.encode("utf-8")
-            session.add(
-                UserConfig(user_id=user_id, slot=_PASSPHRASE_SLOT, ciphertext=ciphertext)
-            )
+            session.add(UserConfig(user_id=user_id, slot=_PASSPHRASE_SLOT, ciphertext=ciphertext))
             caps: set[str] = set()
             if len(user_count) == 0:
                 session.add(Capability(user_id=user_id, capability="admin"))
@@ -110,9 +108,7 @@ class DefaultAuther:
                 raise AuthError("wrong passphrase")
             return await self._load_identity(session, user.id)
 
-    async def update_display_name(
-        self, *, identity_id: str, new_display_name: str
-    ) -> Identity:
+    async def update_display_name(self, *, identity_id: str, new_display_name: str) -> Identity:
         """Update the display name. No passphrase required."""
         async with self._db.session() as session:
             user = (
@@ -124,9 +120,7 @@ class DefaultAuther:
             await session.commit()
             return await self._load_identity(session, identity_id)
 
-    async def update_email(
-        self, *, identity_id: str, new_email: str, passphrase: str
-    ) -> Identity:
+    async def update_email(self, *, identity_id: str, new_email: str, passphrase: str) -> Identity:
         """Update the email. Requires current passphrase."""
         normalized_email = new_email.strip().lower()
         async with self._db.session() as session:
@@ -149,9 +143,7 @@ class DefaultAuther:
                 raise AuthError("wrong passphrase")
             # Pre-check for collision
             existing = (
-                await session.execute(
-                    select(User).where(User.email == normalized_email)
-                )
+                await session.execute(select(User).where(User.email == normalized_email))
             ).scalar_one_or_none()
             if existing is not None and existing.id != identity_id:
                 raise EmailAlreadyRegisteredError(normalized_email)
@@ -227,14 +219,18 @@ async def reset_passphrase_by_email(
             row.ciphertext = digest
         # Revoke sessions
         sessions = (
-            await session.execute(select(SessionRow).where(SessionRow.user_id == user.id))
-        ).scalars().all()
+            (await session.execute(select(SessionRow).where(SessionRow.user_id == user.id)))
+            .scalars()
+            .all()
+        )
         for s in sessions:
             s.revoked = True
         # Delete tokens (hard-delete — GitHub model)
         tokens = (
-            await session.execute(select(UserToken).where(UserToken.user_id == user.id))
-        ).scalars().all()
+            (await session.execute(select(UserToken).where(UserToken.user_id == user.id)))
+            .scalars()
+            .all()
+        )
         for t in tokens:
             await session.delete(t)
         await session.commit()

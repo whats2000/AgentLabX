@@ -38,9 +38,7 @@ async def test_list_providers(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await _bootstrap_and_login(c)
             r = await c.get("/api/llm/providers")
             assert r.status_code == 200
@@ -64,9 +62,7 @@ async def test_list_models(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await _bootstrap_and_login(c)
             r = await c.get("/api/llm/models")
             assert r.status_code == 200
@@ -90,9 +86,7 @@ async def test_list_providers_unauthenticated(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.get("/api/llm/providers")
             assert r.status_code == 401
     finally:

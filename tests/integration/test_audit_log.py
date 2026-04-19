@@ -63,9 +63,7 @@ async def test_audit_log_records_auth_and_admin_events(
             assert r.status_code == 204
 
             # Revoke admin from Bob
-            r = await c.delete(
-                f"/api/settings/admin/users/{bob_id}/capabilities/admin"
-            )
+            r = await c.delete(f"/api/settings/admin/users/{bob_id}/capabilities/admin")
             assert r.status_code == 204
 
             # Delete Bob
@@ -126,9 +124,7 @@ async def test_admin_can_clear_audit_log(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             # register + login; this generates a few audit events
             await c.post(
                 "/api/auth/register",
@@ -161,8 +157,7 @@ async def test_admin_can_clear_audit_log(
             assert len(archives) == 1, f"expected one archive file, got: {archives}"
             archive_lines = archives[0].read_text(encoding="utf-8").splitlines()
             assert len(archive_lines) == pre_clear_count, (
-                f"archive should hold {pre_clear_count} pre-clear lines, "
-                f"got {len(archive_lines)}"
+                f"archive should hold {pre_clear_count} pre-clear lines, got {len(archive_lines)}"
             )
             # Every line must be valid JSON with a "kind" field
             for raw in archive_lines:

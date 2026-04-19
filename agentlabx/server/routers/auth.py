@@ -72,9 +72,7 @@ async def _emit(
 
 async def _any_user_exists(db: DatabaseHandle) -> bool:
     async with db.session() as session:
-        count = (
-            await session.execute(select(func.count()).select_from(User))
-        ).scalar_one()
+        count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
     return count > 0
 
 
@@ -198,9 +196,7 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
                 detail=f"too many failed attempts; retry in {int(locked)}s",
                 headers={"Retry-After": str(int(locked))},
             ) from exc
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     limiter.record_success(payload.email)
 
@@ -209,17 +205,13 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     if incoming_sid is not None:
         async with db.session() as session:
             row = (
-                await session.execute(
-                    select(SessionRow).where(SessionRow.id == incoming_sid)
-                )
+                await session.execute(select(SessionRow).where(SessionRow.id == incoming_sid))
             ).scalar_one_or_none()
             if row is not None:
                 row.revoked = True
                 await session.commit()
 
-    await _issue_session_cookie(
-        db, identity.id, request, response, remember_me=payload.remember_me
-    )
+    await _issue_session_cookie(db, identity.id, request, response, remember_me=payload.remember_me)
     await _emit(
         request,
         "auth.login_success",
@@ -313,17 +305,17 @@ async def update_passphrase(
     # I1: revoke all existing sessions and delete all tokens for this user.
     async with db.session() as session:
         sessions = (
-            await session.execute(
-                select(SessionRow).where(SessionRow.user_id == identity.id)
-            )
-        ).scalars().all()
+            (await session.execute(select(SessionRow).where(SessionRow.user_id == identity.id)))
+            .scalars()
+            .all()
+        )
         for s in sessions:
             s.revoked = True
         tokens = (
-            await session.execute(
-                select(UserToken).where(UserToken.user_id == identity.id)
-            )
-        ).scalars().all()
+            (await session.execute(select(UserToken).where(UserToken.user_id == identity.id)))
+            .scalars()
+            .all()
+        )
         for t in tokens:
             await session.delete(t)
         await session.commit()
@@ -348,12 +340,16 @@ async def list_my_sessions(
     current_sid = _current_session_id(request)
     async with db.session() as session:
         rows = (
-            await session.execute(
-                select(SessionRow)
-                .where(SessionRow.user_id == identity.id, SessionRow.revoked == False)  # noqa: E712
-                .order_by(SessionRow.last_seen_at.desc())
+            (
+                await session.execute(
+                    select(SessionRow)
+                    .where(SessionRow.user_id == identity.id, SessionRow.revoked == False)  # noqa: E712
+                    .order_by(SessionRow.last_seen_at.desc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return [
         SessionResponse(
             id=r.id,
@@ -410,9 +406,7 @@ async def logout(request: Request, response: Response) -> None:
             db: DatabaseHandle = request.state.db
             async with db.session() as session:
                 row = (
-                    await session.execute(
-                        select(SessionRow).where(SessionRow.id == payload["sid"])
-                    )
+                    await session.execute(select(SessionRow).where(SessionRow.id == payload["sid"]))
                 ).scalar_one_or_none()
                 if row is not None:
                     row.revoked = True
@@ -429,9 +423,7 @@ async def logout(request: Request, response: Response) -> None:
         await _emit(request, "auth.logout", {})
 
 
-@router.post(
-    "/me/tokens", status_code=status.HTTP_201_CREATED, response_model=IssuedTokenResponse
-)
+@router.post("/me/tokens", status_code=status.HTTP_201_CREATED, response_model=IssuedTokenResponse)
 async def issue_my_token(
     payload: IssueTokenRequest,
     request: Request,
@@ -470,9 +462,7 @@ async def list_my_tokens(
     ]
 
 
-@router.delete(
-    "/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_my_token(
     token_id: str,
     request: Request,

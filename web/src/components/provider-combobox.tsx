@@ -46,12 +46,11 @@ export function ProviderCombobox({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={cn(
-            "w-full justify-between font-normal",
-            !value && "text-muted-foreground",
-          )}
+          className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
         >
-          <span className="truncate">{value || (placeholder ?? t("combobox.selectPlaceholder"))}</span>
+          <span className="truncate">
+            {value || (placeholder ?? t("combobox.selectPlaceholder"))}
+          </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -74,7 +73,9 @@ export function ProviderCombobox({
                     setOpen(false)
                   }}
                 >
-                  <span className="italic text-muted-foreground mr-2">{t("combobox.useValue")}</span>
+                  <span className="italic text-muted-foreground mr-2">
+                    {t("combobox.useValue")}
+                  </span>
                   <span className="font-medium">{search}</span>
                 </CommandItem>
               </CommandGroup>
@@ -91,10 +92,7 @@ export function ProviderCombobox({
                   }}
                 >
                   <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === opt ? "opacity-100" : "opacity-0",
-                    )}
+                    className={cn("mr-2 h-4 w-4", value === opt ? "opacity-100" : "opacity-0")}
                   />
                   {opt}
                 </CommandItem>

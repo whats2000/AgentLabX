@@ -123,9 +123,7 @@ async def test_admin_can_grant_then_revoke_admin_on_another_user(
             users = {u["id"]: u for u in r.json()}
             assert "admin" in users[bob_id]["capabilities"]
 
-            r = await c.delete(
-                f"/api/settings/admin/users/{bob_id}/capabilities/admin"
-            )
+            r = await c.delete(f"/api/settings/admin/users/{bob_id}/capabilities/admin")
             assert r.status_code == 204
 
             r = await c.get("/api/settings/admin/users")
@@ -157,9 +155,7 @@ async def test_admin_cannot_revoke_own_admin(
                 "/api/auth/login",
                 json={"email": "admin@example.com", "passphrase": "admin12345"},
             )
-            r = await c.delete(
-                f"/api/settings/admin/users/{admin_id}/capabilities/admin"
-            )
+            r = await c.delete(f"/api/settings/admin/users/{admin_id}/capabilities/admin")
             assert r.status_code == 400
             assert "cannot revoke" in r.json()["detail"]
     finally:
@@ -174,9 +170,7 @@ async def test_admin_cannot_delete_owner(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post(
                 "/api/auth/register",
                 json={"display_name": "O", "email": "o@x.com", "passphrase": "p1234567"},
@@ -203,9 +197,7 @@ async def test_admin_cannot_delete_owner(
             r = await c.delete(f"/api/settings/admin/users/{owner_id}")
             assert r.status_code == 400
             assert "owner" in r.json()["detail"]
-            r = await c.delete(
-                f"/api/settings/admin/users/{owner_id}/capabilities/admin"
-            )
+            r = await c.delete(f"/api/settings/admin/users/{owner_id}/capabilities/admin")
             assert r.status_code == 400
             assert "owner" in r.json()["detail"]
     finally:
@@ -220,9 +212,7 @@ async def test_owner_capability_cannot_be_granted_or_revoked(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post(
                 "/api/auth/register",
                 json={"display_name": "O", "email": "o@x.com", "passphrase": "p1234567"},
@@ -242,9 +232,7 @@ async def test_owner_capability_cannot_be_granted_or_revoked(
                 json={"capability": "owner"},
             )
             assert r.status_code == 400
-            r = await c.delete(
-                f"/api/settings/admin/users/{owner_id}/capabilities/owner"
-            )
+            r = await c.delete(f"/api/settings/admin/users/{owner_id}/capabilities/owner")
             assert r.status_code == 400
     finally:
         await app.state.db.close()

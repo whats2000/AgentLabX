@@ -246,11 +246,10 @@ async def test_passphrase_change_revokes_other_sessions(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c_a, AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c_b:
+        async with (
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c_a,
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c_b,
+        ):
             # Register admin.
             await c_a.post(
                 "/api/auth/register",
@@ -292,9 +291,7 @@ async def test_passphrase_change_revokes_tokens(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "old123456"},
@@ -313,9 +310,7 @@ async def test_passphrase_change_revokes_tokens(
             )
             assert r.status_code == 200
         # Use old bearer token in a fresh client — should be 401.
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c2:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c2:
             r = await c2.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
             assert r.status_code == 401
     finally:
@@ -331,9 +326,7 @@ async def test_login_revokes_incoming_session_cookie(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
@@ -372,9 +365,7 @@ async def test_repeated_failed_logins_trigger_429(
         max_failures=3, window_seconds=60, lockout_seconds=30
     )
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
@@ -409,9 +400,7 @@ async def test_remember_me_extends_session_lifetime(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
@@ -451,12 +440,16 @@ async def test_remember_me_extends_session_lifetime(
             db = app.state.db
             async with db.session() as session:
                 rows = (
-                    await session.execute(
-                        select(SessionRow)
-                        .where(SessionRow.revoked.is_(False))
-                        .order_by(SessionRow.issued_at.desc())
+                    (
+                        await session.execute(
+                            select(SessionRow)
+                            .where(SessionRow.revoked.is_(False))
+                            .order_by(SessionRow.issued_at.desc())
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 latest = rows[0]
                 expires_at = latest.expires_at
                 if expires_at.tzinfo is None:

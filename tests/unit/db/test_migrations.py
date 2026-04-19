@@ -23,9 +23,7 @@ async def test_first_run_creates_schema_and_records_version(tmp_workspace: Path)
         await apply_migrations(handle)
         async with handle.session() as session:
             row = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
         assert row.value == str(CURRENT_SCHEMA_VERSION)
     finally:
@@ -41,10 +39,10 @@ async def test_second_run_is_idempotent(tmp_workspace: Path) -> None:
         await apply_migrations(handle)
         async with handle.session() as session:
             rows = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
-            ).scalars().all()
+                (await session.execute(select(AppState).where(AppState.key == "schema_version")))
+                .scalars()
+                .all()
+            )
         assert len(rows) == 1
     finally:
         await handle.close()
@@ -58,9 +56,7 @@ async def test_downgrade_version_raises(tmp_workspace: Path) -> None:
         await apply_migrations(handle)
         async with handle.session() as session:
             row = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
             row.value = "99"
             await session.commit()
@@ -92,6 +88,7 @@ async def test_v2_to_v3_migration_creates_user_tokens(tmp_workspace: Path) -> No
         await _build_v2_db(handle)
 
         async with handle.engine.connect() as conn:
+
             def _has_user_tokens(sync_conn: Connection) -> bool:
                 return "user_tokens" in inspect(sync_conn).get_table_names()
 
@@ -100,6 +97,7 @@ async def test_v2_to_v3_migration_creates_user_tokens(tmp_workspace: Path) -> No
         await apply_migrations(handle)
 
         async with handle.engine.connect() as conn:
+
             def _has_user_tokens_after(sync_conn: Connection) -> bool:
                 return "user_tokens" in inspect(sync_conn).get_table_names()
 
@@ -107,9 +105,7 @@ async def test_v2_to_v3_migration_creates_user_tokens(tmp_workspace: Path) -> No
 
         async with handle.session() as session:
             row = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
         assert row.value == str(CURRENT_SCHEMA_VERSION)
     finally:
@@ -168,6 +164,7 @@ async def test_v1_to_v2_adds_email_column_with_placeholder(tmp_workspace: Path) 
 
         # Confirm email column is absent before migration.
         async with handle.engine.connect() as conn:
+
             def _has_email_col(sync_conn: Connection) -> bool:
                 cols = [c["name"] for c in inspect(sync_conn).get_columns("users")]
                 return "email" in cols
@@ -179,6 +176,7 @@ async def test_v1_to_v2_adds_email_column_with_placeholder(tmp_workspace: Path) 
 
         # Email column exists and legacy user has a placeholder email.
         async with handle.engine.connect() as conn:
+
             def _user_rows(sync_conn: Connection) -> list[tuple[str, str]]:
                 rs = sync_conn.execute(text("SELECT id, email FROM users"))
                 return [(r[0], r[1]) for r in rs]
@@ -188,9 +186,7 @@ async def test_v1_to_v2_adds_email_column_with_placeholder(tmp_workspace: Path) 
 
         async with handle.session() as session:
             v = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
         assert v.value == str(CURRENT_SCHEMA_VERSION)
     finally:

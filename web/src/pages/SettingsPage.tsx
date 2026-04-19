@@ -23,7 +23,7 @@ export function SettingsPage(): React.JSX.Element {
   const providers = useQuery<LLMProviderDto[]>({
     queryKey: ["llm-providers"],
     queryFn: api.listLLMProviders,
-    staleTime: 5 * 60 * 1000,  // provider list is stable; cache 5 min
+    staleTime: 5 * 60 * 1000, // provider list is stable; cache 5 min
   })
 
   const [slot, setSlot] = React.useState("")
@@ -38,7 +38,9 @@ export function SettingsPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["credentials"] })
       toast.success(t("settings.credentialSaved"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
   const del = useMutation({
     mutationFn: (s: string) => api.deleteCredential(s),
@@ -46,7 +48,9 @@ export function SettingsPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["credentials"] })
       toast.success(t("settings.credentialDeleted"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
 
   return (
@@ -77,7 +81,9 @@ export function SettingsPage(): React.JSX.Element {
               <Label>{t("settings.valueLabel")}</Label>
               <PasswordInput
                 value={value}
-                onChange={(e) => { setValue(e.target.value) }}
+                onChange={(e) => {
+                  setValue(e.target.value)
+                }}
                 required
               />
             </div>
@@ -125,7 +131,9 @@ export function SettingsPage(): React.JSX.Element {
                 <li key={s.slot} className="flex items-center justify-between py-2 min-w-0">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{s.slot}</div>
-                    <div className="text-xs text-muted-foreground">{t("settings.updatedAt", { date: s.updated_at })}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("settings.updatedAt", { date: s.updated_at })}
+                    </div>
                     {revealed[s.slot] ? (
                       <div className="mt-1 font-mono text-xs break-all">{revealed[s.slot]}</div>
                     ) : null}
@@ -143,14 +151,18 @@ export function SettingsPage(): React.JSX.Element {
                       {t("common.reveal")}
                     </Button>
                     <ConfirmDialog
-                      trigger={<Button variant="outline" size="sm">{t("common.delete")}</Button>}
-                      title={t("settings.deleteCredentialTitle")}
-                      description={
-                        <>{t("settings.deleteCredentialDesc", { slot: s.slot })}</>
+                      trigger={
+                        <Button variant="outline" size="sm">
+                          {t("common.delete")}
+                        </Button>
                       }
+                      title={t("settings.deleteCredentialTitle")}
+                      description={<>{t("settings.deleteCredentialDesc", { slot: s.slot })}</>}
                       confirmLabel={t("common.delete")}
                       destructive
-                      onConfirm={() => { del.mutate(s.slot) }}
+                      onConfirm={() => {
+                        del.mutate(s.slot)
+                      }}
                     />
                   </div>
                 </li>
@@ -163,9 +175,7 @@ export function SettingsPage(): React.JSX.Element {
       </Card>
 
       {identity?.capabilities.includes("admin") ? (
-        <div className="text-sm text-muted-foreground">
-          {t("settings.adminHint")}
-        </div>
+        <div className="text-sm text-muted-foreground">{t("settings.adminHint")}</div>
       ) : null}
     </div>
   )

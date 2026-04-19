@@ -21,8 +21,7 @@ function RequireAuth({ children }: { children: React.JSX.Element }): React.JSX.E
 function RequireAdmin({ children }: { children: React.JSX.Element }): React.JSX.Element {
   const { identity } = useAuth()
   if (!identity) return <Navigate to="/login" replace />
-  if (!identity.capabilities.includes("admin"))
-    return <Navigate to="/settings" replace />
+  if (!identity.capabilities.includes("admin")) return <Navigate to="/settings" replace />
   return children
 }
 
@@ -37,12 +36,54 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/runs" replace /> },
       { path: "login", element: <LoginPage /> },
-      { path: "profile", element: <RequireAuth><ProfilePage /></RequireAuth> },
-      { path: "settings", element: <RequireAuth><SettingsPage /></RequireAuth> },
-      { path: "preferences", element: <RequireAuth><PreferencesPage /></RequireAuth> },
-      { path: "admin", element: <RequireAdmin><AdminPage /></RequireAdmin> },
-      { path: "admin/activity", element: <RequireAdmin><AdminActivityPage /></RequireAdmin> },
-      { path: "runs", element: <RequireAuth><RunsPage /></RequireAuth> },
+      {
+        path: "profile",
+        element: (
+          <RequireAuth>
+            <ProfilePage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: "settings",
+        element: (
+          <RequireAuth>
+            <SettingsPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: "preferences",
+        element: (
+          <RequireAuth>
+            <PreferencesPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: "admin",
+        element: (
+          <RequireAdmin>
+            <AdminPage />
+          </RequireAdmin>
+        ),
+      },
+      {
+        path: "admin/activity",
+        element: (
+          <RequireAdmin>
+            <AdminActivityPage />
+          </RequireAdmin>
+        ),
+      },
+      {
+        path: "runs",
+        element: (
+          <RequireAuth>
+            <RunsPage />
+          </RequireAuth>
+        ),
+      },
     ],
   },
 ])

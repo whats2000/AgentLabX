@@ -16,9 +16,7 @@ class PluginRegistry:
         return list(self._entries.get(group, []))
 
 
-def discover_entry_points(
-    registry: PluginRegistry, *, groups: tuple[str, ...]
-) -> None:
+def discover_entry_points(registry: PluginRegistry, *, groups: tuple[str, ...]) -> None:
     for group in groups:
         for ep in entry_points(group=group):
             registry.register(group, ep.name, ep.value)

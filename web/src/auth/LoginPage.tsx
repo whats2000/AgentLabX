@@ -75,9 +75,7 @@ export function LoginPage(): React.JSX.Element {
       <div className="w-full max-w-md space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>
-              {mode === "register" ? t("auth.register") : t("auth.login")}
-            </CardTitle>
+            <CardTitle>{mode === "register" ? t("auth.register") : t("auth.login")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form
@@ -120,9 +118,7 @@ export function LoginPage(): React.JSX.Element {
                   }}
                   required
                   minLength={8}
-                  autoComplete={
-                    mode === "register" ? "new-password" : "current-password"
-                  }
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
                 />
               </div>
               {mode === "login" ? (
@@ -130,7 +126,9 @@ export function LoginPage(): React.JSX.Element {
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(e) => { setRememberMe(e.target.checked) }}
+                    onChange={(e) => {
+                      setRememberMe(e.target.checked)
+                    }}
                     className="h-4 w-4 rounded border-input accent-foreground"
                   />
                   {t("auth.rememberMe", { days: rememberMeDays })}
@@ -160,9 +158,7 @@ export function LoginPage(): React.JSX.Element {
           </p>
         ) : null}
         {!needsBootstrap && mode === "login" ? (
-          <p className="px-1 text-xs text-muted-foreground">
-            {t("auth.needAccountHint")}
-          </p>
+          <p className="px-1 text-xs text-muted-foreground">{t("auth.needAccountHint")}</p>
         ) : null}
       </div>
     </div>

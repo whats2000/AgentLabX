@@ -6,6 +6,7 @@ See .env.example for setup instructions. pytest-dotenv auto-loads .env.
 Skip with: pytest -m "not real_llm"
 Run only: pytest -m real_llm
 """
+
 from __future__ import annotations
 
 import os

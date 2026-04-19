@@ -18,8 +18,7 @@ async def list_providers(
     result: list[ProviderResponse] = []
     for provider_name, model_set in sorted(litellm.models_by_provider.items()):
         models = [
-            ModelResponse(id=m, display_name=m, provider=provider_name)
-            for m in sorted(model_set)
+            ModelResponse(id=m, display_name=m, provider=provider_name) for m in sorted(model_set)
         ]
         result.append(
             ProviderResponse(
@@ -39,7 +38,5 @@ async def list_models(
     result: list[ModelResponse] = []
     for provider_name, model_set in sorted(litellm.models_by_provider.items()):
         for m in sorted(model_set):
-            result.append(
-                ModelResponse(id=m, display_name=m, provider=provider_name)
-            )
+            result.append(ModelResponse(id=m, display_name=m, provider=provider_name))
     return result

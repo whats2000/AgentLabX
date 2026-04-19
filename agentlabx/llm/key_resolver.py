@@ -20,9 +20,7 @@ class NoCredentialError(Exception):
     def __init__(self, provider_name: str, user_id: str) -> None:
         self.provider_name = provider_name
         self.user_id = user_id
-        super().__init__(
-            f"no credential stored for provider '{provider_name}' (user {user_id})"
-        )
+        super().__init__(f"no credential stored for provider '{provider_name}' (user {user_id})")
 
 
 class KeyResolver:

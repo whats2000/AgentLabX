@@ -32,14 +32,9 @@ async def _migrate_v1_to_v2(conn: AsyncConnection) -> None:
     or via admin user-management."""
     await conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(320)"))
     await conn.execute(
-        text(
-            "UPDATE users SET email = id || '@migrated.local' "
-            "WHERE email IS NULL OR email = ''"
-        )
+        text("UPDATE users SET email = id || '@migrated.local' WHERE email IS NULL OR email = ''")
     )
-    await conn.execute(
-        text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)")
-    )
+    await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users (email)"))
 
 
 async def _migrate_v2_to_v3(conn: AsyncConnection) -> None:
@@ -83,9 +78,7 @@ async def apply_migrations(handle: DatabaseHandle) -> None:
     async with handle.session() as session:
         try:
             stored = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one_or_none()
             stored_version: int | None = int(stored.value) if stored is not None else None
         except Exception:
@@ -96,9 +89,7 @@ async def apply_migrations(handle: DatabaseHandle) -> None:
         async with handle.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         async with handle.session() as session:
-            session.add(
-                AppState(key="schema_version", value=str(CURRENT_SCHEMA_VERSION))
-            )
+            session.add(AppState(key="schema_version", value=str(CURRENT_SCHEMA_VERSION)))
             await session.commit()
         return
 
@@ -116,9 +107,7 @@ async def apply_migrations(handle: DatabaseHandle) -> None:
     # stored_version < CURRENT_SCHEMA_VERSION — walk forward.
     current = stored_version
     while current < CURRENT_SCHEMA_VERSION:
-        migration = next(
-            (m for m in _MIGRATIONS if m.from_version == current), None
-        )
+        migration = next((m for m in _MIGRATIONS if m.from_version == current), None)
         if migration is None:
             raise SchemaVersionMismatchError(
                 f"no migration registered from version {current} to "
@@ -129,9 +118,7 @@ async def apply_migrations(handle: DatabaseHandle) -> None:
             await migration.apply(conn)
         async with handle.session() as session:
             row = (
-                await session.execute(
-                    select(AppState).where(AppState.key == "schema_version")
-                )
+                await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
             row.value = str(migration.to_version)
             await session.commit()

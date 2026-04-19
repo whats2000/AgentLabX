@@ -59,13 +59,17 @@ async def list_credentials(
     db: DatabaseHandle = request.state.db
     async with db.session() as session:
         rows = (
-            await session.execute(
-                select(UserConfig).where(
-                    UserConfig.user_id == identity.id,
-                    UserConfig.slot.like(f"{_USER_KEY_PREFIX}%"),
+            (
+                await session.execute(
+                    select(UserConfig).where(
+                        UserConfig.user_id == identity.id,
+                        UserConfig.slot.like(f"{_USER_KEY_PREFIX}%"),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return [
         CredentialSlotResponse(
             slot=r.slot.removeprefix(_USER_KEY_PREFIX), updated_at=r.updated_at.isoformat()
@@ -165,10 +169,14 @@ async def list_users(
         out: list[AdminUserResponse] = []
         for u in users:
             caps = (
-                await session.execute(
-                    select(Capability.capability).where(Capability.user_id == u.id)
+                (
+                    await session.execute(
+                        select(Capability.capability).where(Capability.user_id == u.id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             out.append(
                 AdminUserResponse(
                     id=u.id,
@@ -219,9 +227,7 @@ async def create_user(
     )
 
 
-@router.post(
-    "/admin/users/{user_id}/capabilities", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.post("/admin/users/{user_id}/capabilities", status_code=status.HTTP_204_NO_CONTENT)
 async def grant_capability(
     user_id: str,
     payload: GrantCapabilityRequest,
@@ -235,9 +241,7 @@ async def grant_capability(
         )
     db: DatabaseHandle = request.state.db
     async with db.session() as session:
-        user = (
-            await session.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=404, detail="no such user")
         existing = (
@@ -264,9 +268,7 @@ async def grant_capability(
     )
 
 
-@router.delete(
-    "/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: str,
     request: Request,
@@ -285,9 +287,7 @@ async def delete_user(
             detail="cannot delete your own identity",
         )
     async with db.session() as session:
-        user = (
-            await session.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=404, detail="no such user")
         target_email: str = user.email
@@ -343,9 +343,7 @@ async def revoke_capability(
         ).scalar_one_or_none()
         if row is None:
             raise HTTPException(status_code=404, detail="capability not granted")
-        user = (
-            await session.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         target_email: str = user.email if user is not None else ""
         await session.delete(row)
         await session.commit()
@@ -402,7 +400,5 @@ async def list_events(
     events: list[EventResponse] = []
     for line in reversed(tail_lines):
         data = json.loads(line)
-        events.append(
-            EventResponse(kind=data["kind"], at=data["at"], payload=data["payload"])
-        )
+        events.append(EventResponse(kind=data["kind"], at=data["at"], payload=data["payload"]))
     return events

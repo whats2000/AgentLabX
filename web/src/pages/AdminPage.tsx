@@ -30,7 +30,9 @@ export function AdminPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["users"] })
       toast.success(t("admin.userCreated"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
   const grant = useMutation({
     mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
@@ -39,7 +41,9 @@ export function AdminPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["users"] })
       toast.success(t("admin.adminGranted"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
   const revoke = useMutation({
     mutationFn: ({ user_id, capability }: { user_id: string; capability: string }) =>
@@ -48,7 +52,9 @@ export function AdminPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["users"] })
       toast.success(t("admin.adminRevoked"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
   const del = useMutation({
     mutationFn: (user_id: string) => api.deleteUser(user_id),
@@ -56,7 +62,9 @@ export function AdminPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["users"] })
       toast.success(t("admin.userDeleted"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
 
   return (
@@ -76,14 +84,22 @@ export function AdminPage(): React.JSX.Element {
           >
             <div className="space-y-2">
               <Label>{t("admin.displayNameLabel")}</Label>
-              <Input value={name} onChange={(e) => { setName(e.target.value) }} required />
+              <Input
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value)
+                }}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label>{t("admin.emailLabel")}</Label>
               <Input
                 type="email"
                 value={email}
-                onChange={(e) => { setEmail(e.target.value) }}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                }}
                 required
                 autoComplete="email"
               />
@@ -92,7 +108,9 @@ export function AdminPage(): React.JSX.Element {
               <Label>{t("admin.initialPassphrase")}</Label>
               <PasswordInput
                 value={pass}
-                onChange={(e) => { setPass(e.target.value) }}
+                onChange={(e) => {
+                  setPass(e.target.value)
+                }}
                 required
                 minLength={8}
               />
@@ -102,7 +120,9 @@ export function AdminPage(): React.JSX.Element {
                 {create.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={create.isPending}>{t("admin.createButton")}</Button>
+            <Button type="submit" disabled={create.isPending}>
+              {t("admin.createButton")}
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -142,45 +162,71 @@ export function AdminPage(): React.JSX.Element {
                     </div>
                     <div className="text-sm text-muted-foreground">{u.email}</div>
                     <div className="text-xs text-muted-foreground">
-                      {u.id} · {u.auther_name} · {u.capabilities.join(", ") || t("admin.noCapabilities")}
+                      {u.id} · {u.auther_name} ·{" "}
+                      {u.capabilities.join(", ") || t("admin.noCapabilities")}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     {u.id === me?.id ? (
-                      <span className="self-center text-xs text-muted-foreground">{t("common.you")}</span>
+                      <span className="self-center text-xs text-muted-foreground">
+                        {t("common.you")}
+                      </span>
                     ) : u.capabilities.includes("owner") ? (
-                      <span className="self-center text-xs text-muted-foreground">{t("common.owner")}</span>
+                      <span className="self-center text-xs text-muted-foreground">
+                        {t("common.owner")}
+                      </span>
                     ) : (
                       <>
                         {u.capabilities.includes("admin") ? (
                           <ConfirmDialog
-                            trigger={<Button variant="outline" size="sm">{t("admin.revokeAdmin")}</Button>}
+                            trigger={
+                              <Button variant="outline" size="sm">
+                                {t("admin.revokeAdmin")}
+                              </Button>
+                            }
                             title={t("admin.revokeAdminTitle")}
                             description={
-                              <>{t("admin.revokeAdminDesc", { name: u.display_name, email: u.email })}</>
+                              <>
+                                {t("admin.revokeAdminDesc", {
+                                  name: u.display_name,
+                                  email: u.email,
+                                })}
+                              </>
                             }
                             confirmLabel={t("common.revoke")}
                             destructive
-                            onConfirm={() => { revoke.mutate({ user_id: u.id, capability: "admin" }) }}
+                            onConfirm={() => {
+                              revoke.mutate({ user_id: u.id, capability: "admin" })
+                            }}
                           />
                         ) : (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => { grant.mutate({ user_id: u.id, capability: "admin" }) }}
+                            onClick={() => {
+                              grant.mutate({ user_id: u.id, capability: "admin" })
+                            }}
                           >
                             {t("admin.grantAdmin")}
                           </Button>
                         )}
                         <ConfirmDialog
-                          trigger={<Button variant="outline" size="sm">{t("admin.deleteUser")}</Button>}
+                          trigger={
+                            <Button variant="outline" size="sm">
+                              {t("admin.deleteUser")}
+                            </Button>
+                          }
                           title={t("admin.deleteUserTitle")}
                           description={
-                            <>{t("admin.deleteUserDesc", { name: u.display_name, email: u.email })}</>
+                            <>
+                              {t("admin.deleteUserDesc", { name: u.display_name, email: u.email })}
+                            </>
                           }
                           confirmLabel={t("common.delete")}
                           destructive
-                          onConfirm={() => { del.mutate(u.id) }}
+                          onConfirm={() => {
+                            del.mutate(u.id)
+                          }}
                         />
                       </>
                     )}
