@@ -14,6 +14,13 @@
     "you": "(你)",
     "owner": "(擁有者)"
   },
+  "combobox": {
+    "selectPlaceholder": "選擇…",
+    "searchPlaceholder": "搜尋…",
+    "empty": "找不到結果。",
+    "customHeading": "自訂",
+    "useValue": "使用："
+  },
   "theme": {
     "light": "淺色",
     "dark": "深色",
@@ -90,10 +97,14 @@
     "createdAt": "建立時間：{{date}}",
     "lastUsed": "最後使用：{{date}}",
     "neverUsed": "從未使用",
-    "tokenRevoked": "已撤銷",
-    "revokeTokenTitle": "撤銷金鑰？",
-    "revokeTokenDesc": "金鑰「{{label}}」將被永久撤銷。使用此金鑰的腳本將無法繼續運作。",
-    "tokenRevokedSuccess": "金鑰已撤銷"
+    "refreshToken": "更新",
+    "refreshTokenTitle": "更新金鑰？",
+    "refreshTokenDesc": "金鑰「{{label}}」將被替換為新的金鑰。舊金鑰將立即失效。請在提示時複製新金鑰。",
+    "tokenRefreshed": "金鑰已更新 — 請立即複製新金鑰",
+    "deleteToken": "刪除",
+    "deleteTokenTitle": "刪除金鑰？",
+    "deleteTokenDesc": "金鑰「{{label}}」將被永久刪除。使用此金鑰的腳本將立即停止運作。",
+    "tokenDeleted": "金鑰已刪除"
   },
   "settings": {
     "title": "憑證",

@@ -72,9 +72,7 @@ async def _emit(
 
 async def _any_user_exists(db: DatabaseHandle) -> bool:
     async with db.session() as session:
-        count = (
-            await session.execute(select(func.count()).select_from(User))
-        ).scalar_one()
+        count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
     return count > 0
 
 
@@ -198,9 +196,7 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
                 detail=f"too many failed attempts; retry in {int(locked)}s",
                 headers={"Retry-After": str(int(locked))},
             ) from exc
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     limiter.record_success(payload.email)
 
@@ -209,17 +205,13 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
     if incoming_sid is not None:
         async with db.session() as session:
             row = (
-                await session.execute(
-                    select(SessionRow).where(SessionRow.id == incoming_sid)
-                )
+                await session.execute(select(SessionRow).where(SessionRow.id == incoming_sid))
             ).scalar_one_or_none()
             if row is not None:
                 row.revoked = True
                 await session.commit()
 
-    await _issue_session_cookie(
-        db, identity.id, request, response, remember_me=payload.remember_me
-    )
+    await _issue_session_cookie(db, identity.id, request, response, remember_me=payload.remember_me)
     await _emit(
         request,
         "auth.login_success",
@@ -310,22 +302,22 @@ async def update_passphrase(
         )
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    # I1: revoke all existing sessions and tokens for this user.
+    # I1: revoke all existing sessions and delete all tokens for this user.
     async with db.session() as session:
         sessions = (
-            await session.execute(
-                select(SessionRow).where(SessionRow.user_id == identity.id)
-            )
-        ).scalars().all()
+            (await session.execute(select(SessionRow).where(SessionRow.user_id == identity.id)))
+            .scalars()
+            .all()
+        )
         for s in sessions:
             s.revoked = True
         tokens = (
-            await session.execute(
-                select(UserToken).where(UserToken.user_id == identity.id)
-            )
-        ).scalars().all()
+            (await session.execute(select(UserToken).where(UserToken.user_id == identity.id)))
+            .scalars()
+            .all()
+        )
         for t in tokens:
-            t.revoked = True
+            await session.delete(t)
         await session.commit()
     # Issue a fresh session cookie so the caller stays logged in.
     # Preserve remember-me state from the incoming cookie if present.
@@ -348,12 +340,16 @@ async def list_my_sessions(
     current_sid = _current_session_id(request)
     async with db.session() as session:
         rows = (
-            await session.execute(
-                select(SessionRow)
-                .where(SessionRow.user_id == identity.id, SessionRow.revoked == False)  # noqa: E712
-                .order_by(SessionRow.last_seen_at.desc())
+            (
+                await session.execute(
+                    select(SessionRow)
+                    .where(SessionRow.user_id == identity.id, SessionRow.revoked == False)  # noqa: E712
+                    .order_by(SessionRow.last_seen_at.desc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return [
         SessionResponse(
             id=r.id,
@@ -410,9 +406,7 @@ async def logout(request: Request, response: Response) -> None:
             db: DatabaseHandle = request.state.db
             async with db.session() as session:
                 row = (
-                    await session.execute(
-                        select(SessionRow).where(SessionRow.id == payload["sid"])
-                    )
+                    await session.execute(select(SessionRow).where(SessionRow.id == payload["sid"]))
                 ).scalar_one_or_none()
                 if row is not None:
                     row.revoked = True
@@ -429,9 +423,7 @@ async def logout(request: Request, response: Response) -> None:
         await _emit(request, "auth.logout", {})
 
 
-@router.post(
-    "/me/tokens", status_code=status.HTTP_201_CREATED, response_model=IssuedTokenResponse
-)
+@router.post("/me/tokens", status_code=status.HTTP_201_CREATED, response_model=IssuedTokenResponse)
 async def issue_my_token(
     payload: IssueTokenRequest,
     request: Request,
@@ -465,31 +457,59 @@ async def list_my_tokens(
             label=r.label,
             created_at=r.created_at.isoformat(),
             last_used_at=r.last_used_at.isoformat() if r.last_used_at else None,
-            revoked=r.revoked,
         )
         for r in rows
     ]
 
 
-@router.delete(
-    "/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT
-)
-async def revoke_my_token(
+@router.delete("/me/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_my_token(
     token_id: str,
     request: Request,
     identity: Identity = Depends(current_identity),
 ) -> None:
+    """Hard-delete a token. Immediately invalidates it."""
     ta = TokenAuther(request.state.db)
     try:
-        await ta.revoke(identity_id=identity.id, token_id=token_id)
+        await ta.delete(identity_id=identity.id, token_id=token_id)
     except AuthError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await _emit(
         request,
-        "auth.token_revoked",
+        "auth.token_deleted",
         {
             "actor_id": identity.id,
             "actor_email": identity.email,
             "token_id": token_id,
         },
     )
+
+
+@router.post(
+    "/me/tokens/{token_id}/refresh",
+    status_code=status.HTTP_201_CREATED,
+    response_model=IssuedTokenResponse,
+)
+async def refresh_my_token(
+    token_id: str,
+    request: Request,
+    identity: Identity = Depends(current_identity),
+) -> IssuedTokenResponse:
+    """Revoke an existing token and issue a new one with the same label."""
+    ta = TokenAuther(request.state.db)
+    try:
+        issued = await ta.refresh(identity_id=identity.id, token_id=token_id)
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _emit(
+        request,
+        "auth.token_refreshed",
+        {
+            "actor_id": identity.id,
+            "actor_email": identity.email,
+            "old_token_id": token_id,
+            "new_token_id": issued.id,
+            "label": issued.label,
+        },
+    )
+    return IssuedTokenResponse(id=issued.id, label=issued.label, token=issued.token)

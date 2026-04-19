@@ -28,6 +28,10 @@ class AppSettings(BaseSettings):  # type: ignore[explicit-any]
     session_max_age_seconds: int = 60 * 60 * 12  # 12 hours
     remember_me_max_age_seconds: int = 60 * 60 * 24 * 30  # 30 days
 
+    # LiteLLM provider names that run locally and need no API key.
+    # Override via env: AGENTLABX_LOCAL_PROVIDERS='["ollama","vllm","custom_llm"]'
+    local_providers: tuple[str, ...] = ("ollama", "ollama_chat", "vllm")
+
     @property
     def db_path(self) -> Path:
         return self.workspace / "agentlabx.db"

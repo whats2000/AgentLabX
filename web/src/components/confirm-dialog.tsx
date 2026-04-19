@@ -48,10 +48,10 @@ export function ConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className={cn(
-              destructive ? buttonVariants({ variant: "destructive" }) : ""
-            )}
-            onClick={() => { onConfirm() }}
+            className={cn(destructive ? buttonVariants({ variant: "destructive" }) : "")}
+            onClick={() => {
+              onConfirm()
+            }}
           >
             {confirmLabel ?? t("common.confirm")}
           </AlertDialogAction>

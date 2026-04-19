@@ -3,12 +3,12 @@ import * as React from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { api, type CredentialSlotDto } from "@/api/client"
+import { api, type CredentialSlotDto, type LLMProviderDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { ProviderCombobox } from "@/components/provider-combobox"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
@@ -19,6 +19,11 @@ export function SettingsPage(): React.JSX.Element {
   const slots = useQuery<CredentialSlotDto[]>({
     queryKey: ["credentials"],
     queryFn: api.listCredentials,
+  })
+  const providers = useQuery<LLMProviderDto[]>({
+    queryKey: ["llm-providers"],
+    queryFn: api.listLLMProviders,
+    staleTime: 5 * 60 * 1000, // provider list is stable; cache 5 min
   })
 
   const [slot, setSlot] = React.useState("")
@@ -33,7 +38,9 @@ export function SettingsPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["credentials"] })
       toast.success(t("settings.credentialSaved"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
   const del = useMutation({
     mutationFn: (s: string) => api.deleteCredential(s),
@@ -41,7 +48,9 @@ export function SettingsPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ["credentials"] })
       toast.success(t("settings.credentialDeleted"))
     },
-    onError: (err: Error) => { toast.error(err.message) },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
   })
 
   return (
@@ -61,35 +70,20 @@ export function SettingsPage(): React.JSX.Element {
           >
             <div className="space-y-2">
               <Label>{t("settings.slotLabel")}</Label>
-              <Input
+              <ProviderCombobox
                 value={slot}
-                onChange={(e) => { setSlot(e.target.value) }}
-                list="provider-suggestions"
-                required
+                onChange={setSlot}
+                options={(providers.data ?? []).map((p) => p.name)}
+                disabled={providers.isLoading}
               />
-              <datalist id="provider-suggestions">
-                <option value="openai" />
-                <option value="anthropic" />
-                <option value="gemini" />
-                <option value="azure" />
-                <option value="vertex_ai" />
-                <option value="bedrock" />
-                <option value="deepseek" />
-                <option value="ollama" />
-                <option value="together_ai" />
-                <option value="groq" />
-                <option value="mistral" />
-                <option value="cohere" />
-                <option value="huggingface" />
-                <option value="openrouter" />
-                <option value="xai" />
-              </datalist>
             </div>
             <div className="space-y-2">
               <Label>{t("settings.valueLabel")}</Label>
               <PasswordInput
                 value={value}
-                onChange={(e) => { setValue(e.target.value) }}
+                onChange={(e) => {
+                  setValue(e.target.value)
+                }}
                 required
               />
             </div>
@@ -98,7 +92,12 @@ export function SettingsPage(): React.JSX.Element {
                 {put.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={put.isPending}>{t("settings.saveButton")}</Button>
+            <Button
+              type="submit"
+              disabled={put.isPending || slot.trim().length === 0 || value.length === 0}
+            >
+              {t("settings.saveButton")}
+            </Button>
             <p className="mt-3 text-xs text-muted-foreground">
               {t("settings.providerHint")}{" "}
               <a
@@ -129,10 +128,12 @@ export function SettingsPage(): React.JSX.Element {
           ) : slots.data && slots.data.length > 0 ? (
             <ul className="divide-y divide-border">
               {slots.data.map((s) => (
-                <li key={s.slot} className="flex items-center justify-between py-2">
-                  <div>
+                <li key={s.slot} className="flex items-center justify-between py-2 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium">{s.slot}</div>
-                    <div className="text-xs text-muted-foreground">{t("settings.updatedAt", { date: s.updated_at })}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("settings.updatedAt", { date: s.updated_at })}
+                    </div>
                     {revealed[s.slot] ? (
                       <div className="mt-1 font-mono text-xs break-all">{revealed[s.slot]}</div>
                     ) : null}
@@ -150,14 +151,18 @@ export function SettingsPage(): React.JSX.Element {
                       {t("common.reveal")}
                     </Button>
                     <ConfirmDialog
-                      trigger={<Button variant="outline" size="sm">{t("common.delete")}</Button>}
-                      title={t("settings.deleteCredentialTitle")}
-                      description={
-                        <>{t("settings.deleteCredentialDesc", { slot: s.slot })}</>
+                      trigger={
+                        <Button variant="outline" size="sm">
+                          {t("common.delete")}
+                        </Button>
                       }
+                      title={t("settings.deleteCredentialTitle")}
+                      description={<>{t("settings.deleteCredentialDesc", { slot: s.slot })}</>}
                       confirmLabel={t("common.delete")}
                       destructive
-                      onConfirm={() => { del.mutate(s.slot) }}
+                      onConfirm={() => {
+                        del.mutate(s.slot)
+                      }}
                     />
                   </div>
                 </li>
@@ -170,9 +175,7 @@ export function SettingsPage(): React.JSX.Element {
       </Card>
 
       {identity?.capabilities.includes("admin") ? (
-        <div className="text-sm text-muted-foreground">
-          {t("settings.adminHint")}
-        </div>
+        <div className="text-sm text-muted-foreground">{t("settings.adminHint")}</div>
       ) : null}
     </div>
   )

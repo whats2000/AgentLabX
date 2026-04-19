@@ -34,7 +34,6 @@ class TokenRecord:
     label: str
     created_at: datetime
     last_used_at: datetime | None
-    revoked: bool
 
 
 class TokenAuther:
@@ -68,24 +67,28 @@ class TokenAuther:
     async def list_for(self, *, identity_id: str) -> list[TokenRecord]:
         async with self._db.session() as session:
             rows = (
-                await session.execute(
-                    select(UserToken)
-                    .where(UserToken.user_id == identity_id)
-                    .order_by(UserToken.created_at.desc())
+                (
+                    await session.execute(
+                        select(UserToken)
+                        .where(UserToken.user_id == identity_id)
+                        .order_by(UserToken.created_at.desc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [
             TokenRecord(
                 id=r.id,
                 label=r.label,
                 created_at=r.created_at,
                 last_used_at=r.last_used_at,
-                revoked=r.revoked,
             )
             for r in rows
         ]
 
-    async def revoke(self, *, identity_id: str, token_id: str) -> None:
+    async def delete(self, *, identity_id: str, token_id: str) -> None:
+        """Hard-delete a token. Immediately invalidates it."""
         async with self._db.session() as session:
             row = (
                 await session.execute(
@@ -96,8 +99,51 @@ class TokenAuther:
             ).scalar_one_or_none()
             if row is None:
                 raise AuthError("no such token")
-            row.revoked = True
+            await session.delete(row)
             await session.commit()
+
+    async def delete_all_for(self, *, identity_id: str) -> None:
+        """Hard-delete all tokens for a user (e.g. on passphrase reset)."""
+        async with self._db.session() as session:
+            rows = (
+                (await session.execute(select(UserToken).where(UserToken.user_id == identity_id)))
+                .scalars()
+                .all()
+            )
+            for r in rows:
+                await session.delete(r)
+            await session.commit()
+
+    async def refresh(self, *, identity_id: str, token_id: str) -> IssuedToken:
+        """Delete an existing token and issue a new one with the same label.
+
+        Atomic: the delete + insert happen in a single transaction so a crash
+        between them cannot leave the user without any token.
+        """
+        new_token = "ax_" + secrets.token_urlsafe(32)
+        new_token_id = str(uuid.uuid4())
+        async with self._db.session() as session:
+            row = (
+                await session.execute(
+                    select(UserToken).where(
+                        UserToken.id == token_id, UserToken.user_id == identity_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                raise AuthError("no such token")
+            label = row.label
+            await session.delete(row)
+            session.add(
+                UserToken(
+                    id=new_token_id,
+                    user_id=identity_id,
+                    token_hash=_hash_token(new_token),
+                    label=label,
+                )
+            )
+            await session.commit()
+        return IssuedToken(id=new_token_id, label=label, token=new_token)
 
     async def authenticate(self, credentials: dict[str, str]) -> Identity:
         token = credentials.get("token")
@@ -109,17 +155,19 @@ class TokenAuther:
                     select(UserToken).where(UserToken.token_hash == _hash_token(token))
                 )
             ).scalar_one_or_none()
-            if row is None or row.revoked:
-                raise AuthError("invalid or revoked token")
+            if row is None:
+                raise AuthError("invalid token")
             row.last_used_at = datetime.now(tz=timezone.utc)
-            user = (
-                await session.execute(select(User).where(User.id == row.user_id))
-            ).scalar_one()
+            user = (await session.execute(select(User).where(User.id == row.user_id))).scalar_one()
             caps = (
-                await session.execute(
-                    select(Capability.capability).where(Capability.user_id == user.id)
+                (
+                    await session.execute(
+                        select(Capability.capability).where(Capability.user_id == user.id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             await session.commit()
             return Identity(
                 id=user.id,

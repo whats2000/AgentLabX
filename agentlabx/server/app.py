@@ -15,6 +15,7 @@ from agentlabx.server.middleware import SessionConfig, install_session_middlewar
 from agentlabx.server.rate_limit import LoginRateLimiter
 from agentlabx.server.routers import auth as auth_router
 from agentlabx.server.routers import health as health_router
+from agentlabx.server.routers import llm as llm_router
 from agentlabx.server.routers import runs as runs_router
 from agentlabx.server.routers import settings as settings_router
 
@@ -55,6 +56,7 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(settings_router.router)
     app.include_router(runs_router.router)
+    app.include_router(llm_router.router)
 
     app.state.db = db
     app.state.settings = settings

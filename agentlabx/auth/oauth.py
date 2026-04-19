@@ -120,9 +120,7 @@ class OAuthAuther:
             ).scalar_one_or_none()
             if existing is not None:
                 raise EmailAlreadyRegisteredError(normalized_email)
-            user_count = (
-                await session.execute(select(User).with_only_columns(User.id))
-            ).all()
+            user_count = (await session.execute(select(User).with_only_columns(User.id))).all()
             session.add(
                 User(
                     id=user_id,

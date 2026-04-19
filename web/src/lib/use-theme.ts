@@ -21,7 +21,7 @@ export function useTheme(): {
 } {
   const [theme, setThemeState] = React.useState<Theme>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
-    return (stored === "light" || stored === "dark" || stored === "system") ? stored : "system"
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system"
   })
 
   const resolvedTheme: "light" | "dark" = theme === "system" ? getSystemTheme() : theme
@@ -34,12 +34,18 @@ export function useTheme(): {
   React.useEffect(() => {
     if (theme !== "system") return
     const mq = window.matchMedia("(prefers-color-scheme: dark)")
-    const handler = (): void => { applyTheme("system") }
+    const handler = (): void => {
+      applyTheme("system")
+    }
     mq.addEventListener("change", handler)
-    return () => { mq.removeEventListener("change", handler) }
+    return () => {
+      mq.removeEventListener("change", handler)
+    }
   }, [theme])
 
-  const setTheme = React.useCallback((t: Theme) => { setThemeState(t) }, [])
+  const setTheme = React.useCallback((t: Theme) => {
+    setThemeState(t)
+  }, [])
 
   return { theme, setTheme, resolvedTheme }
 }

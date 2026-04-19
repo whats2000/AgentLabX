@@ -37,13 +37,9 @@ async def test_authenticate_wrong_passphrase_raises(tmp_workspace: Path) -> None
     try:
         await apply_migrations(handle)
         auther = DefaultAuther(handle)
-        await auther.register(
-            display_name="Bob", email="bob@example.com", passphrase="right1234"
-        )
+        await auther.register(display_name="Bob", email="bob@example.com", passphrase="right1234")
         with pytest.raises(AuthError):
-            await auther.authenticate(
-                {"email": "bob@example.com", "passphrase": "wrong"}
-            )
+            await auther.authenticate({"email": "bob@example.com", "passphrase": "wrong"})
     finally:
         await handle.close()
 
@@ -110,9 +106,7 @@ async def test_update_display_name(tmp_workspace: Path) -> None:
         await apply_migrations(handle)
         a = DefaultAuther(handle)
         ident = await a.register(display_name="Alice", email="a@x.com", passphrase="p1234567")
-        updated = await a.update_display_name(
-            identity_id=ident.id, new_display_name="Alice II"
-        )
+        updated = await a.update_display_name(identity_id=ident.id, new_display_name="Alice II")
         assert updated.display_name == "Alice II"
     finally:
         await handle.close()
@@ -165,9 +159,7 @@ async def test_update_email_to_existing_raises_conflict(tmp_workspace: Path) -> 
         ident_a = await a.register(display_name="A", email="a@x.com", passphrase="p1234567")
         await a.register(display_name="B", email="b@x.com", passphrase="p1234567")
         with pytest.raises(EmailAlreadyRegisteredError):
-            await a.update_email(
-                identity_id=ident_a.id, new_email="b@x.com", passphrase="p1234567"
-            )
+            await a.update_email(identity_id=ident_a.id, new_email="b@x.com", passphrase="p1234567")
     finally:
         await handle.close()
 

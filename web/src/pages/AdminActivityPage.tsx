@@ -22,9 +22,11 @@ function str(v: string | number | boolean | null | undefined): string {
 
 const SUMMARY: Record<string, (p: Payload) => string> = {
   "auth.registered": (p) =>
-    i18n.t("activity.auth_registered", { actor: str(p.actor_email), display_name: str(p.display_name) }),
-  "auth.login_success": (p) =>
-    i18n.t("activity.auth_login_success", { actor: str(p.actor_email) }),
+    i18n.t("activity.auth_registered", {
+      actor: str(p.actor_email),
+      display_name: str(p.display_name),
+    }),
+  "auth.login_success": (p) => i18n.t("activity.auth_login_success", { actor: str(p.actor_email) }),
   "auth.login_failed": (p) =>
     i18n.t("activity.auth_login_failed", { email: str(p.attempted_email) }),
   "auth.logout": (p) =>
@@ -54,7 +56,10 @@ const SUMMARY: Record<string, (p: Payload) => string> = {
       display_name: str(p.target_display_name),
     }),
   "admin.user_deleted": (p) =>
-    i18n.t("activity.admin_user_deleted", { actor: str(p.actor_email), target: str(p.target_email) }),
+    i18n.t("activity.admin_user_deleted", {
+      actor: str(p.actor_email),
+      target: str(p.target_email),
+    }),
   "admin.capability_granted": (p) =>
     i18n.t("activity.admin_capability_granted", {
       actor: str(p.actor_email),
@@ -82,10 +87,14 @@ function summarise(event: AuditEventDto): string {
 // ---------------------------------------------------------------------------
 
 function kindColour(kind: string): string {
-  if (kind.startsWith("auth.login_failed")) return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
-  if (kind.startsWith("admin.user_deleted")) return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
-  if (kind.startsWith("admin.")) return "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-  if (kind.startsWith("auth.")) return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+  if (kind.startsWith("auth.login_failed"))
+    return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+  if (kind.startsWith("admin.user_deleted"))
+    return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+  if (kind.startsWith("admin."))
+    return "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+  if (kind.startsWith("auth."))
+    return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
   if (kind.startsWith("credential.")) return "bg-muted text-muted-foreground"
   return "bg-muted text-muted-foreground"
 }
@@ -149,9 +158,7 @@ export function AdminActivityPage(): React.JSX.Element {
           <div className="flex items-center justify-between gap-4">
             <CardTitle>{t("activity.recentEvents")}</CardTitle>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">
-                {t("activity.showingUpTo")}
-              </span>
+              <span className="text-xs text-muted-foreground">{t("activity.showingUpTo")}</span>
               <ConfirmDialog
                 trigger={
                   <Button variant="destructive" size="sm">
@@ -162,7 +169,9 @@ export function AdminActivityPage(): React.JSX.Element {
                 description={t("activity.clearLogDesc")}
                 confirmLabel={t("activity.clearLogConfirm")}
                 destructive
-                onConfirm={() => { void clearMutation.mutate() }}
+                onConfirm={() => {
+                  void clearMutation.mutate()
+                }}
               />
             </div>
           </div>
@@ -182,12 +191,12 @@ export function AdminActivityPage(): React.JSX.Element {
           {events.data && events.data.length > 0 && (
             <ul className="divide-y divide-border text-sm">
               {events.data.map((ev, i) => (
-                <li key={i} className="flex items-start gap-3 py-2">
+                <li key={i} className="flex items-start gap-3 py-2 min-w-0">
                   <span className="w-16 shrink-0 text-xs text-muted-foreground pt-0.5">
                     {relativeTime(ev.at)}
                   </span>
                   <KindPill kind={ev.kind} />
-                  <span className="text-foreground">{summarise(ev)}</span>
+                  <span className="min-w-0 break-words text-foreground">{summarise(ev)}</span>
                 </li>
               ))}
             </ul>

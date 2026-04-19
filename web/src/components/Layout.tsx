@@ -71,10 +71,7 @@ export function Layout(): React.JSX.Element {
               <NavLink to="/admin" className={({ isActive }) => navClass(isActive)}>
                 <Users className="h-4 w-4" /> {t("nav.adminUsers")}
               </NavLink>
-              <NavLink
-                to="/admin/activity"
-                className={({ isActive }) => navClass(isActive)}
-              >
+              <NavLink to="/admin/activity" className={({ isActive }) => navClass(isActive)}>
                 <Activity className="h-4 w-4" /> {t("nav.activity")}
               </NavLink>
             </>
@@ -105,18 +102,32 @@ export function Layout(): React.JSX.Element {
             <DropdownMenuContent side="top" align="start" className="w-56">
               <DropdownMenuLabel>{identity.email}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => { nav("/profile") }}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  nav("/profile")
+                }}
+              >
                 <User className="h-4 w-4" /> {t("nav.profile")}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { nav("/settings") }}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  nav("/settings")
+                }}
+              >
                 <KeyRound className="h-4 w-4" /> {t("nav.credentials")}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { nav("/preferences") }}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  nav("/preferences")
+                }}
+              >
                 <Settings className="h-4 w-4" /> {t("preferences.title")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => { void logout() }}
+                onSelect={() => {
+                  void logout()
+                }}
                 className="text-red-600 focus:bg-red-50 focus:text-red-700"
               >
                 <LogOut className="h-4 w-4" /> {t("nav.logout")}

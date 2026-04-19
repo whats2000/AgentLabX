@@ -74,7 +74,7 @@ def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: Database
         if request.state.identity is None:
             header = request.headers.get("Authorization", "")
             if header.startswith("Bearer "):
-                token = header[len("Bearer "):].strip()
+                token = header[len("Bearer ") :].strip()
                 if token:
                     request.state.identity = await _load_identity_for_bearer(db, token)
 
@@ -94,9 +94,7 @@ async def _load_identity_for_bearer(db: DatabaseHandle, token: str) -> Identity 
 async def _load_identity_for_session(db: DatabaseHandle, session_id: str) -> Identity | None:
     async with db.session() as session:
         row = (
-            await session.execute(
-                select(SessionRow).where(SessionRow.id == session_id)
-            )
+            await session.execute(select(SessionRow).where(SessionRow.id == session_id))
         ).scalar_one_or_none()
         if row is None or row.revoked:
             return None
@@ -105,14 +103,16 @@ async def _load_identity_for_session(db: DatabaseHandle, session_id: str) -> Ide
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < datetime.now(tz=timezone.utc):
             return None
-        user = (
-            await session.execute(select(User).where(User.id == row.user_id))
-        ).scalar_one()
+        user = (await session.execute(select(User).where(User.id == row.user_id))).scalar_one()
         caps = (
-            await session.execute(
-                select(Capability.capability).where(Capability.user_id == user.id)
+            (
+                await session.execute(
+                    select(Capability.capability).where(Capability.user_id == user.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         row.last_seen_at = datetime.now(tz=timezone.utc)
         await session.commit()
         return Identity(

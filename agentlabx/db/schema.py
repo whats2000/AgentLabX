@@ -54,9 +54,7 @@ class UserConfig(Base):
     __table_args__ = (UniqueConstraint("user_id", "slot", name="uq_user_configs_user_slot"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     slot: Mapped[str] = mapped_column(String(128), nullable=False)
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -73,9 +71,7 @@ class OAuthToken(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     access_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     refresh_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
@@ -101,9 +97,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
@@ -118,37 +112,26 @@ class Session(Base):
 
 class UserToken(Base):
     __tablename__ = "user_tokens"
-    __table_args__ = (
-        UniqueConstraint("token_hash", name="uq_user_tokens_hash"),
-    )
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_user_tokens_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # uuid
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # sha256 hex
     label: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="tokens_v2")
 
 
 class Capability(Base):
     __tablename__ = "capabilities"
-    __table_args__ = (
-        UniqueConstraint("user_id", "capability", name="uq_capabilities_user_name"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "capability", name="uq_capabilities_user_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     capability: Mapped[str] = mapped_column(String(64), nullable=False)
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

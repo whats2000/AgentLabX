@@ -70,31 +70,31 @@ async def test_delete_user_cascades_to_child_rows(tmp_workspace: Path) -> None:
             from sqlalchemy import select
 
             configs = (
-                await session.execute(
-                    select(UserConfig).where(UserConfig.user_id == user_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(UserConfig).where(UserConfig.user_id == user_id)))
+                .scalars()
+                .all()
+            )
             assert configs == [], f"user_configs not cascade-deleted: {configs}"
 
             tokens = (
-                await session.execute(
-                    select(UserToken).where(UserToken.user_id == user_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(UserToken).where(UserToken.user_id == user_id)))
+                .scalars()
+                .all()
+            )
             assert tokens == [], f"user_tokens not cascade-deleted: {tokens}"
 
             sessions = (
-                await session.execute(
-                    select(Session).where(Session.user_id == user_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(Session).where(Session.user_id == user_id)))
+                .scalars()
+                .all()
+            )
             assert sessions == [], f"sessions not cascade-deleted: {sessions}"
 
             caps = (
-                await session.execute(
-                    select(Capability).where(Capability.user_id == user_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(Capability).where(Capability.user_id == user_id)))
+                .scalars()
+                .all()
+            )
             assert caps == [], f"capabilities not cascade-deleted: {caps}"
     finally:
         await handle.close()

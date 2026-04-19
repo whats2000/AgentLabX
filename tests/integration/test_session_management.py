@@ -17,9 +17,7 @@ async def test_list_sessions_returns_current(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
@@ -45,9 +43,7 @@ async def test_revoke_current_session_logs_user_out(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             await c.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},
@@ -75,11 +71,10 @@ async def test_revoke_other_session_keeps_current(
     settings = AppSettings(workspace=tmp_workspace)
     app = await create_app(settings)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c_a, AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c_b:
+        async with (
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c_a,
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c_b,
+        ):
             await c_a.post(
                 "/api/auth/register",
                 json={"display_name": "A", "email": "a@x.com", "passphrase": "p1234567"},

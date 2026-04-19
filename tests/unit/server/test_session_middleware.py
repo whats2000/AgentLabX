@@ -53,7 +53,8 @@ async def test_authenticated_request_sees_identity(tmp_workspace: Path) -> None:
         cookie = URLSafeTimedSerializer(cfg.secret).dumps({"sid": session_id})
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get("/whoami", cookies={"agentlabx_session": cookie})
+            client.cookies.set("agentlabx_session", cookie)
+            response = await client.get("/whoami")
             assert response.status_code == 200
             assert response.json() == {"id": identity.id}
     finally:
@@ -119,7 +120,8 @@ async def test_require_admin_rejects_non_admin(tmp_workspace: Path) -> None:
 
         cookie = URLSafeTimedSerializer(cfg.secret).dumps({"sid": "s_normal"})
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get("/admin-only", cookies={"agentlabx_session": cookie})
+            client.cookies.set("agentlabx_session", cookie)
+            response = await client.get("/admin-only")
             assert response.status_code == 403
     finally:
         await handle.close()
@@ -184,15 +186,18 @@ async def test_expired_normal_cookie_rejected_but_remember_me_accepted(
         # Wait for the normal cookie to expire at the itsdangerous level
         await asyncio.sleep(2.0)
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            # Normal cookie should be rejected (itsdangerous max_age=1s expired)
-            r = await client.get("/whoami", cookies={"agentlabx_session": normal_cookie})
+        transport = ASGITransport(app=app)
+
+        # Normal cookie should be rejected (itsdangerous max_age=1s expired)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.cookies.set("agentlabx_session", normal_cookie)
+            r = await client.get("/whoami")
             assert r.status_code == 401
 
-            # Remember-me cookie should still work
-            r = await client.get("/whoami", cookies={"agentlabx_session": rm_cookie})
+        # Remember-me cookie should still work (fresh client to avoid cookie carry-over)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.cookies.set("agentlabx_session", rm_cookie)
+            r = await client.get("/whoami")
             assert r.status_code == 200
             assert r.json()["id"] == identity.id
     finally:

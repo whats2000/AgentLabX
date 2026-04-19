@@ -1,13 +1,66 @@
 from __future__ import annotations
 
+import socket
+import threading
+import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import uvicorn
+
+from tests.mock_llm_server import MockServerState, create_mock_app
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        addr: tuple[str, int] = s.getsockname()
+        return addr[1]
+
+
+@dataclass
+class MockLLMService:
+    """Handle returned by the mock_llm_server fixture."""
+
+    base_url: str
+    port: int
+    state: MockServerState
+
+
+@pytest.fixture()
+def mock_llm_server() -> Iterator[MockLLMService]:
+    """Start a real HTTP mock LLM server on a random port for the test."""
+    port = _find_free_port()
+    state = MockServerState()
+    app = create_mock_app(state)
+
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", ws="none")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    # Wait for server to be ready
+    for _ in range(50):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                break
+        except OSError:
+            time.sleep(0.1)
+
+    yield MockLLMService(
+        base_url=f"http://127.0.0.1:{port}/v1",
+        port=port,
+        state=state,
+    )
+
+    server.should_exit = True
+    thread.join(timeout=5)
 
 
 @pytest.fixture()

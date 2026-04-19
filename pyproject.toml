@@ -1,7 +1,7 @@
 [project]
 name = "agentlabx"
 version = "0.1.0"
-description = "AgentLabX — Stage A1 foundation infrastructure"
+description = "AgentLabX — LLM-driven research automation platform"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7,<3.0",
@@ -16,6 +16,8 @@ dependencies = [
     "itsdangerous>=2.2,<3.0",
     "click>=8.1,<9.0",
     "httpx>=0.27,<1.0",
+    "pyyaml>=6.0,<7.0",
+    "litellm>=1.60,<2.0",
 ]
 
 [project.scripts]
@@ -25,9 +27,15 @@ agentlabx = "agentlabx.cli.main:cli"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-dotenv>=0.5",
     "ruff>=0.6",
     "mypy>=1.11",
+    "types-PyYAML>=6.0",
+    "pre-commit>=4.0",
 ]
+
+[project.entry-points."agentlabx.llm_providers"]
+litellm = "agentlabx.llm.litellm_provider:LiteLLMProvider"
 
 [build-system]
 requires = ["hatchling"]
@@ -60,11 +68,21 @@ warn_unused_configs = true
 module = ["keyring.*", "argon2.*", "itsdangerous.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["litellm.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.unit.llm.test_protocol"]
+disable_error_code = ["comparison-overlap"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+env_files = [".env"]
 markers = [
     "integration: marks integration tests (use `-m integration` to run only these)",
+    "real_llm: marks tests that require a real LLM provider API key",
 ]
 
 [tool.hatch.build.targets.wheel]

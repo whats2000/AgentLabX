@@ -31,7 +31,7 @@ Thumbs.db
 
 # Project
 .superpowers/
-data/
+/data/
 *.db
 .env
 .env.local
