@@ -3,7 +3,7 @@ import * as React from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { api, type CredentialSlotDto } from "@/api/client"
+import { api, type CredentialSlotDto, type LLMProviderDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,11 @@ export function SettingsPage(): React.JSX.Element {
   const slots = useQuery<CredentialSlotDto[]>({
     queryKey: ["credentials"],
     queryFn: api.listCredentials,
+  })
+  const providers = useQuery<LLMProviderDto[]>({
+    queryKey: ["llm-providers"],
+    queryFn: api.listLLMProviders,
+    staleTime: 5 * 60 * 1000,  // provider list is stable; cache 5 min
   })
 
   const [slot, setSlot] = React.useState("")
@@ -68,21 +73,9 @@ export function SettingsPage(): React.JSX.Element {
                 required
               />
               <datalist id="provider-suggestions">
-                <option value="openai" />
-                <option value="anthropic" />
-                <option value="gemini" />
-                <option value="azure" />
-                <option value="vertex_ai" />
-                <option value="bedrock" />
-                <option value="deepseek" />
-                <option value="ollama" />
-                <option value="together_ai" />
-                <option value="groq" />
-                <option value="mistral" />
-                <option value="cohere" />
-                <option value="huggingface" />
-                <option value="openrouter" />
-                <option value="xai" />
+                {(providers.data ?? []).map((p) => (
+                  <option key={p.name} value={p.name} />
+                ))}
               </datalist>
             </div>
             <div className="space-y-2">

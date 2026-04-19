@@ -40,6 +40,18 @@ export interface AuditEventDto {
   payload: Record<string, string | number | boolean | null>
 }
 
+export interface LLMModelDto {
+  id: string
+  display_name: string
+  provider: string
+}
+
+export interface LLMProviderDto {
+  name: string
+  display_name: string
+  models: LLMModelDto[]
+}
+
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, { credentials: "include", ...init })
   if (!res.ok) {
@@ -153,6 +165,8 @@ export const api = {
     request<void>(`/api/auth/me/tokens/${encodeURIComponent(token_id)}`, {
       method: "DELETE",
     }),
+  listLLMProviders: () => request<LLMProviderDto[]>("/api/llm/providers"),
+  listLLMModels: () => request<LLMModelDto[]>("/api/llm/models"),
   refreshMyToken: (token_id: string) =>
     request<IssuedTokenDto>(
       `/api/auth/me/tokens/${encodeURIComponent(token_id)}/refresh`,
