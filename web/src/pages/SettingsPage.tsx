@@ -6,9 +6,9 @@ import { toast } from "sonner"
 import { api, type CredentialSlotDto, type LLMProviderDto } from "@/api/client"
 import { useAuth } from "@/auth/AuthProvider"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { ProviderCombobox } from "@/components/provider-combobox"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/ui/password-input"
 
@@ -66,17 +66,12 @@ export function SettingsPage(): React.JSX.Element {
           >
             <div className="space-y-2">
               <Label>{t("settings.slotLabel")}</Label>
-              <Input
+              <ProviderCombobox
                 value={slot}
-                onChange={(e) => { setSlot(e.target.value) }}
-                list="provider-suggestions"
-                required
+                onChange={setSlot}
+                options={(providers.data ?? []).map((p) => p.name)}
+                disabled={providers.isLoading}
               />
-              <datalist id="provider-suggestions">
-                {(providers.data ?? []).map((p) => (
-                  <option key={p.name} value={p.name} />
-                ))}
-              </datalist>
             </div>
             <div className="space-y-2">
               <Label>{t("settings.valueLabel")}</Label>
@@ -91,7 +86,12 @@ export function SettingsPage(): React.JSX.Element {
                 {put.error.message}
               </div>
             ) : null}
-            <Button type="submit" disabled={put.isPending}>{t("settings.saveButton")}</Button>
+            <Button
+              type="submit"
+              disabled={put.isPending || slot.trim().length === 0 || value.length === 0}
+            >
+              {t("settings.saveButton")}
+            </Button>
             <p className="mt-3 text-xs text-muted-foreground">
               {t("settings.providerHint")}{" "}
               <a

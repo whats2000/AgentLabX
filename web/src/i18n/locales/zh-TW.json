@@ -14,6 +14,13 @@
     "you": "(你)",
     "owner": "(擁有者)"
   },
+  "combobox": {
+    "selectPlaceholder": "選擇…",
+    "searchPlaceholder": "搜尋…",
+    "empty": "找不到結果。",
+    "customHeading": "自訂",
+    "useValue": "使用："
+  },
   "theme": {
     "light": "淺色",
     "dark": "深色",

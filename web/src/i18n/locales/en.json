@@ -14,6 +14,13 @@
     "you": "(you)",
     "owner": "(owner)"
   },
+  "combobox": {
+    "selectPlaceholder": "Select…",
+    "searchPlaceholder": "Search…",
+    "empty": "No results.",
+    "customHeading": "Custom",
+    "useValue": "Use:"
+  },
   "theme": {
     "light": "Light",
     "dark": "Dark",
