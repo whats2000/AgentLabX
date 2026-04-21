@@ -91,10 +91,11 @@ async def test_user_scope_isolates_users(db: DatabaseHandle, crypto: FernetStore
 
 
 @pytest.mark.asyncio
-async def test_admin_scope_falls_back_to_env_when_admin_table_absent(
+async def test_admin_scope_falls_back_to_env_when_no_admin_row(
     db: DatabaseHandle, crypto: FernetStore, monkeypatch: MonkeyPatch
 ) -> None:
-    """admin_configs table is added by Task 3; until then admin scope reads env."""
+    """When the admin_configs table exists but has no row for the slot, the
+    resolver falls back to the ``AGENTLABX_SLOT_<SLOT_UPPER>`` env var."""
     monkeypatch.setenv("AGENTLABX_SLOT_FILESYSTEM_ROOT", "/tmp/agentlabx-test")
     resolver = _make_resolver(db, crypto)
     value = await resolver.resolve(owner_id=None, slot="filesystem_root")
@@ -124,21 +125,16 @@ async def test_admin_scope_env_fallback_sanitises_colon_bearing_slot(
 async def test_admin_scope_prefers_admin_configs_row_over_env(
     db: DatabaseHandle, crypto: FernetStore, monkeypatch: MonkeyPatch
 ) -> None:
-    """Once Task 3 lands the admin_configs table the resolver picks it up
-    automatically. Simulate that future state by creating the table by hand."""
+    """The ``admin_configs`` table is created by the A3 migration (Task 3) and
+    declared as the ``AdminConfig`` ORM model, so the ``db`` fixture's
+    ``Base.metadata.create_all`` already provisions it; we just insert a row."""
     ciphertext = crypto.encrypt(b"db-value")
     async with db.engine.begin() as conn:
         await conn.execute(
             text(
-                "CREATE TABLE admin_configs ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "slot TEXT NOT NULL UNIQUE, "
-                "ciphertext BLOB NOT NULL"
-                ")"
-            )
-        )
-        await conn.execute(
-            text("INSERT INTO admin_configs (slot, ciphertext) VALUES (:slot, :ct)"),
+                "INSERT INTO admin_configs (slot, ciphertext, created_at) "
+                "VALUES (:slot, :ct, '2026-04-20 00:00:00')"
+            ),
             {"slot": "shared_key", "ct": ciphertext},
         )
 

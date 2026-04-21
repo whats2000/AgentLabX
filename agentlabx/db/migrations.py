@@ -10,7 +10,7 @@ from sqlalchemy.sql.schema import Table  # noqa: TC002 — used for cast below
 from agentlabx.db.schema import AppState, Base, UserToken
 from agentlabx.db.session import DatabaseHandle
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class SchemaVersionMismatchError(Exception):
@@ -58,10 +58,94 @@ async def _migrate_v3_to_v4(conn: AsyncConnection) -> None:
         await conn.execute(text("ALTER TABLE user_tokens DROP COLUMN revoked"))
 
 
+async def _migrate_v4_to_v5(conn: AsyncConnection) -> None:
+    """Add the three Stage A3 tables: ``admin_configs`` (admin-scope credential
+    slots, used by ``SlotResolver``), ``mcp_servers`` (MCP server registry,
+    Task 4) and ``memory_entries`` (built-in memory server, Task 8).
+
+    Bundling all three into a single migration keeps the DB at one consistent
+    version after an A3 boot. DDL is raw SQL with ``IF NOT EXISTS`` guards so
+    re-running the migration is a no-op (mirrors the v3→v4 precedent which
+    checked ``PRAGMA table_info`` before mutating).
+    """
+    existing = await conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')")
+    )
+    present: set[str] = {row[0] for row in existing}
+
+    if "admin_configs" not in present:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE admin_configs (
+                    slot VARCHAR(128) PRIMARY KEY,
+                    ciphertext BLOB NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+
+    if "mcp_servers" not in present:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE mcp_servers (
+                    id VARCHAR(36) PRIMARY KEY,
+                    owner_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(128) NOT NULL,
+                    scope VARCHAR(16) NOT NULL,
+                    transport VARCHAR(16) NOT NULL,
+                    command_json TEXT,
+                    url VARCHAR(2048),
+                    inprocess_key VARCHAR(128),
+                    env_slot_refs_json TEXT NOT NULL,
+                    declared_capabilities_json TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL,
+                    CONSTRAINT uq_mcp_servers_scope_owner_name
+                        UNIQUE (scope, owner_id, name)
+                )
+                """
+            )
+        )
+    if "idx_mcp_servers_owner" not in present:
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_mcp_servers_owner "
+                "ON mcp_servers (owner_id, enabled)"
+            )
+        )
+
+    if "memory_entries" not in present:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE memory_entries (
+                    id VARCHAR(36) PRIMARY KEY,
+                    category VARCHAR(128) NOT NULL,
+                    body TEXT NOT NULL,
+                    source_run_id VARCHAR(36),
+                    created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+    if "idx_memory_entries_category" not in present:
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_memory_entries_category "
+                "ON memory_entries (category)"
+            )
+        )
+
+
 _MIGRATIONS: tuple[Migration, ...] = (
     Migration(from_version=1, to_version=2, name="add_email_column", apply=_migrate_v1_to_v2),
     Migration(from_version=2, to_version=3, name="add_user_tokens", apply=_migrate_v2_to_v3),
     Migration(from_version=3, to_version=4, name="drop_token_revoked", apply=_migrate_v3_to_v4),
+    Migration(from_version=4, to_version=5, name="add_a3_tables", apply=_migrate_v4_to_v5),
 )
 
 
