@@ -1,0 +1,226 @@
+"""Server registry — SQLite persistence for MCP server registrations.
+
+The registry is the *only* path that mutates the ``mcp_servers`` table. It owns
+serialisation between the typed :class:`MCPServerSpec` value object and the
+JSON-encoded columns on the :class:`MCPServer` ORM row, plus per-user vs
+admin-scope visibility queries.
+
+Runtime concerns (live tool snapshots, ``ClientSession`` handles, started_at
+timestamps) belong to :class:`MCPHost`. The registry returns
+:class:`RegisteredServer` objects with ``tools=()`` and ``started_at=None`` —
+the host fills those in when it starts a server.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from agentlabx.db.schema import MCPServer
+from agentlabx.mcp.protocol import (
+    MCPServerSpec,
+    RegisteredServer,
+    RegistrationConflict,
+    Scope,
+    Transport,
+)
+
+_VALID_SCOPES: frozenset[str] = frozenset({"user", "admin"})
+_VALID_TRANSPORTS: frozenset[str] = frozenset({"stdio", "http", "inprocess"})
+
+
+class ServerRegistry:
+    """Persistence-layer CRUD over ``mcp_servers``.
+
+    The registry is constructed with an ``async_sessionmaker`` rather than a
+    ``DatabaseHandle`` so it can be reused in non-FastAPI call sites (background
+    MCP launches, CLI commands) and so tests can supply a session factory built
+    directly from a throwaway engine.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sessionmaker = session_factory
+
+    async def register(self, spec: MCPServerSpec, owner_id: str | None) -> RegisteredServer:
+        """Insert a new server row.
+
+        Raises :class:`RegistrationConflict` on UNIQUE-constraint violation
+        against ``(scope, owner_id, name)``. Any other ``IntegrityError`` (e.g.
+        a foreign-key failure on a stale ``owner_id``) re-raises unchanged so
+        the caller sees the real cause.
+        """
+        row = MCPServer(
+            id=uuid.uuid4().hex,
+            owner_id=owner_id,
+            name=spec.name,
+            scope=spec.scope,
+            transport=spec.transport,
+            command_json=_encode_optional_tuple(spec.command),
+            url=spec.url,
+            inprocess_key=spec.inprocess_key,
+            env_slot_refs_json=json.dumps(list(spec.env_slot_refs)),
+            declared_capabilities_json=json.dumps(list(spec.declared_capabilities)),
+            enabled=1,
+        )
+        async with self._sessionmaker() as session:
+            session.add(row)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                if _is_unique_violation(exc):
+                    raise RegistrationConflict(spec.name) from exc
+                raise
+        return _row_to_registered(row)
+
+    async def list_visible_to(self, user_id: str) -> list[RegisteredServer]:
+        """Return admin-scope rows + the user's own user-scope rows.
+
+        Order is stable: admin-scope first, then alphabetical by name. Tests
+        rely on this ordering — do not change it without updating them.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(
+                select(MCPServer)
+                .where((MCPServer.owner_id.is_(None)) | (MCPServer.owner_id == user_id))
+                .order_by(MCPServer.scope.asc(), MCPServer.name.asc())
+            )
+            rows = result.scalars().all()
+        return [_row_to_registered(r) for r in rows]
+
+    async def get(self, server_id: str) -> RegisteredServer | None:
+        async with self._sessionmaker() as session:
+            row = await session.get(MCPServer, server_id)
+        if row is None:
+            return None
+        return _row_to_registered(row)
+
+    async def delete(
+        self,
+        server_id: str,
+        requester_id: str,
+        requester_is_admin: bool,
+    ) -> bool:
+        """Delete a row iff the requester is allowed to.
+
+        Returns ``True`` only when a row was actually deleted; missing rows and
+        permission denials both return ``False`` (the plan specifies "True iff
+        a row was deleted" — callers needing to distinguish must check via
+        :meth:`get` first).
+        """
+        async with self._sessionmaker() as session:
+            row = await session.get(MCPServer, server_id)
+            if row is None:
+                return False
+            if not _can_delete(row, requester_id, requester_is_admin):
+                return False
+            await session.delete(row)
+            await session.commit()
+        return True
+
+    async def set_enabled(self, server_id: str, enabled: bool) -> None:
+        """Set the ``enabled`` flag. No-op if the row is absent."""
+        async with self._sessionmaker() as session:
+            row = await session.get(MCPServer, server_id)
+            if row is None:
+                return
+            row.enabled = 1 if enabled else 0
+            await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _can_delete(row: MCPServer, requester_id: str, requester_is_admin: bool) -> bool:
+    if row.scope == "admin":
+        return requester_is_admin
+    # scope == "user"
+    return requester_is_admin or row.owner_id == requester_id
+
+
+def _encode_optional_tuple(value: tuple[str, ...] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(list(value))
+
+
+def _decode_optional_tuple(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    decoded = json.loads(value)
+    if not isinstance(decoded, list):
+        raise ValueError(f"expected JSON list in column, got {type(decoded).__name__}")
+    return tuple(_require_str(item) for item in decoded)
+
+
+def _decode_required_tuple(value: str) -> tuple[str, ...]:
+    decoded = json.loads(value)
+    if not isinstance(decoded, list):
+        raise ValueError(f"expected JSON list in column, got {type(decoded).__name__}")
+    return tuple(_require_str(item) for item in decoded)
+
+
+def _require_str(item: object) -> str:
+    if not isinstance(item, str):
+        raise ValueError(f"expected JSON string element, got {type(item).__name__}")
+    return item
+
+
+def _coerce_scope(value: str) -> Scope:
+    if value not in _VALID_SCOPES:
+        raise ValueError(f"unknown scope {value!r} in mcp_servers row")
+    # mypy: narrow str to the Literal alias.
+    return "admin" if value == "admin" else "user"
+
+
+def _coerce_transport(value: str) -> Transport:
+    if value not in _VALID_TRANSPORTS:
+        raise ValueError(f"unknown transport {value!r} in mcp_servers row")
+    if value == "stdio":
+        return "stdio"
+    if value == "http":
+        return "http"
+    return "inprocess"
+
+
+def _row_to_registered(row: MCPServer) -> RegisteredServer:
+    spec = MCPServerSpec(
+        name=row.name,
+        scope=_coerce_scope(row.scope),
+        transport=_coerce_transport(row.transport),
+        command=_decode_optional_tuple(row.command_json),
+        url=row.url,
+        inprocess_key=row.inprocess_key,
+        env_slot_refs=_decode_required_tuple(row.env_slot_refs_json),
+        declared_capabilities=_decode_required_tuple(row.declared_capabilities_json),
+    )
+    return RegisteredServer(
+        spec=spec,
+        owner_id=row.owner_id,
+        tools=(),
+        started_at=None,
+    )
+
+
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    """Heuristic: distinguish UNIQUE failures from FK failures.
+
+    SQLAlchemy does not expose a backend-agnostic typed reason; the safest
+    portable check is a substring match on the underlying DBAPI message.
+    SQLite (aiosqlite), PostgreSQL, and MySQL all surface the literal "UNIQUE"
+    or "unique" in their error text for this constraint class. We fall back to
+    treating ambiguous IntegrityErrors as conflicts only when the message
+    clearly mentions uniqueness; everything else re-raises.
+    """
+    message = str(exc.orig) if exc.orig is not None else str(exc)
+    lowered = message.lower()
+    return "unique" in lowered
+
+
+__all__ = ["ServerRegistry"]
