@@ -18,6 +18,7 @@ Returns ``None`` when the slot has no value in any source.
 from __future__ import annotations
 
 import os
+import re
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -78,7 +79,9 @@ class SlotResolver:
         ciphertext = await self._lookup_admin_ciphertext(slot)
         if ciphertext is not None:
             return self._crypto.decrypt(ciphertext).decode("utf-8")
-        env_name = f"AGENTLABX_SLOT_{slot.upper()}"
+        # Sanitise: most shells reject env names containing characters outside
+        # ``[A-Z0-9_]`` (slot names elsewhere use colons, e.g. ``user:key:openai``).
+        env_name = f"AGENTLABX_SLOT_{re.sub(r'[^A-Z0-9_]', '_', slot.upper())}"
         return os.environ.get(env_name)
 
     async def _lookup_admin_ciphertext(self, slot: str) -> bytes | None:

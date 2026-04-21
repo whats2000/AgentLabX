@@ -111,6 +111,16 @@ async def test_admin_scope_returns_none_when_no_source_set(
 
 
 @pytest.mark.asyncio
+async def test_admin_scope_env_fallback_sanitises_colon_bearing_slot(
+    db: DatabaseHandle, crypto: FernetStore, monkeypatch: MonkeyPatch
+) -> None:
+    """Slot names with colons must map to a valid POSIX env-var name."""
+    monkeypatch.setenv("AGENTLABX_SLOT_USER_KEY_OPENAI", "secret-value")
+    resolver = _make_resolver(db, crypto)
+    assert await resolver.resolve(owner_id=None, slot="user:key:openai") == "secret-value"
+
+
+@pytest.mark.asyncio
 async def test_admin_scope_prefers_admin_configs_row_over_env(
     db: DatabaseHandle, crypto: FernetStore, monkeypatch: MonkeyPatch
 ) -> None:
