@@ -76,13 +76,16 @@ async def create_app(settings: AppSettings) -> FastAPI:
 
     bundles = _discover_bundles(event_bus=bus)
     inprocess_factories: dict[str, ServerFactory] = {}
-    for bundle_name, module in bundles:
-        # Each bundle exposes its in-process factory as ``build_server_factory``
-        # if (and only if) it ships an in-process MCP server. The memory bundle
-        # is the only one in A3; future bundles add themselves to this dict by
-        # exposing the same callable.
-        if hasattr(module, "build_server_factory") and bundle_name == "memory_server":
-            inprocess_factories[bundle_name] = module.build_server_factory(session_factory)
+    for _bundle_name, module in bundles:
+        # In-process bundles register under their spec's inprocess_key (which the
+        # InProcessLauncher looks up at start time). Bundle entry-point names
+        # may differ from the inprocess_key — the spec is the source of truth.
+        if not hasattr(module, "build_server_factory"):
+            continue
+        spec = _bundle_spec(module, _bundle_name)
+        if spec is None or spec.transport != "inprocess" or spec.inprocess_key is None:
+            continue
+        inprocess_factories[spec.inprocess_key] = module.build_server_factory(session_factory)
 
     registry = ServerRegistry(session_factory)
     host = MCPHost(
