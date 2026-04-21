@@ -102,12 +102,26 @@ def slot_to_env_var(slot: str) -> str:
 
 @dataclass(slots=True)
 class _Handle:
-    """Internal per-server runtime state held by :class:`MCPHost`."""
+    """Internal per-server runtime state held by :class:`MCPHost`.
+
+    ``owner_task`` is the dedicated background task that opened the session
+    and owns its ``AsyncExitStack``. All teardown happens inside that task
+    via ``stop_event`` to avoid anyio cancel-scope task-affinity errors —
+    cancel scopes raised by stdio / in-process launchers must be exited in
+    the same task that entered them, which is the owner task by construction.
+
+    ``exit_stack`` is retained for the synthetic-handle test path
+    (``test_stop_all_tolerates_broken_handle``) which installs handles
+    without an owner task; ``stop`` falls back to closing the stack
+    directly when ``owner_task`` is ``None``.
+    """
 
     session: ClientSession
     tools: tuple[ToolDescriptor, ...]
     exit_stack: contextlib.AsyncExitStack
     slot_values: tuple[str, ...]
+    owner_task: asyncio.Task[None] | None = None
+    stop_event: asyncio.Event | None = None
 
 
 class MCPHost:
@@ -162,8 +176,6 @@ class MCPHost:
             )
 
         resolved_by_slot = await self._resolve_slot_map(spec=server.spec, owner_id=owner_id)
-        # ``slot_values`` preserves spec-declared order so callers using it
-        # for redaction get a stable, deterministic tuple.
         slot_values: tuple[str, ...] = tuple(
             resolved_by_slot[slot] for slot in server.spec.env_slot_refs if slot in resolved_by_slot
         )
@@ -171,24 +183,33 @@ class MCPHost:
             slot_to_env_var(slot): value for slot, value in resolved_by_slot.items()
         }
 
-        stack = contextlib.AsyncExitStack()
+        # Spawn a dedicated owner task that opens the session, signals
+        # readiness, then blocks on the stop event. All transport
+        # context-managers are entered + exited inside the owner task to
+        # honour anyio's cancel-scope task-affinity rule (the bug previously
+        # surfaced as "Attempted to exit cancel scope in a different task").
+        ready: asyncio.Future[
+            tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
+        ] = asyncio.get_running_loop().create_future()
+        stop_event = asyncio.Event()
+
+        owner_task = asyncio.create_task(
+            self._owner_task(
+                server=server,
+                env=env,
+                ready=ready,
+                stop_event=stop_event,
+            ),
+            name=f"mcp-owner-{server.id}",
+        )
+
         try:
-            session = await self._open_session(spec=server.spec, env=env, stack=stack)
-            list_result = await session.list_tools()
-            tools = self._snapshot_tools(server.spec, list_result.tools)
-        except ServerStartupFailed:
-            await stack.aclose()
-            raise
-        except (McpError, OSError, ValueError) as exc:
-            await stack.aclose()
-            raise ServerStartupFailed(
-                spec=server.spec,
-                reason=f"tools/list failed after open: {exc!r}",
-            ) from exc
+            session, tools, stack = await ready
         except BaseException:
-            # Includes ``CancelledError`` and any unexpected error; ensure
-            # the stack is torn down before propagating.
-            await stack.aclose()
+            # The owner task already ran teardown via the same task; just
+            # await it to surface any final exception cleanly.
+            with contextlib.suppress(BaseException):
+                await owner_task
             raise
 
         self._handles[server.id] = _Handle(
@@ -196,6 +217,8 @@ class MCPHost:
             tools=tools,
             exit_stack=stack,
             slot_values=slot_values,
+            owner_task=owner_task,
+            stop_event=stop_event,
         )
 
         await self._event_bus.emit(
@@ -218,15 +241,83 @@ class MCPHost:
             started_at=datetime.now(tz=timezone.utc),
         )
 
+    async def _owner_task(
+        self,
+        *,
+        server: RegisteredServer,
+        env: dict[str, str],
+        ready: asyncio.Future[
+            tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
+        ],
+        stop_event: asyncio.Event,
+    ) -> None:
+        """Long-lived per-handle task that owns transport open + close.
+
+        Lifecycle: open transport, snapshot tools, signal ``ready``, wait on
+        ``stop_event``, close transport. All inside one task so anyio cancel
+        scopes never cross task boundaries.
+        """
+
+        stack = contextlib.AsyncExitStack()
+        try:
+            try:
+                session = await self._open_session(spec=server.spec, env=env, stack=stack)
+                list_result = await session.list_tools()
+                tools = self._snapshot_tools(server.spec, list_result.tools)
+            except ServerStartupFailed as exc:
+                await stack.aclose()
+                if not ready.done():
+                    ready.set_exception(exc)
+                return
+            except (McpError, OSError, ValueError) as exc:
+                await stack.aclose()
+                wrapped = ServerStartupFailed(
+                    spec=server.spec,
+                    reason=f"tools/list failed after open: {exc!r}",
+                )
+                if not ready.done():
+                    ready.set_exception(wrapped)
+                return
+            except BaseException as exc:
+                await stack.aclose()
+                if not ready.done():
+                    ready.set_exception(exc)
+                raise
+
+            if not ready.done():
+                ready.set_result((session, tools, stack))
+
+            # Block until ``stop`` fires the event. The session stays
+            # open; ``host.call`` reuses ``session`` cross-task — the SDK
+            # tolerates that for in-flight requests.
+            await stop_event.wait()
+        finally:
+            # Always close in this task. Tolerate any close-time errors so
+            # one bad handle does not poison the stop path.
+            with contextlib.suppress(BaseException):
+                await stack.aclose()
+
     async def stop(self, server_id: str) -> None:
-        """Stop a running server and release its transport / subprocess."""
+        """Stop a running server and release its transport / subprocess.
+
+        Signals the owner task's stop event and awaits the task. The owner
+        task closes the transport from its own task context, which is the
+        only way anyio's task-affine cancel scopes accept teardown.
+        """
 
         handle = self._handles.pop(server_id, None)
         if handle is None:
             raise ServerNotRunning(server_id)
-        # ``aclose`` walks the stack in reverse-entry order: session first,
-        # then launcher, then any subprocess wrapper.
-        await handle.exit_stack.aclose()
+
+        if handle.stop_event is not None and handle.owner_task is not None:
+            handle.stop_event.set()
+            with contextlib.suppress(BaseException):
+                await handle.owner_task
+        else:
+            # Synthetic-handle path used by the broken-handle stop_all test:
+            # no owner task to coordinate with, so close the stack directly.
+            await handle.exit_stack.aclose()
+
         await self._event_bus.emit(
             Event(
                 kind="mcp.server.stopped",
@@ -237,26 +328,26 @@ class MCPHost:
     async def stop_all(self) -> None:
         """Graceful shutdown helper — stops every live handle.
 
-        Failures are tolerated: each ``stop`` is awaited concurrently and a
-        single broken handle (e.g. an ``aclose`` that raises) cannot abort
-        teardown of the remaining handles. Per-handle failures are surfaced
-        as ``mcp.server.stop_failed`` events so operators retain visibility.
+        Stops are issued sequentially to avoid spawning sub-tasks (which would
+        re-introduce the cancel-scope task-affinity bug). Per-handle failures
+        are surfaced as ``mcp.server.stop_failed`` events; one broken handle
+        cannot abort teardown of the rest.
         """
 
         server_ids = list(self._handles.keys())
-        results = await asyncio.gather(
-            *(self.stop(sid) for sid in server_ids),
-            return_exceptions=True,
-        )
-        for sid, outcome in zip(server_ids, results, strict=True):
-            if isinstance(outcome, BaseException) and not isinstance(outcome, ServerNotRunning):
+        for sid in server_ids:
+            try:
+                await self.stop(sid)
+            except ServerNotRunning:
+                continue
+            except BaseException as exc:  # noqa: BLE001 — observe and continue
                 await self._event_bus.emit(
                     Event(
                         kind="mcp.server.stop_failed",
                         payload={
                             "server_id": sid,
-                            "error_type": type(outcome).__name__,
-                            "reason": str(outcome),
+                            "error_type": type(exc).__name__,
+                            "reason": str(exc),
                         },
                     )
                 )
