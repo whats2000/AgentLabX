@@ -47,7 +47,7 @@ def _decode_session_cookie(
             serializer.loads(cookie, max_age=cfg.max_age_seconds)
         except BadSignature:
             return None
-    return payload  # type: ignore[return-value]
+    return payload
 
 
 def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: DatabaseHandle) -> None:
@@ -67,9 +67,11 @@ def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: Database
         if cookie is not None:
             payload = _decode_session_cookie(serializer, cookie, cfg)
             if isinstance(payload, dict) and "sid" in payload:
-                identity = await _load_identity_for_session(db, payload["sid"])
-                request.state.identity = identity
-                request.state.session_remember_me = bool(payload.get("rm"))
+                sid = payload["sid"]
+                if isinstance(sid, str):
+                    identity = await _load_identity_for_session(db, sid)
+                    request.state.identity = identity
+                    request.state.session_remember_me = bool(payload.get("rm"))
 
         if request.state.identity is None:
             header = request.headers.get("Authorization", "")

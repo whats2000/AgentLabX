@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from agentlabx.core.json_types import JSONValue
+
 
 class RegisterRequest(BaseModel):  # type: ignore[explicit-any]
     display_name: str = Field(min_length=1, max_length=128)
@@ -77,7 +79,7 @@ class RunsListResponse(BaseModel):  # type: ignore[explicit-any]
 class EventResponse(BaseModel):  # type: ignore[explicit-any]
     kind: str
     at: str
-    payload: dict[str, str | int | float | bool | None]
+    payload: dict[str, JSONValue]
 
 
 class SessionResponse(BaseModel):  # type: ignore[explicit-any]

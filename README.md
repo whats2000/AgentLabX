@@ -148,8 +148,20 @@ Full details: [SRS Part 4 — Build Roadmap](docs/superpowers/specs/2026-04-15-a
 
 **Five-minute walkthrough:** [`docs/quickstart.md`](docs/quickstart.md)
 
+### System dependencies
+
+The backend launches MCP servers as subprocesses, so the host environment must provide three external runtimes in addition to Python 3.12+:
+
+| Tool | Used by | Install |
+|------|---------|---------|
+| `uvx` | filesystem MCP bundle (and any Python-packaged MCP server) | ships with [`uv`](https://docs.astral.sh/uv/) |
+| `npx` | arxiv-search / fetch and other Node-packaged MCP servers | Node.js ≥ 18 (`node --version`) |
+| Docker Engine | code-execution sandbox | [docker.com/get-started](https://www.docker.com/get-started/) — daemon must be running |
+
+The unit-test suite needs only Python; the integration / smoke suites assume all three are present and **do not skip on absence** — install them on every dev machine and CI runner.
+
 ```bash
-# 1. Install dependencies (requires Python 3.12+, Node 20+, uv, npm)
+# 1. Install dependencies (requires Python 3.12+, Node 20+, uv, npm, Docker)
 uv sync --extra dev
 (cd web && npm install)
 
