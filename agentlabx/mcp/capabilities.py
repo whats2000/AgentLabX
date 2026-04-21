@@ -34,6 +34,17 @@ warning in the host (handled in Task 4) — at the protocol layer, the seed
 is purely a reference.
 """
 
+KNOWN_UNCOVERED_CAPABILITIES: frozenset[str] = frozenset({"web_browse"})
+"""Capabilities in :data:`SEED_CAPABILITIES` that are intentionally NOT served
+by any A3 bundle.
+
+A3's browser bundle ships only ``web_fetch`` (HTTP GET); full headless-browser
+interaction (``web_browse``) is deferred to a future Playwright/Puppeteer-based
+bundle per the plan's "Out of scope" section. The bundled-server smoke test
+asserts that every other seeded capability is provided by at least one
+*started* bundle, so a silent regression in coverage fails CI loudly.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class CapabilitySet:
@@ -120,6 +131,7 @@ class CapabilityResolver:
 
 
 __all__ = [
+    "KNOWN_UNCOVERED_CAPABILITIES",
     "SEED_CAPABILITIES",
     "CapabilityResolver",
     "CapabilitySet",

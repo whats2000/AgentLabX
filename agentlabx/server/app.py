@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib import metadata as importlib_metadata
@@ -40,6 +41,8 @@ from agentlabx.server.routers import settings as settings_router
 # A3 Task 7 only ships the memory bundle; the discovery code path is exercised
 # at startup so the swap is purely a configuration change.
 _BUNDLE_ENTRY_POINT_GROUP = "agentlabx.mcp_bundles"
+
+logger = logging.getLogger(__name__)
 
 
 async def create_app(settings: AppSettings) -> FastAPI:
@@ -90,13 +93,18 @@ async def create_app(settings: AppSettings) -> FastAPI:
     )
     dispatcher = ToolDispatcher(host, bus, AlwaysAllow())
 
-    await _seed_admin_bundles(
+    disabled_reasons = await _seed_admin_bundles(
         registry=registry,
         slot_resolver=slot_resolver,
         bundles=bundles,
         event_bus=bus,
     )
     await _start_enabled_servers(registry=registry, host=host, event_bus=bus)
+    await _log_bootstrap_audit(
+        registry=registry,
+        host=host,
+        disabled_reasons=disabled_reasons,
+    )
 
     # Modern FastAPI shutdown contract: a lifespan context manager that yields
     # immediately (startup already ran in this factory) and runs MCP teardown
@@ -285,14 +293,21 @@ async def _seed_admin_bundles(
     slot_resolver: SlotResolver,
     bundles: list[_Bundle],
     event_bus: EventBus,
-) -> None:
+) -> dict[str, str]:
     """Idempotently UPSERT an admin-scope row for every discovered bundle.
 
     For required-slot bundles, ``enabled`` flips to 0 if any slot resolves to
     ``None``; otherwise to 1. Re-running this on every startup reconciles any
     drift introduced since the last boot (e.g. a slot was filled in via the
     settings UI).
+
+    Returns a ``{bundle_name: reason}`` mapping for each bundle the seed loop
+    decided to disable, so the bootstrap-audit log line can render a
+    human-readable summary (e.g. ``"semantic_scholar: missing key"``). Bundles
+    that are enabled, or bundles whose ``spec()`` returned ``None``, are
+    omitted from the mapping.
     """
+    disabled: dict[str, str] = {}
     for name, module in bundles:
         spec = _bundle_spec(module, bundle_name=name)
         if spec is None:
@@ -301,12 +316,16 @@ async def _seed_admin_bundles(
             continue
         # Resolve required slots. Missing slot => disabled until filled.
         all_resolved = True
+        missing_slot: str | None = None
         for slot in spec.env_slot_refs:
             value = await slot_resolver.resolve(owner_id=None, slot=slot)
             if value is None:
                 all_resolved = False
+                missing_slot = slot
                 break
         desired_enabled = all_resolved
+        if not desired_enabled and missing_slot is not None:
+            disabled[spec.name] = f"missing slot {missing_slot!r}"
 
         existing = await registry.find_admin_by_name(spec.name)
         if existing is None:
@@ -334,6 +353,7 @@ async def _seed_admin_bundles(
             current_enabled = await registry.get_enabled(existing.id)
             if current_enabled is not None and current_enabled is not desired_enabled:
                 await registry.set_enabled(existing.id, desired_enabled)
+    return disabled
 
 
 async def _start_enabled_servers(
@@ -374,3 +394,54 @@ async def _start_enabled_servers(
                     },
                 )
             )
+
+
+async def _log_bootstrap_audit(
+    *,
+    registry: ServerRegistry,
+    host: MCPHost,
+    disabled_reasons: dict[str, str],
+) -> None:
+    """Emit the operator-facing one-line MCP bundle health summary.
+
+    Pulls the registered count from a single admin-scope listing
+    (``list_visible_to`` with no user — admin-scope rows have ``owner_id IS
+    NULL`` and are visible to every caller), the started count from
+    :meth:`MCPHost.running_server_ids`, and the disabled-reason mapping from
+    :func:`_seed_admin_bundles`'s return value. Renders e.g.::
+
+        MCP bundles: 6 registered, 5 started, 1 disabled (semantic_scholar:
+        missing slot 'semantic_scholar_api_key')
+
+    Per the plan: launcher absence (Docker / uvx / npx) is a misconfiguration
+    that surfaces as ``mcp.server.startup_failed`` per bundle, *not* as a
+    silent ``disabled`` count, so the audit line uses the seeded
+    ``disabled_reasons`` mapping verbatim and does not synthesise launcher-
+    related entries.
+    """
+
+    # Use a sentinel user id that no real user owns; admin-scope rows are
+    # returned regardless because their ``owner_id IS NULL`` clause matches
+    # every caller. The user-scope rows that come back are negligible at boot
+    # time (none exist before the first end-user logs in) but we still scope
+    # the count to admin-scope to keep the message accurate post-launch.
+    rows = await registry.list_visible_to(user_id="__bootstrap_audit__")
+    admin_rows = [r for r in rows if r.spec.scope == "admin"]
+    total_registered = len(admin_rows)
+    total_started = len(host.running_server_ids())
+    total_disabled = max(total_registered - total_started, 0)
+
+    if disabled_reasons:
+        summary = ", ".join(
+            f"{name}: {reason}" for name, reason in sorted(disabled_reasons.items())
+        )
+    else:
+        summary = "none"
+
+    logger.info(
+        "MCP bundles: %d registered, %d started, %d disabled (%s)",
+        total_registered,
+        total_started,
+        total_disabled,
+        summary,
+    )

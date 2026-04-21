@@ -356,6 +356,16 @@ class MCPHost:
     # Reads
     # ------------------------------------------------------------------
 
+    def running_server_ids(self) -> tuple[str, ...]:
+        """Return the ids of every currently-running server.
+
+        Used by the bootstrap-audit log line in :mod:`agentlabx.server.app` to
+        count successful starts without reaching into the private handle dict.
+        Order is the natural insertion order of the underlying dict.
+        """
+
+        return tuple(self._handles.keys())
+
     def tools_for(self, server_id: str) -> tuple[ToolDescriptor, ...]:
         """Return the snapshotted tool list for a running server."""
 
