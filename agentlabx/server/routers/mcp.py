@@ -17,7 +17,7 @@ for the singleton :class:`ServerRegistry`, :class:`MCPHost`, and
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -46,7 +46,7 @@ from agentlabx.mcp.protocol import (
     ToolNotFound,
 )
 from agentlabx.mcp.registry import ServerRegistry
-from agentlabx.server.dependencies import current_identity
+from agentlabx.server.dependencies import current_identity, is_admin
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -71,10 +71,6 @@ def _dispatcher(request: Request) -> ToolDispatcher:
     return disp
 
 
-def _is_admin(identity: Identity) -> bool:
-    return "admin" in identity.capabilities
-
-
 def _can_view(server: RegisteredServer, identity: Identity) -> bool:
     if server.spec.scope == "admin":
         return True
@@ -82,7 +78,7 @@ def _can_view(server: RegisteredServer, identity: Identity) -> bool:
 
 
 def _can_mutate(server: RegisteredServer, identity: Identity) -> bool:
-    if _is_admin(identity):
+    if is_admin(identity):
         return True
     if server.spec.scope == "admin":
         return False
@@ -131,25 +127,12 @@ def _server_to_response(
 async def _row_enabled(registry: ServerRegistry, server_id: str) -> bool:
     """Re-read the persisted ``enabled`` flag for a server.
 
-    The :class:`RegisteredServer` value object does not currently carry
-    ``enabled`` (it is a runtime-projected view of the spec), so we re-query
-    the registry for it. Cheap: a single primary-key lookup.
+    Thin wrapper over :meth:`ServerRegistry.get_enabled` that flattens the
+    ``None`` (no such row) case to ``False`` for the response-shaping callers
+    in this module.
     """
-    fresh = await registry.get(server_id)
-    if fresh is None:
-        return False
-    # Bridge: re-read the raw row's enabled flag via a session. The registry
-    # exposes ``set_enabled`` but not ``get_enabled``; rather than widen the
-    # registry contract we inline a read against the same sessionmaker.
-    from sqlalchemy import select
-
-    from agentlabx.db.schema import MCPServer
-
-    async with registry._sessionmaker() as session:  # noqa: SLF001 — internal bridge
-        row = (
-            await session.execute(select(MCPServer.enabled).where(MCPServer.id == server_id))
-        ).scalar_one_or_none()
-    return bool(row)
+    enabled = await registry.get_enabled(server_id)
+    return bool(enabled)
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +170,10 @@ async def register_server(
     request: Request,
     identity: Identity = Depends(current_identity),
 ) -> MCPServerResponse:
-    if payload.scope == "admin" and not _is_admin(identity):
+    # Mirror the gate enforced by ``dependencies.require_admin`` — we cannot
+    # use that dependency directly here because admin is only required for the
+    # admin-scope branch, not for user-scope registration.
+    if payload.scope == "admin" and not is_admin(identity):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="admin capability required to register an admin-scope server",
@@ -300,8 +286,12 @@ async def patch_server(
 
     await registry.set_enabled(server.id, payload.enabled)
     tools = _live_tools(host, server)
-    started_at = datetime.now(tz=timezone.utc) if payload.enabled and tools else None
-    return _server_to_response(server, tools=tools, enabled=payload.enabled, started_at=started_at)
+    # ``started_at`` is intentionally omitted on PATCH responses: we do not
+    # currently track per-handle start timestamps inside :class:`MCPHost`, and
+    # synthesising ``datetime.now()`` here would mislead clients into thinking
+    # the server (re-)started at PATCH-handler time. The field is informational
+    # only at this stage; ``None`` is the honest answer.
+    return _server_to_response(server, tools=tools, enabled=payload.enabled, started_at=None)
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +319,7 @@ async def delete_server(
         await host.stop(server.id)
 
     deleted = await registry.delete(
-        server.id, requester_id=identity.id, requester_is_admin=_is_admin(identity)
+        server.id, requester_id=identity.id, requester_is_admin=is_admin(identity)
     )
     if not deleted:
         # Shouldn't happen — we already verified _can_mutate above. Treat as 404.

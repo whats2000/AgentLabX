@@ -291,6 +291,79 @@ async def test_set_enabled_no_op_for_missing_row(db: DatabaseHandle) -> None:
     await registry.set_enabled("does-not-exist", False)
 
 
+@pytest.mark.asyncio
+async def test_get_enabled_round_trip_with_set_enabled(
+    db: DatabaseHandle, two_users: tuple[str, str]
+) -> None:
+    user_a, _ = two_users
+    registry = _make_registry(db)
+
+    registered = await registry.register(_user_spec("echo"), owner_id=user_a)
+
+    # Default after register is enabled=True.
+    assert await registry.get_enabled(registered.id) is True
+
+    await registry.set_enabled(registered.id, False)
+    assert await registry.get_enabled(registered.id) is False
+
+    await registry.set_enabled(registered.id, True)
+    assert await registry.get_enabled(registered.id) is True
+
+
+@pytest.mark.asyncio
+async def test_get_enabled_returns_none_for_missing_row(db: DatabaseHandle) -> None:
+    registry = _make_registry(db)
+    assert await registry.get_enabled("does-not-exist") is None
+
+
+@pytest.mark.asyncio
+async def test_find_admin_by_name_returns_existing_row(db: DatabaseHandle) -> None:
+    registry = _make_registry(db)
+
+    registered = await registry.register(_admin_spec("memory"), owner_id=None)
+
+    fetched = await registry.find_admin_by_name("memory")
+    assert fetched is not None
+    assert fetched.id == registered.id
+    assert fetched.spec.scope == "admin"
+    assert fetched.owner_id is None
+
+
+@pytest.mark.asyncio
+async def test_find_admin_by_name_returns_none_when_absent(db: DatabaseHandle) -> None:
+    registry = _make_registry(db)
+    assert await registry.find_admin_by_name("nope") is None
+
+
+@pytest.mark.asyncio
+async def test_find_admin_by_name_ignores_user_scope_rows(
+    db: DatabaseHandle, two_users: tuple[str, str]
+) -> None:
+    user_a, _ = two_users
+    registry = _make_registry(db)
+
+    # User-scope row with the same name must NOT be returned by the admin
+    # lookup (the seed loop uses this to detect admin-scope duplicates only).
+    await registry.register(_user_spec("memory"), owner_id=user_a)
+    assert await registry.find_admin_by_name("memory") is None
+
+
+@pytest.mark.asyncio
+async def test_list_enabled_ids_returns_only_enabled(
+    db: DatabaseHandle, two_users: tuple[str, str]
+) -> None:
+    user_a, _ = two_users
+    registry = _make_registry(db)
+
+    enabled_row = await registry.register(_user_spec("alpha"), owner_id=user_a)
+    disabled_row = await registry.register(_user_spec("beta"), owner_id=user_a)
+    await registry.set_enabled(disabled_row.id, False)
+
+    ids = await registry.list_enabled_ids()
+    assert enabled_row.id in ids
+    assert disabled_row.id not in ids
+
+
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------

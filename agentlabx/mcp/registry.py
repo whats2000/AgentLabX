@@ -131,6 +131,55 @@ class ServerRegistry:
             row.enabled = 1 if enabled else 0
             await session.commit()
 
+    async def get_enabled(self, server_id: str) -> bool | None:
+        """Read the ``enabled`` flag for a server.
+
+        Returns ``True`` / ``False`` for an existing row, or ``None`` when no
+        such server exists. This is the read-side complement of
+        :meth:`set_enabled` and exists so callers do not have to reach into
+        :attr:`_sessionmaker` to perform a one-column lookup.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(
+                select(MCPServer.enabled).where(MCPServer.id == server_id)
+            )
+            row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return bool(row)
+
+    async def find_admin_by_name(self, name: str) -> RegisteredServer | None:
+        """Look up an admin-scope (``owner_id IS NULL``) row by ``name``.
+
+        Used by the bundle-seeding loop on startup to detect whether the
+        idempotent UPSERT should insert a fresh row or reconcile an existing
+        one. Returns ``None`` when no matching admin row exists.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(
+                select(MCPServer).where(
+                    MCPServer.scope == "admin",
+                    MCPServer.owner_id.is_(None),
+                    MCPServer.name == name,
+                )
+            )
+            row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return _row_to_registered(row)
+
+    async def list_enabled_ids(self) -> list[str]:
+        """Return the ``id`` of every server row whose ``enabled`` flag is set.
+
+        Used during boot to start every server that was enabled at the last
+        shutdown. Order is the database's natural insertion order; callers
+        that need a stable ordering must sort the result themselves.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(select(MCPServer.id).where(MCPServer.enabled == 1))
+            rows = result.scalars().all()
+        return list(rows)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers

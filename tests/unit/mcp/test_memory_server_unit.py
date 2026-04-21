@@ -310,6 +310,29 @@ def test_declared_capabilities_match_taxonomy() -> None:
     assert memory_server.DECLARED_CAPABILITIES == ("memory_read", "memory_write")
 
 
+def test_bundle_spec_identity_keys_are_pinned_for_task9_handover() -> None:
+    """Contract pin for the synthesised ``memory_server`` admin-scope spec.
+
+    The seed loop in :mod:`agentlabx.server.app` uses ``(scope, owner_id IS
+    NULL, name)`` as the identity key for idempotent UPSERT. When Task 9
+    introduces a real ``memory_server.spec()`` callable, it MUST preserve the
+    same identity-key fields so the existing seeded row is reconciled rather
+    than duplicated. This test fails loudly the moment any of those fields
+    drifts.
+    """
+
+    from agentlabx.server.app import _bundle_spec
+
+    spec = _bundle_spec(memory_server)
+    assert spec is not None
+    assert spec.name == "memory"
+    assert spec.scope == "admin"
+    assert spec.transport == "inprocess"
+    assert spec.inprocess_key == "memory_server"
+    assert spec.env_slot_refs == ()
+    assert spec.declared_capabilities == memory_server.DECLARED_CAPABILITIES
+
+
 @pytest.mark.asyncio
 async def test_build_server_factory_returns_independent_servers(
     tmp_path: Path,

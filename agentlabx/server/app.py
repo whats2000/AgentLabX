@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from importlib import metadata as importlib_metadata
 
 from fastapi import FastAPI, Request, Response
@@ -39,7 +42,6 @@ _BUNDLE_ENTRY_POINT_GROUP = "agentlabx.mcp_bundles"
 
 
 async def create_app(settings: AppSettings) -> FastAPI:
-    app = FastAPI(title="AgentLabX", version="0.1.0")
     db = DatabaseHandle(settings.db_path)
     await db.connect()
     await apply_migrations(db)
@@ -52,7 +54,6 @@ async def create_app(settings: AppSettings) -> FastAPI:
         max_age_seconds=settings.session_max_age_seconds,
         remember_me_max_age_seconds=settings.remember_me_max_age_seconds,
     )
-    install_session_middleware(app, cfg=cfg, db=db)
 
     # Event bus + JSONL sink
     bus = EventBus()
@@ -60,7 +61,6 @@ async def create_app(settings: AppSettings) -> FastAPI:
     sink.install(bus)
 
     limiter = LoginRateLimiter()
-    app.state.login_limiter = limiter
 
     # ------------------------------------------------------------------
     # MCP wiring (Stage A3 Task 7)
@@ -70,7 +70,7 @@ async def create_app(settings: AppSettings) -> FastAPI:
     )
     slot_resolver = SlotResolver(crypto, session_factory)
 
-    bundles = _discover_bundles()
+    bundles = _discover_bundles(event_bus=bus)
     inprocess_factories: dict[str, ServerFactory] = {}
     for bundle_name, module in bundles:
         # Each bundle exposes its in-process factory as ``build_server_factory``
@@ -93,8 +93,28 @@ async def create_app(settings: AppSettings) -> FastAPI:
         registry=registry,
         slot_resolver=slot_resolver,
         bundles=bundles,
+        event_bus=bus,
     )
     await _start_enabled_servers(registry=registry, host=host, event_bus=bus)
+
+    # Modern FastAPI shutdown contract: a lifespan context manager that yields
+    # immediately (startup already ran in this factory) and runs MCP teardown
+    # on app exit. Replaces the deprecated ``@app.on_event("shutdown")``
+    # registration so we don't emit a DeprecationWarning on every boot. Folding
+    # the full startup body into the lifespan would require restructuring the
+    # ``async create_app`` factory contract that callers/tests already rely
+    # on, so we scope this conversion to just the shutdown half per the polish
+    # plan.
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await host.stop_all()
+
+    app = FastAPI(title="AgentLabX", version="0.1.0", lifespan=_lifespan)
+    install_session_middleware(app, cfg=cfg, db=db)
+    app.state.login_limiter = limiter
 
     @app.middleware("http")
     async def inject_crypto_and_events(
@@ -119,10 +139,6 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.state.mcp_registry = registry
     app.state.mcp_host = host
     app.state.mcp_dispatcher = dispatcher
-
-    @app.on_event("shutdown")
-    async def _shutdown_mcp() -> None:
-        await host.stop_all()
 
     return app
 
@@ -169,25 +185,44 @@ need to expose a small structural surface — ``spec()`` and (optionally)
 ``build_server_factory(...)`` — that does not warrant a Protocol class."""
 
 
-def _discover_bundles() -> list[_Bundle]:
+def _discover_bundles(*, event_bus: EventBus | None = None) -> list[_Bundle]:
     """Discover MCP bundles via the ``agentlabx.mcp_bundles`` entry-point group.
 
     Falls back to a hardcoded ``[("memory_server", memory_bundle)]`` if the
     entry point is not registered (Task 9 will register it in
     ``pyproject.toml``). Either path produces the same in-memory list.
+
+    Bundle import failures emit ``mcp.bundle.discovery_failed`` (when an
+    ``event_bus`` is supplied) before being skipped, so a broken third-party
+    bundle is observable instead of silently disappearing from the registry.
     """
-    try:
-        eps = importlib_metadata.entry_points(group=_BUNDLE_ENTRY_POINT_GROUP)
-    except TypeError:
-        # Older importlib.metadata signature — shouldn't trigger on 3.12 but
-        # belt-and-braces for environments running an older shim.
-        eps = ()  # type: ignore[assignment]
+    eps = importlib_metadata.entry_points(group=_BUNDLE_ENTRY_POINT_GROUP)
     discovered: list[_Bundle] = []
     seen: set[str] = set()
     for ep in eps:
         try:
             module = ep.load()
-        except Exception:  # noqa: BLE001 — skip broken bundles, don't crash boot
+        except Exception as exc:  # noqa: BLE001 — observe and skip broken bundles
+            if event_bus is not None:
+                # Fire-and-forget: emit is async but discovery is sync. We
+                # schedule the emit on the running loop so a malformed bundle
+                # surfaces in the audit log without rewiring discovery to
+                # async. Falls back silently if no loop is running (e.g. when
+                # _discover_bundles is called from a unit test outside an
+                # event loop).
+                with contextlib.suppress(RuntimeError):
+                    asyncio.get_running_loop().create_task(
+                        event_bus.emit(
+                            Event(
+                                kind="mcp.bundle.discovery_failed",
+                                payload={
+                                    "entry_point": ep.name,
+                                    "error_type": type(exc).__name__,
+                                    "reason": str(exc),
+                                },
+                            )
+                        )
+                    )
             continue
         if ep.name in seen:
             continue
@@ -204,6 +239,23 @@ def _bundle_spec(module: object) -> MCPServerSpec | None:
     The memory bundle in A3 does not yet expose a ``spec()`` callable (Task 9
     introduces that contract for the launch-spec bundles). We synthesise one
     here so the seed loop has uniform input.
+
+    Task 9 contract pin — when ``memory_server.spec()`` lands it MUST
+    reproduce the following identity-key fields verbatim so the idempotent
+    UPSERT in :func:`_seed_admin_bundles` reconciles with the existing row
+    (keyed on ``(scope, owner_id IS NULL, name)``) instead of inserting a
+    duplicate seed row:
+
+    * ``name="memory"``
+    * ``scope="admin"``
+    * ``transport="inprocess"``
+    * ``inprocess_key="memory_server"``
+    * ``env_slot_refs=()``
+    * ``declared_capabilities=memory_server.DECLARED_CAPABILITIES``
+
+    The contract test in ``tests/unit/mcp/test_memory_server_unit.py`` asserts
+    the synthesised spec matches these exact values; if Task 9 changes the
+    real ``spec()`` it must update that test in lockstep.
     """
     spec_callable = getattr(module, "spec", None)
     if callable(spec_callable):
@@ -230,6 +282,7 @@ async def _seed_admin_bundles(
     registry: ServerRegistry,
     slot_resolver: SlotResolver,
     bundles: list[_Bundle],
+    event_bus: EventBus,
 ) -> None:
     """Idempotently UPSERT an admin-scope row for every discovered bundle.
 
@@ -238,10 +291,6 @@ async def _seed_admin_bundles(
     drift introduced since the last boot (e.g. a slot was filled in via the
     settings UI).
     """
-    from sqlalchemy import select
-
-    from agentlabx.db.schema import MCPServer
-
     for _name, module in bundles:
         spec = _bundle_spec(module)
         if spec is None:
@@ -255,41 +304,34 @@ async def _seed_admin_bundles(
             if value is None:
                 all_resolved = False
                 break
-        enabled_int = 1 if all_resolved else 0
+        desired_enabled = all_resolved
 
-        async with registry._sessionmaker() as session:  # noqa: SLF001 — internal seed
-            existing = (
-                await session.execute(
-                    select(MCPServer).where(
-                        MCPServer.scope == spec.scope,
-                        MCPServer.owner_id.is_(None),
-                        MCPServer.name == spec.name,
+        existing = await registry.find_admin_by_name(spec.name)
+        if existing is None:
+            try:
+                registered = await registry.register(spec, owner_id=None)
+            except Exception as exc:  # noqa: BLE001 — seed failures must not block boot
+                await event_bus.emit(
+                    Event(
+                        kind="mcp.bundle.seed_failed",
+                        payload={
+                            "bundle": spec.name,
+                            "error_type": type(exc).__name__,
+                            "reason": str(exc),
+                        },
                     )
                 )
-            ).scalar_one_or_none()
-            if existing is None:
-                try:
-                    await registry.register(spec, owner_id=None)
-                except Exception:  # noqa: BLE001 — seed failures must not block boot
-                    continue
-                # set enabled if needed (registry defaults to 1)
-                if enabled_int == 0:
-                    fresh = (
-                        await session.execute(
-                            select(MCPServer).where(
-                                MCPServer.scope == spec.scope,
-                                MCPServer.owner_id.is_(None),
-                                MCPServer.name == spec.name,
-                            )
-                        )
-                    ).scalar_one_or_none()
-                    if fresh is not None:
-                        await registry.set_enabled(fresh.id, False)
-            else:
-                # Reconcile enabled flag only — name/transport are part of the
-                # identity key and changing them would orphan the row.
-                if existing.enabled != enabled_int:
-                    await registry.set_enabled(existing.id, bool(enabled_int))
+                continue
+            # registry defaults new rows to enabled=1; flip down only when
+            # required slots are missing.
+            if not desired_enabled:
+                await registry.set_enabled(registered.id, False)
+        else:
+            # Reconcile enabled flag only — name/transport are part of the
+            # identity key and changing them would orphan the row.
+            current_enabled = await registry.get_enabled(existing.id)
+            if current_enabled is not None and current_enabled is not desired_enabled:
+                await registry.set_enabled(existing.id, desired_enabled)
 
 
 async def _start_enabled_servers(
@@ -300,15 +342,7 @@ async def _start_enabled_servers(
     Failures are isolated per server: ``mcp.server.startup_failed`` is emitted
     and the loop continues so a single broken bundle cannot block boot.
     """
-    from sqlalchemy import select
-
-    from agentlabx.db.schema import MCPServer
-
-    async with registry._sessionmaker() as session:  # noqa: SLF001 — internal startup
-        rows = (
-            (await session.execute(select(MCPServer).where(MCPServer.enabled == 1))).scalars().all()
-        )
-        ids = [r.id for r in rows]
+    ids = await registry.list_enabled_ids()
 
     for server_id in ids:
         registered = await registry.get(server_id)
