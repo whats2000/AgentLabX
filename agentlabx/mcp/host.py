@@ -18,6 +18,7 @@ order, then emits ``mcp.server.stopped``.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from collections.abc import Mapping
@@ -28,6 +29,7 @@ from mcp import ClientSession
 from mcp.shared.exceptions import McpError
 from mcp.types import (
     CallToolResult,
+    ContentBlock,
     EmbeddedResource,
 )
 from mcp.types import (
@@ -125,6 +127,14 @@ class MCPHost:
         # makes new bundles available to all subsequent in-process launches.
         self._inprocess_factories: Mapping[str, ServerFactory] = inprocess_factories
         self._handles: dict[str, _Handle] = {}
+        # Per-server-id locks serialise concurrent ``start`` attempts on the
+        # same id, preventing the race where two callers both pass the
+        # ``server.id in self._handles`` guard, both spawn subprocesses, and
+        # the second to finish silently overwrites the first — orphaning it.
+        # Lock entries are intentionally retained after start completes;
+        # they're tiny and reusing the same lock on a future start (after a
+        # ``stop``) is harmless.
+        self._start_locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -138,6 +148,13 @@ class MCPHost:
         subprocess or open transport behind.
         """
 
+        lock = self._start_locks.setdefault(server.id, asyncio.Lock())
+        async with lock:
+            return await self._start_locked(server=server, owner_id=owner_id)
+
+    async def _start_locked(
+        self, *, server: RegisteredServer, owner_id: str | None
+    ) -> RegisteredServer:
         if server.id in self._handles:
             raise ServerStartupFailed(
                 spec=server.spec,
@@ -218,11 +235,31 @@ class MCPHost:
         )
 
     async def stop_all(self) -> None:
-        """Graceful shutdown helper — stops every live handle."""
+        """Graceful shutdown helper — stops every live handle.
 
-        for server_id in list(self._handles):
-            with contextlib.suppress(ServerNotRunning):
-                await self.stop(server_id)
+        Failures are tolerated: each ``stop`` is awaited concurrently and a
+        single broken handle (e.g. an ``aclose`` that raises) cannot abort
+        teardown of the remaining handles. Per-handle failures are surfaced
+        as ``mcp.server.stop_failed`` events so operators retain visibility.
+        """
+
+        server_ids = list(self._handles.keys())
+        results = await asyncio.gather(
+            *(self.stop(sid) for sid in server_ids),
+            return_exceptions=True,
+        )
+        for sid, outcome in zip(server_ids, results, strict=True):
+            if isinstance(outcome, BaseException) and not isinstance(outcome, ServerNotRunning):
+                await self._event_bus.emit(
+                    Event(
+                        kind="mcp.server.stop_failed",
+                        payload={
+                            "server_id": sid,
+                            "error_type": type(outcome).__name__,
+                            "reason": str(outcome),
+                        },
+                    )
+                )
 
     # ------------------------------------------------------------------
     # Reads
@@ -268,9 +305,9 @@ class MCPHost:
             raise ToolNotFound(server_id, tool)
 
         # SDK's call_tool signature accepts ``dict[str, Any]``; our
-        # JSONValue mapping is a strict subset of that, so the cast is sound.
+        # JSONValue mapping is a strict subset of that, so the call is sound.
         try:
-            sdk_result = await handle.session.call_tool(tool, _json_args_to_sdk(args))
+            sdk_result = await handle.session.call_tool(tool, args)
         except McpError as exc:
             raise ToolExecutionFailed(server_id, tool, exc) from exc
         except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
@@ -435,9 +472,13 @@ def _adapt_call_result(result: CallToolResult) -> ToolCallResult:
     )
 
 
-def _adapt_content_item(
-    entry: MCPTextContent | MCPImageContent | EmbeddedResource | object,
-) -> ToolContentItem:
+def _adapt_content_item(entry: ContentBlock) -> ToolContentItem:
+    # The SDK's ``ContentBlock`` union is wider (AudioContent, ResourceLink)
+    # than the three variants AgentLabX surfaces today. We accept the SDK
+    # union here and rely on the explicit ``isinstance`` chain to raise on
+    # any other variant the SDK may hand us at runtime — which keeps the
+    # signature precise (no ``object`` placeholder) while still narrowing
+    # safely against future SDK additions.
     if isinstance(entry, MCPTextContent):
         return TextContent(text=entry.text)
     if isinstance(entry, MCPImageContent):
@@ -487,12 +528,6 @@ def _coerce_json_value(value: object) -> JSONValue:
     # Fallback: stringify unknown payloads (e.g. pydantic URLs) so we never
     # leak a non-JSONValue through the typed boundary.
     return str(value)
-
-
-def _json_args_to_sdk(args: dict[str, JSONValue]) -> dict[str, JSONValue]:
-    """Identity-typed pass-through; isolates the call site for future shaping."""
-
-    return args
 
 
 __all__ = [
