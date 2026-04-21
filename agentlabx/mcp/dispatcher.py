@@ -173,7 +173,11 @@ class ToolDispatcher:
                         "server_id": server_id,
                         "tool": tool,
                         "args": redacted_args,
-                        "error_type": type(exc.underlying).__name__,
+                        "error_type": (
+                            type(exc.underlying).__name__
+                            if exc.underlying is not None
+                            else "UnknownError"
+                        ),
                     },
                 )
             )
