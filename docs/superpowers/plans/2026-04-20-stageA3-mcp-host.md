@@ -154,7 +154,7 @@ uv run pytest tests/unit/mcp/test_redaction.py -q
 - Create: `tests/integration/mcp/__init__.py`
 - Add: a migration round-trip test in `tests/integration/test_db_migrations.py` (extend the existing test file).
 
-- [ ] **Step 1 — schema.** The v4→v5 migration adds **two** tables (`mcp_servers` for Task 4, `memory_entries` for Task 8 — bundled into one migration so A3 boots leave the DB at a single consistent version). Also add `admin_configs(slot TEXT PRIMARY KEY, value_encrypted TEXT NOT NULL, created_at TEXT NOT NULL)` required by `SlotResolver` for admin-scope slot storage (prereq).
+- [ ] **Step 1 — schema.** The v4→v5 migration adds **two** tables (`mcp_servers` for Task 4, `memory_entries` for Task 8 — bundled into one migration so A3 boots leave the DB at a single consistent version). Also add `admin_configs(slot TEXT PRIMARY KEY, ciphertext BLOB NOT NULL, created_at TEXT NOT NULL)` required by `SlotResolver` for admin-scope slot storage (prereq). The column is `BLOB` (matching the `SlotResolver` implemented in cross-cutting prereqs, which decrypts raw bytes via `FernetStore.decrypt`) — not `TEXT`.
 
   ```
   mcp_servers(
