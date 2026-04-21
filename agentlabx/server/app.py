@@ -5,6 +5,7 @@ import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib import metadata as importlib_metadata
+from types import ModuleType
 
 from fastapi import FastAPI, Request, Response
 from sqlalchemy import text
@@ -179,7 +180,7 @@ async def _assert_schema_version_pinned(db: DatabaseHandle) -> None:
 # ---------------------------------------------------------------------------
 
 
-_Bundle = tuple[str, object]
+_Bundle = tuple[str, ModuleType]
 """``(bundle_name, module)`` pair. Module loosely typed because bundles only
 need to expose a small structural surface — ``spec()`` and (optionally)
 ``build_server_factory(...)`` — that does not warrant a Protocol class."""
@@ -228,42 +229,43 @@ def _discover_bundles(*, event_bus: EventBus | None = None) -> list[_Bundle]:
             continue
         seen.add(ep.name)
         discovered.append((ep.name, module))
-    if "memory_server" not in seen:
+    # Hardcoded safety-net for the memory bundle: ensures the in-process server
+    # is always wired even if the ``agentlabx.mcp_bundles`` entry-points are
+    # absent (e.g. running from a checkout without a fresh ``uv sync``). The EP
+    # name is ``memory``; the fallback bundle name remains ``memory_server`` so
+    # the in-process factory dict key stays stable. Skip the fallback when
+    # either name has already been seen via entry-points.
+    if "memory_server" not in seen and "memory" not in seen:
         discovered.append(("memory_server", memory_bundle))
     return discovered
 
 
-def _bundle_spec(module: object) -> MCPServerSpec | None:
-    """Return the bundle's launch spec by calling its ``spec()`` factory.
+def _bundle_spec(module: ModuleType, bundle_name: str | None = None) -> MCPServerSpec | None:
+    """Return the bundle's launch spec.
 
-    The memory bundle in A3 does not yet expose a ``spec()`` callable (Task 9
-    introduces that contract for the launch-spec bundles). We synthesise one
-    here so the seed loop has uniform input.
+    Prefers the bundle's own ``spec()`` callable (the Task 9 contract). Falls
+    back to a synthesised spec for the memory bundle as a defence-in-depth
+    safety net for any future bundle that ships without ``spec()``; the
+    fallback only fires when ``module is memory_bundle``.
 
-    Task 9 contract pin — when ``memory_server.spec()`` lands it MUST
-    reproduce the following identity-key fields verbatim so the idempotent
-    UPSERT in :func:`_seed_admin_bundles` reconciles with the existing row
-    (keyed on ``(scope, owner_id IS NULL, name)``) instead of inserting a
-    duplicate seed row:
-
-    * ``name="memory"``
-    * ``scope="admin"``
-    * ``transport="inprocess"``
-    * ``inprocess_key="memory_server"``
-    * ``env_slot_refs=()``
-    * ``declared_capabilities=memory_server.DECLARED_CAPABILITIES``
-
-    The contract test in ``tests/unit/mcp/test_memory_server_unit.py`` asserts
-    the synthesised spec matches these exact values; if Task 9 changes the
-    real ``spec()`` it must update that test in lockstep.
+    Errors raised from a bundle's ``spec()`` are swallowed and surfaced as
+    ``None`` so a single broken bundle cannot abort the seed loop. Discovery-
+    layer error reporting (``mcp.bundle.discovery_failed``) covers the
+    observability gap; the seed loop additionally emits
+    ``mcp.bundle.seed_failed`` if registration itself fails downstream.
     """
+    del bundle_name  # currently unused; reserved for future per-bundle policy
     spec_callable = getattr(module, "spec", None)
     if callable(spec_callable):
-        candidate = spec_callable()
+        try:
+            candidate = spec_callable()
+        except Exception:  # noqa: BLE001 — broken bundle must not abort seeding
+            return None
         if isinstance(candidate, MCPServerSpec):
             return candidate
         return None
     if module is memory_bundle:
+        # Safety-net synthesis kept in lockstep with ``memory_bundle.spec()``.
         return MCPServerSpec(
             name="memory",
             scope="admin",
@@ -291,8 +293,8 @@ async def _seed_admin_bundles(
     drift introduced since the last boot (e.g. a slot was filled in via the
     settings UI).
     """
-    for _name, module in bundles:
-        spec = _bundle_spec(module)
+    for name, module in bundles:
+        spec = _bundle_spec(module, bundle_name=name)
         if spec is None:
             continue
         if spec.scope != "admin":

@@ -82,6 +82,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agentlabx.db.schema import MemoryEntry
+from agentlabx.mcp.protocol import MCPServerSpec
 
 DECLARED_CAPABILITIES: tuple[str, ...] = ("memory_read", "memory_write")
 """Server-level declared capabilities, advertised to the host registry."""
@@ -304,6 +305,26 @@ async def _handle_delete(
     return {"deleted": deleted}
 
 
+def spec() -> MCPServerSpec:
+    """Construct the in-process memory bundle's launch spec.
+
+    The identity-key fields here MUST match what ``_bundle_spec`` previously
+    synthesised so the seed loop reconciles the existing ``(scope=admin,
+    owner_id=NULL, name="memory")`` row instead of inserting a duplicate.
+    """
+
+    return MCPServerSpec(
+        name="memory",
+        scope="admin",
+        transport="inprocess",
+        command=None,
+        url=None,
+        inprocess_key="memory_server",
+        env_slot_refs=(),
+        declared_capabilities=DECLARED_CAPABILITIES,
+    )
+
+
 def build_server(session_factory: async_sessionmaker[AsyncSession]) -> Server[object, object]:
     """Construct a configured ``Server`` bound to ``session_factory``.
 
@@ -356,4 +377,5 @@ __all__ = [
     "TOOL_DESCRIPTORS",
     "build_server",
     "build_server_factory",
+    "spec",
 ]
