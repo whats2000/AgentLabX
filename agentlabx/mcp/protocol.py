@@ -146,9 +146,12 @@ class RegisteredServer:
     """A server that has been registered (and tools snapshotted) with the host.
 
     ``owner_id is None`` only for admin-scope servers; user-scope servers
-    must always carry the owning user's id.
+    must always carry the owning user's id. ``id`` is the persistent server
+    identity assigned by the registry on insert and is the lookup key used by
+    ``ServerRegistry.get`` / ``ServerRegistry.delete``.
     """
 
+    id: str
     spec: MCPServerSpec
     owner_id: str | None
     tools: tuple[ToolDescriptor, ...]

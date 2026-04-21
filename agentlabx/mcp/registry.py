@@ -144,6 +144,7 @@ def _can_delete(row: MCPServer, requester_id: str, requester_is_admin: bool) -> 
     return requester_is_admin or row.owner_id == requester_id
 
 
+# Empty-command stdio spec is rejected upstream by MCPServerSpec.__post_init__.
 def _encode_optional_tuple(value: tuple[str, ...] | None) -> str | None:
     if value is None:
         return None
@@ -201,6 +202,7 @@ def _row_to_registered(row: MCPServer) -> RegisteredServer:
         declared_capabilities=_decode_required_tuple(row.declared_capabilities_json),
     )
     return RegisteredServer(
+        id=row.id,
         spec=spec,
         owner_id=row.owner_id,
         tools=(),
@@ -213,14 +215,15 @@ def _is_unique_violation(exc: IntegrityError) -> bool:
 
     SQLAlchemy does not expose a backend-agnostic typed reason; the safest
     portable check is a substring match on the underlying DBAPI message.
-    SQLite (aiosqlite), PostgreSQL, and MySQL all surface the literal "UNIQUE"
-    or "unique" in their error text for this constraint class. We fall back to
-    treating ambiguous IntegrityErrors as conflicts only when the message
-    clearly mentions uniqueness; everything else re-raises.
+    SQLite (aiosqlite) and PostgreSQL surface the literal "UNIQUE" / "unique"
+    in their error text for this constraint class. MySQL instead reports
+    ``"Duplicate entry ... for key ..."`` — we accept either phrasing. We
+    treat ambiguous IntegrityErrors as conflicts only when the message
+    clearly mentions uniqueness or a duplicate key; everything else re-raises.
     """
     message = str(exc.orig) if exc.orig is not None else str(exc)
     lowered = message.lower()
-    return "unique" in lowered
+    return "unique" in lowered or ("duplicate" in lowered and "key" in lowered)
 
 
 __all__ = ["ServerRegistry"]

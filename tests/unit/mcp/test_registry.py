@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -12,12 +13,17 @@ from agentlabx.mcp.registry import ServerRegistry
 
 
 @pytest.fixture()
-async def db(tmp_path: Path) -> DatabaseHandle:
+async def db(tmp_path: Path) -> AsyncIterator[DatabaseHandle]:
     handle = DatabaseHandle(tmp_path / "test.db")
     await handle.connect()
     async with handle.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    return handle
+    try:
+        yield handle
+    finally:
+        # Dispose the engine on teardown to silence ResourceWarning /
+        # "Event loop is closed" noise that otherwise leaks across tests.
+        await handle.close()
 
 
 @pytest.fixture()
@@ -85,6 +91,7 @@ async def test_register_round_trips_spec_and_returns_empty_tools(
 
     registered = await registry.register(_user_spec("echo"), owner_id=user_a)
 
+    assert registered.id  # registry assigns a non-empty id on insert.
     assert registered.owner_id == user_a
     assert registered.spec.name == "echo"
     assert registered.spec.command == ("python", "-m", "fake.echo")
@@ -192,14 +199,12 @@ async def test_get_returns_registered_server(
     registry = _make_registry(db)
 
     registered = await registry.register(_user_spec("echo"), owner_id=user_a)
-    # Look up by id by fetching the only visible row's id via list.
-    visible = await registry.list_visible_to(user_a)
-    assert len(visible) == 1
-    # We need the id; round-trip via raw ORM read (registry doesn't expose ids
-    # on RegisteredServer because the runtime layer treats id as a registry-
-    # internal handle). Use list-then-get-by-name in this test.
-    fetched_by_name = [s for s in visible if s.spec.name == "echo"]
-    assert fetched_by_name[0].spec == registered.spec
+
+    fetched = await registry.get(registered.id)
+    assert fetched is not None
+    assert fetched.id == registered.id
+    assert fetched.spec == registered.spec
+    assert fetched.owner_id == registered.owner_id
 
 
 @pytest.mark.asyncio
@@ -209,13 +214,12 @@ async def test_user_cannot_delete_admin_scope_without_admin_flag(
     user_a, _ = two_users
     registry = _make_registry(db)
 
-    await registry.register(_admin_spec("memory"), owner_id=None)
-    server_id = await _lookup_id_by_name(db, "memory")
+    registered = await registry.register(_admin_spec("memory"), owner_id=None)
 
-    deleted = await registry.delete(server_id, requester_id=user_a, requester_is_admin=False)
+    deleted = await registry.delete(registered.id, requester_id=user_a, requester_is_admin=False)
     assert deleted is False
     # Row still present.
-    assert await registry.get(server_id) is not None
+    assert await registry.get(registered.id) is not None
 
 
 @pytest.mark.asyncio
@@ -223,12 +227,11 @@ async def test_admin_can_delete_admin_scope(db: DatabaseHandle, two_users: tuple
     user_a, _ = two_users
     registry = _make_registry(db)
 
-    await registry.register(_admin_spec("memory"), owner_id=None)
-    server_id = await _lookup_id_by_name(db, "memory")
+    registered = await registry.register(_admin_spec("memory"), owner_id=None)
 
-    deleted = await registry.delete(server_id, requester_id=user_a, requester_is_admin=True)
+    deleted = await registry.delete(registered.id, requester_id=user_a, requester_is_admin=True)
     assert deleted is True
-    assert await registry.get(server_id) is None
+    assert await registry.get(registered.id) is None
 
 
 @pytest.mark.asyncio
@@ -238,10 +241,9 @@ async def test_user_can_delete_own_user_scope(
     user_a, _ = two_users
     registry = _make_registry(db)
 
-    await registry.register(_user_spec("echo"), owner_id=user_a)
-    server_id = await _lookup_id_by_name(db, "echo")
+    registered = await registry.register(_user_spec("echo"), owner_id=user_a)
 
-    deleted = await registry.delete(server_id, requester_id=user_a, requester_is_admin=False)
+    deleted = await registry.delete(registered.id, requester_id=user_a, requester_is_admin=False)
     assert deleted is True
 
 
@@ -252,12 +254,11 @@ async def test_user_cannot_delete_other_users_user_scope(
     user_a, user_b = two_users
     registry = _make_registry(db)
 
-    await registry.register(_user_spec("echo"), owner_id=user_a)
-    server_id = await _lookup_id_by_name(db, "echo")
+    registered = await registry.register(_user_spec("echo"), owner_id=user_a)
 
-    deleted = await registry.delete(server_id, requester_id=user_b, requester_is_admin=False)
+    deleted = await registry.delete(registered.id, requester_id=user_b, requester_is_admin=False)
     assert deleted is False
-    assert await registry.get(server_id) is not None
+    assert await registry.get(registered.id) is not None
 
 
 @pytest.mark.asyncio
@@ -274,14 +275,13 @@ async def test_set_enabled_toggles_value(db: DatabaseHandle, two_users: tuple[st
     user_a, _ = two_users
     registry = _make_registry(db)
 
-    await registry.register(_user_spec("echo"), owner_id=user_a)
-    server_id = await _lookup_id_by_name(db, "echo")
+    registered = await registry.register(_user_spec("echo"), owner_id=user_a)
 
-    await registry.set_enabled(server_id, False)
-    assert await _enabled_value(db, server_id) == 0
+    await registry.set_enabled(registered.id, False)
+    assert await _enabled_value(db, registered.id) == 0
 
-    await registry.set_enabled(server_id, True)
-    assert await _enabled_value(db, server_id) == 1
+    await registry.set_enabled(registered.id, True)
+    assert await _enabled_value(db, registered.id) == 1
 
 
 @pytest.mark.asyncio
@@ -292,21 +292,8 @@ async def test_set_enabled_no_op_for_missing_row(db: DatabaseHandle) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test helpers: id lookup by name (registry intentionally does not expose ids
-# on RegisteredServer; for tests that need the id we go to the DB directly).
+# Test helpers
 # ---------------------------------------------------------------------------
-
-
-async def _lookup_id_by_name(db: DatabaseHandle, name: str) -> str:
-    from sqlalchemy import select
-
-    from agentlabx.db.schema import MCPServer
-
-    async with db.session() as session:
-        result = await session.execute(select(MCPServer.id).where(MCPServer.name == name))
-        row_id = result.scalar_one()
-    assert isinstance(row_id, str)
-    return row_id
 
 
 async def _enabled_value(db: DatabaseHandle, server_id: str) -> int:
