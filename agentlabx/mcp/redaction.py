@@ -8,8 +8,7 @@ Two complementary scrubbers:
 
 - :func:`redact_args` walks a tool-call argument mapping and replaces values
   whose key (case-insensitive) is in :data:`SECRET_KEYS` with the literal
-  string sentinel ``"***"``. Lists, tuples, and nested dicts are walked
-  recursively.
+  string sentinel ``"***"``. Lists and nested dicts are walked recursively.
 - :func:`redact_text` replaces literal occurrences of caller-supplied secret
   values (the actual decrypted strings currently in flight) inside an
   arbitrary text blob — used to scrub subprocess stderr/stdout snippets the
@@ -41,6 +40,10 @@ SECRET_KEYS: frozenset[str] = frozenset(
 )
 """Keys (case-insensitive) whose values are scrubbed by :func:`redact_args`."""
 
+assert all(k == k.lower() for k in SECRET_KEYS), (
+    "SECRET_KEYS must be lowercase for case-insensitive lookup"
+)
+
 _REDACTED: str = "***"
 
 
@@ -57,9 +60,7 @@ def redact_args(args: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
     """Return a copy of *args* with secret-keyed values replaced by ``"***"``.
 
     Key matching is case-insensitive against :data:`SECRET_KEYS`. Nested
-    dicts and lists are walked recursively; tuples (which JSON does not have
-    natively but may appear in loosely-typed inputs) are also walked
-    element-wise and emitted as lists.
+    dicts and lists are walked recursively per the :data:`JSONValue` contract.
     """
     out: dict[str, JSONValue] = {}
     for key, value in args.items():
@@ -69,11 +70,6 @@ def redact_args(args: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
         if isinstance(value, dict):
             out[key] = redact_args(value)
         elif isinstance(value, list):
-            out[key] = [_redact_value(item) for item in value]
-        elif isinstance(value, tuple):
-            # Defensive: ``Mapping[str, JSONValue]`` does not include tuples,
-            # but real-world callers sometimes pass them. Walk element-wise
-            # and materialise as a list (JSON-compatible).
             out[key] = [_redact_value(item) for item in value]
         else:
             out[key] = value

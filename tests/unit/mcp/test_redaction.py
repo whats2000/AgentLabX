@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 from agentlabx.core.json_types import JSONValue
 from agentlabx.mcp.redaction import SECRET_KEYS, redact_args, redact_text
 
@@ -104,6 +106,16 @@ def test_redact_args_preserves_scalars_and_none() -> None:
     args: dict[str, JSONValue] = {"x": 0, "y": False, "z": None, "f": 1.5}
     out = redact_args(args)
     assert out == args
+
+
+def test_redact_args_does_not_mutate_input() -> None:
+    args: dict[str, JSONValue] = {
+        "outer": {"api_key": "leak", "list": [{"token": "a"}, {"safe": 1}]},
+        "top_secret": "redact-me",
+    }
+    snapshot = copy.deepcopy(args)
+    redact_args(args)
+    assert args == snapshot
 
 
 def test_redact_args_secret_keys_constant_lowercase() -> None:

@@ -133,7 +133,7 @@ uv run pytest tests/unit/mcp/test_capabilities.py -q
 
 - [ ] **Step 1 — redaction.py.** Pure functions (no I/O, no logging):
   - `SECRET_KEYS: frozenset[str] = frozenset({"api_key", "apikey", "x-api-key", "token", "access_token", "refresh_token", "password", "passphrase", "secret", "authorization", "bearer"})`
-  - `def redact_args(args: Mapping[str, JSONValue]) -> dict[str, JSONValue]` — recursively walk; if a key (case-insensitive) is in `SECRET_KEYS`, replace its value with `"***"` (preserve type as string sentinel). Lists/tuples walked element-wise.
+  - `def redact_args(args: Mapping[str, JSONValue]) -> dict[str, JSONValue]` — recursively walk; if a key (case-insensitive) is in `SECRET_KEYS`, replace its value with `"***"` (preserve type as string sentinel). Lists walked element-wise.
   - `def redact_text(text: str, slots: Iterable[str]) -> str` — replaces any literal occurrence of a slot value with `"***"`. Used to scrub stderr/stdout snippets the host captures from the subprocess. Slots are the actual decrypted secret values currently in flight; caller passes them in.
   - Import `JSONValue` from `agentlabx.core.json_types` (landed in prereqs). Do not re-define it here.
 
