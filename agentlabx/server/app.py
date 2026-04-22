@@ -165,6 +165,19 @@ async def create_app(settings: AppSettings) -> FastAPI:
     return app
 
 
+def create_app_default() -> FastAPI:
+    """No-arg factory used by Uvicorn's ``--reload`` mode.
+
+    The reloader spawns a child subprocess that re-imports the app each time
+    a watched file changes, so it cannot accept a pre-built FastAPI instance.
+    This wrapper reads :class:`AppSettings` from ``AGENTLABX_*`` env vars
+    (the CLI sets these when ``--reload`` is on) and delegates to the
+    standard :func:`create_app_for_uvicorn` factory.
+    """
+
+    return create_app_for_uvicorn(AppSettings())
+
+
 def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
     """Build a FastAPI app whose async wiring runs inside Uvicorn's loop.
 
