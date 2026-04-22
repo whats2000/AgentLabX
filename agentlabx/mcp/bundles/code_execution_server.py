@@ -192,6 +192,7 @@ def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
     try:
         completed = subprocess.run(  # noqa: S603 — argv is a fixed tuple, no shell
             argv,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=wall_clock_budget,
