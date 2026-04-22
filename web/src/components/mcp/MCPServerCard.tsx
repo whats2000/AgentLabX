@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import { api, type MCPServerDto } from "@/api/client"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { MCPToolRow } from "@/components/mcp/MCPToolRow"
+import { SlotsPanel } from "@/components/mcp/SlotsPanel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -158,6 +159,8 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
             </code>
           </div>
         ) : null}
+
+        <SlotsPanel slotRefs={server.env_slot_refs} scope={server.scope} isAdmin={isAdmin} />
 
         <button
           type="button"

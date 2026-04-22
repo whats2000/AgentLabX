@@ -7,6 +7,7 @@ import { api, type MCPToolDto, type ToolInvokeResponse } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { prefillFromSchema } from "@/lib/json-schema-prefill"
 
 interface Props {
   tool: MCPToolDto
@@ -15,9 +16,19 @@ interface Props {
 export function MCPToolRow({ tool }: Props): React.JSX.Element {
   const { t } = useTranslation()
   const [expanded, setExpanded] = React.useState(false)
-  const [argsJson, setArgsJson] = React.useState("{}")
+  // Prefill the args textarea from the tool's input_schema (best-effort
+  // skeleton). Recompute when the user opens the row for the first time so
+  // schemas hot-loaded after expand are picked up; do NOT re-derive on every
+  // render, that would blow away in-progress edits.
+  const initialArgs = React.useMemo(() => prefillFromSchema(tool.input_schema), [tool.input_schema])
+  const [argsJson, setArgsJson] = React.useState(initialArgs)
   const [argsError, setArgsError] = React.useState<string | null>(null)
   const [result, setResult] = React.useState<ToolInvokeResponse | null>(null)
+
+  function resetToSchema(): void {
+    setArgsJson(prefillFromSchema(tool.input_schema))
+    setArgsError(null)
+  }
 
   const invoke = useMutation({
     mutationFn: async (): Promise<ToolInvokeResponse> => {
@@ -106,6 +117,9 @@ export function MCPToolRow({ tool }: Props): React.JSX.Element {
             >
               <PlayCircle className="h-4 w-4" />
               {invoke.isPending ? t("mcp.invoking") : t("mcp.invoke")}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={resetToSchema}>
+              {t("mcp.resetArgs")}
             </Button>
             {invoke.error ? (
               <span className="text-xs text-red-600 dark:text-red-400">{invoke.error.message}</span>

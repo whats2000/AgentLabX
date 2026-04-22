@@ -9,7 +9,7 @@ from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import EmailAlreadyRegisteredError, Identity
 from agentlabx.config.settings import AppSettings
 from agentlabx.core.json_types import JSONValue
-from agentlabx.db.schema import Capability, User, UserConfig
+from agentlabx.db.schema import AdminConfig, Capability, User, UserConfig
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.events.bus import Event, EventBus
 from agentlabx.models.api import (
@@ -158,6 +158,90 @@ async def reveal_credential(
 
 
 # --- admin-only endpoints ---
+
+
+@router.get(
+    "/admin/credentials",
+    response_model=list[CredentialSlotResponse],
+)
+async def list_admin_credentials(
+    request: Request, _: Identity = Depends(require_admin)
+) -> list[CredentialSlotResponse]:
+    """List admin-scope slot rows. Resolved by ``SlotResolver`` for admin-scope
+    MCP bundles when ``owner_id is None``."""
+
+    db: DatabaseHandle = request.state.db
+    async with db.session() as session:
+        rows = (await session.execute(select(AdminConfig))).scalars().all()
+    return [
+        CredentialSlotResponse(slot=row.slot, updated_at=row.created_at.isoformat()) for row in rows
+    ]
+
+
+@router.put("/admin/credentials/{slot}", status_code=status.HTTP_204_NO_CONTENT)
+async def put_admin_credential(
+    slot: str,
+    payload: StoreCredentialRequest,
+    request: Request,
+    identity: Identity = Depends(require_admin),
+) -> None:
+    """Encrypt + store a slot value in ``admin_configs``. The slot name is the
+    raw bundle-declared ref (e.g. ``semantic_scholar_api_key``) — no
+    ``user:key:`` prefix; ``SlotResolver`` looks it up verbatim under admin
+    scope."""
+
+    db: DatabaseHandle = request.state.db
+    crypto: FernetStore = request.state.crypto
+    ciphertext = crypto.encrypt(payload.value.encode("utf-8"))
+    async with db.session() as session:
+        existing = (
+            await session.execute(select(AdminConfig).where(AdminConfig.slot == slot))
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.ciphertext = ciphertext
+        else:
+            session.add(AdminConfig(slot=slot, ciphertext=ciphertext))
+        await session.commit()
+    await _emit(
+        request,
+        "admin_credential.stored",
+        {"actor_id": identity.id, "actor_email": identity.email, "slot": slot},
+    )
+
+
+@router.delete("/admin/credentials/{slot}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_admin_credential(
+    slot: str, request: Request, identity: Identity = Depends(require_admin)
+) -> None:
+    db: DatabaseHandle = request.state.db
+    async with db.session() as session:
+        row = (
+            await session.execute(select(AdminConfig).where(AdminConfig.slot == slot))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such admin slot")
+        await session.delete(row)
+        await session.commit()
+    await _emit(
+        request,
+        "admin_credential.deleted",
+        {"actor_id": identity.id, "actor_email": identity.email, "slot": slot},
+    )
+
+
+@router.get("/admin/credentials/{slot}/reveal")
+async def reveal_admin_credential(
+    slot: str, request: Request, _: Identity = Depends(require_admin)
+) -> dict[str, str]:
+    db: DatabaseHandle = request.state.db
+    crypto: FernetStore = request.state.crypto
+    async with db.session() as session:
+        row = (
+            await session.execute(select(AdminConfig).where(AdminConfig.slot == slot))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such admin slot")
+        return {"slot": slot, "value": crypto.decrypt(row.ciphertext).decode("utf-8")}
 
 
 @router.get("/admin/users", response_model=list[AdminUserResponse])

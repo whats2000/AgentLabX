@@ -119,6 +119,7 @@ def _server_to_response(
         enabled=enabled,
         owner_id=server.owner_id,
         declared_capabilities=server.spec.declared_capabilities,
+        env_slot_refs=server.spec.env_slot_refs,
         tools=[_tool_to_response(server, t) for t in tools],
         started_at=started_at,
     )

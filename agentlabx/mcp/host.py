@@ -335,6 +335,33 @@ class MCPHost:
                 if not ready.done():
                     ready.set_exception(wrapped)
                 return
+            except BaseExceptionGroup as group:
+                # anyio task groups (used inside the MCP SDK's stdio transport
+                # and ClientSession) re-raise child failures as
+                # BaseExceptionGroup. Walk the group, surface the first
+                # interesting transport-level cause as ServerStartupFailed so
+                # the router translates to a clean 502 instead of 500.
+                await stack.aclose()
+                cancelled = group.subgroup(asyncio.CancelledError)
+                if cancelled is not None:
+                    if not ready.done():
+                        ready.set_exception(cancelled)
+                    raise
+                interesting = group.subgroup((McpError, OSError, ValueError))
+                if interesting is not None and interesting.exceptions:
+                    first = interesting.exceptions[0]
+                    wrapped = ServerStartupFailed(
+                        spec=server.spec,
+                        reason=f"transport open failed: {first!r}",
+                    )
+                else:
+                    wrapped = ServerStartupFailed(
+                        spec=server.spec,
+                        reason=f"transport open failed: {group!r}",
+                    )
+                if not ready.done():
+                    ready.set_exception(wrapped)
+                return
             except BaseException as exc:
                 await stack.aclose()
                 if not ready.done():

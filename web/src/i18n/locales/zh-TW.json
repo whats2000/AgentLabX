@@ -118,7 +118,17 @@
     "invokeArgsMustBeObject": "參數必須是 JSON 物件(例如 { \"key\": \"value\" })",
     "resultOk": "結果",
     "resultError": "錯誤",
-    "structured": "結構化載荷"
+    "structured": "結構化載荷",
+    "resetArgs": "重設為 schema",
+    "slotPanelTitle": "需要的環境變數欄位",
+    "slotSet": "已設定",
+    "slotUnset": "未設定",
+    "slotEdit": "編輯值",
+    "slotSavedRestartHint": "已儲存。請停用後重新啟用該伺服器(或重啟)以套用新值。",
+    "slotDeleted": "已刪除。",
+    "slotDeleteTitle": "刪除欄位值?",
+    "slotDeleteDesc": "將移除 {{slot}} 的加密值。依賴它的伺服器會停用,直到你重新設值。",
+    "adminSlotReadonly": "Admin 範圍的欄位由管理員管理。請請管理員填入,或在伺服器設定環境變數 AGENTLABX_SLOT_<NAME_UPPER>。"
   },
   "profile": {
     "title": "個人資料",

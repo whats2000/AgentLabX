@@ -76,6 +76,7 @@ export interface MCPServerDto {
   enabled: boolean
   owner_id: string | null
   declared_capabilities: string[]
+  env_slot_refs: string[]
   tools: MCPToolDto[]
   started_at: string | null
 }
@@ -232,6 +233,21 @@ export const api = {
   deleteMCPServer: (id: string) =>
     request<void>(`/api/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listMCPTools: () => request<MCPToolDto[]>("/api/mcp/tools"),
+  listAdminCredentials: () => request<CredentialSlotDto[]>("/api/settings/admin/credentials"),
+  putAdminCredential: (slot: string, value: string) =>
+    request<void>(`/api/settings/admin/credentials/${encodeURIComponent(slot)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    }),
+  deleteAdminCredential: (slot: string) =>
+    request<void>(`/api/settings/admin/credentials/${encodeURIComponent(slot)}`, {
+      method: "DELETE",
+    }),
+  revealAdminCredential: (slot: string) =>
+    request<{ slot: string; value: string }>(
+      `/api/settings/admin/credentials/${encodeURIComponent(slot)}/reveal`,
+    ),
   invokeMCPTool: (server_id: string, tool: string, args: Record<string, unknown>) =>
     request<ToolInvokeResponse>(
       `/api/mcp/servers/${encodeURIComponent(server_id)}/tools/${encodeURIComponent(tool)}/invoke`,

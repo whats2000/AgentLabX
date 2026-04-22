@@ -43,6 +43,7 @@ class MCPServerResponse(BaseModel):  # type: ignore[explicit-any]
     enabled: bool
     owner_id: str | None
     declared_capabilities: tuple[str, ...]
+    env_slot_refs: tuple[str, ...] = ()
     tools: list[MCPToolResponse] = Field(default_factory=list)
     started_at: datetime | None = None
 

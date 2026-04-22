@@ -118,7 +118,17 @@
     "invokeArgsMustBeObject": "Arguments must be a JSON object (e.g. { \"key\": \"value\" })",
     "resultOk": "Result",
     "resultError": "Error",
-    "structured": "Structured payload"
+    "structured": "Structured payload",
+    "resetArgs": "Reset to schema",
+    "slotPanelTitle": "Required env-var slots",
+    "slotSet": "Set",
+    "slotUnset": "Unset",
+    "slotEdit": "Edit value",
+    "slotSavedRestartHint": "Slot saved. Disable + re-enable the server (or restart it) to pick up the new value.",
+    "slotDeleted": "Slot deleted.",
+    "slotDeleteTitle": "Delete slot value?",
+    "slotDeleteDesc": "This removes the encrypted value for {{slot}}. Servers that depend on it will start disabled until you set a new value.",
+    "adminSlotReadonly": "Admin-scope slots are managed by an admin. Ask an admin to fill them, or set the AGENTLABX_SLOT_<NAME_UPPER> env var on the server."
   },
   "profile": {
     "title": "Profile",
