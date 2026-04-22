@@ -101,6 +101,25 @@ def slot_to_env_var(slot: str) -> str:
 
 
 @dataclass(slots=True)
+class _CallRequest:
+    """A queued ``call_tool`` request waiting for owner-task execution.
+
+    ``response`` is a future created on the caller's running loop and
+    resolved by the owner task with either the SDK's :class:`CallToolResult`
+    or the exception raised inside ``session.call_tool``. Routing every
+    invocation through the owner task is required because the MCP SDK's
+    :class:`ClientSession` wraps anyio memory-object streams whose cancel
+    scopes are bound to the task that opened them — a cross-task
+    ``call_tool`` from e.g. a Starlette request handler trips
+    ``anyio.ClosedResourceError`` immediately on send.
+    """
+
+    tool: str
+    args: dict[str, JSONValue]
+    response: asyncio.Future[CallToolResult]
+
+
+@dataclass(slots=True)
 class _Handle:
     """Internal per-server runtime state held by :class:`MCPHost`.
 
@@ -109,6 +128,12 @@ class _Handle:
     via ``stop_event`` to avoid anyio cancel-scope task-affinity errors —
     cancel scopes raised by stdio / in-process launchers must be exited in
     the same task that entered them, which is the owner task by construction.
+
+    ``call_queue`` is the cross-task hand-off used by :meth:`MCPHost.call`:
+    callers enqueue a :class:`_CallRequest` and ``await`` the request's
+    future, while the owner task drains the queue and runs
+    ``session.call_tool`` from its own task context (where the underlying
+    anyio streams were created).
 
     ``exit_stack`` is retained for the synthetic-handle test path
     (``test_stop_all_tolerates_broken_handle``) which installs handles
@@ -122,6 +147,7 @@ class _Handle:
     slot_values: tuple[str, ...]
     owner_task: asyncio.Task[None] | None = None
     stop_event: asyncio.Event | None = None
+    call_queue: asyncio.Queue[_CallRequest] | None = None
 
 
 class MCPHost:
@@ -192,6 +218,7 @@ class MCPHost:
             tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
         ] = asyncio.get_running_loop().create_future()
         stop_event = asyncio.Event()
+        call_queue: asyncio.Queue[_CallRequest] = asyncio.Queue()
 
         owner_task = asyncio.create_task(
             self._owner_task(
@@ -199,6 +226,7 @@ class MCPHost:
                 env=env,
                 ready=ready,
                 stop_event=stop_event,
+                call_queue=call_queue,
             ),
             name=f"mcp-owner-{server.id}",
         )
@@ -219,6 +247,7 @@ class MCPHost:
             slot_values=slot_values,
             owner_task=owner_task,
             stop_event=stop_event,
+            call_queue=call_queue,
         )
 
         await self._event_bus.emit(
@@ -250,12 +279,16 @@ class MCPHost:
             tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
         ],
         stop_event: asyncio.Event,
+        call_queue: asyncio.Queue[_CallRequest],
     ) -> None:
         """Long-lived per-handle task that owns transport open + close.
 
-        Lifecycle: open transport, snapshot tools, signal ``ready``, wait on
-        ``stop_event``, close transport. All inside one task so anyio cancel
-        scopes never cross task boundaries.
+        Lifecycle: open transport, snapshot tools, signal ``ready``, then
+        loop draining ``call_queue`` (running each enqueued
+        ``session.call_tool`` in this task's context) until ``stop_event``
+        fires. On stop, drain any pending requests by failing them with
+        :class:`ServerNotRunning`, then close the transport. All inside one
+        task so anyio cancel scopes never cross task boundaries.
         """
 
         stack = contextlib.AsyncExitStack()
@@ -287,10 +320,52 @@ class MCPHost:
             if not ready.done():
                 ready.set_result((session, tools, stack))
 
-            # Block until ``stop`` fires the event. The session stays
-            # open; ``host.call`` reuses ``session`` cross-task — the SDK
-            # tolerates that for in-flight requests.
-            await stop_event.wait()
+            # Drive the request loop. ``session.call_tool`` is invoked from
+            # *this* task so anyio's task-affine memory-object streams in
+            # the SDK's ClientSession see send + receive from the same
+            # cancel scope that opened them. Without this routing every
+            # cross-task ``host.call`` (e.g. from a Starlette request task)
+            # trips ``anyio.ClosedResourceError`` on the first send.
+            stop_task = asyncio.create_task(stop_event.wait(), name="mcp-owner-stop-wait")
+            try:
+                while True:
+                    get_task = asyncio.create_task(call_queue.get(), name="mcp-owner-queue-get")
+                    done, _pending = await asyncio.wait(
+                        {stop_task, get_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if stop_task in done:
+                        # Cancel the in-flight queue read; it never produced
+                        # an item we'd be obliged to handle.
+                        get_task.cancel()
+                        with contextlib.suppress(BaseException):
+                            await get_task
+                        break
+                    # ``get_task`` completed: handle the request, then loop.
+                    req = get_task.result()
+                    try:
+                        result = await session.call_tool(req.tool, req.args)
+                    except BaseException as exc:
+                        if not req.response.done():
+                            req.response.set_exception(exc)
+                    else:
+                        if not req.response.done():
+                            req.response.set_result(result)
+            finally:
+                if not stop_task.done():
+                    stop_task.cancel()
+                    with contextlib.suppress(BaseException):
+                        await stop_task
+                # Fail-fast any requests that arrived after stop was
+                # signalled but before callers noticed the handle was
+                # popped from ``_handles``.
+                while True:
+                    try:
+                        pending = call_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    if not pending.response.done():
+                        pending.response.set_exception(ServerNotRunning(server.id))
         finally:
             # Always close in this task. Tolerate any close-time errors so
             # one bad handle does not poison the stop path.
@@ -405,14 +480,35 @@ class MCPHost:
         if not any(t.tool_name == tool for t in handle.tools):
             raise ToolNotFound(server_id, tool)
 
-        # SDK's call_tool signature accepts ``dict[str, Any]``; our
-        # JSONValue mapping is a strict subset of that, so the call is sound.
-        try:
-            sdk_result = await handle.session.call_tool(tool, args)
-        except McpError as exc:
-            raise ToolExecutionFailed(server_id, tool, exc) from exc
-        except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
-            raise ToolExecutionFailed(server_id, tool, exc) from exc
+        # Route the SDK call through the owner task so that
+        # ``session.call_tool`` runs in the same task that opened the
+        # underlying anyio memory-object streams. A direct ``await
+        # handle.session.call_tool(...)`` from a different task (e.g. a
+        # Starlette request handler) trips ``anyio.ClosedResourceError``
+        # because anyio enforces task-affinity on memory-object streams.
+        if handle.call_queue is None:
+            # Synthetic-handle path (test_stop_all_tolerates_broken_handle
+            # installs a handle without an owner task / queue). Preserve
+            # the legacy direct-call semantics for that fixture.
+            try:
+                sdk_result = await handle.session.call_tool(tool, args)
+            except McpError as exc:
+                raise ToolExecutionFailed(server_id, tool, exc) from exc
+            except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
+                raise ToolExecutionFailed(server_id, tool, exc) from exc
+        else:
+            response: asyncio.Future[CallToolResult] = asyncio.get_running_loop().create_future()
+            await handle.call_queue.put(_CallRequest(tool=tool, args=args, response=response))
+            try:
+                sdk_result = await response
+            except McpError as exc:
+                raise ToolExecutionFailed(server_id, tool, exc) from exc
+            except ServerNotRunning:
+                # Owner task drained a pending request during stop; surface
+                # the canonical "not running" error to the caller.
+                raise
+            except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
+                raise ToolExecutionFailed(server_id, tool, exc) from exc
 
         # SDK convention: server-side exceptions are *not* re-raised on the
         # client; instead the SDK returns a ``CallToolResult`` with

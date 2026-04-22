@@ -36,6 +36,7 @@ from agentlabx.mcp.protocol import (
     ServerNotRunning,
     ServerStartupFailed,
     TextContent,
+    ToolCallResult,
     ToolExecutionFailed,
 )
 from agentlabx.mcp.registry import ServerRegistry
@@ -368,3 +369,42 @@ def test_slot_values_for_unknown_server_raises_not_running(host: MCPHost) -> Non
 async def test_stop_unknown_server_raises_not_running(host: MCPHost) -> None:
     with pytest.raises(ServerNotRunning):
         await host.stop("nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# Cross-task call regression (A3 hotfix)
+# ---------------------------------------------------------------------------
+
+
+async def test_call_from_different_task_does_not_raise_closed_resource(
+    host: MCPHost,
+) -> None:
+    """``host.call`` invoked from a freshly-spawned task must succeed.
+
+    The MCP SDK's :class:`mcp.ClientSession` wraps anyio memory-object
+    streams whose cancel scopes are pinned to the task that opened them
+    (the per-handle owner task). Before the A3 hotfix, calling
+    ``handle.session.call_tool`` directly from a different task — exactly
+    what a Starlette ``BaseHTTPMiddleware`` request handler does —
+    triggered ``anyio.ClosedResourceError`` on the very first send.
+
+    The fix routes every invocation through the owner task via
+    ``handle.call_queue``. This regression boots the echo subprocess and
+    invokes ``echo`` from a brand new ``asyncio.create_task``; the call
+    must succeed and the result must surface the echoed text.
+    """
+
+    started = await host.start(_registered(_echo_spec()), owner_id=None)
+    try:
+
+        async def _call_from_other_task() -> ToolCallResult:
+            return await host.call(started.id, "echo", {"message": "hi"})
+
+        result = await asyncio.create_task(_call_from_other_task())
+        assert result.is_error is False
+        assert len(result.content) == 1
+        first = result.content[0]
+        assert isinstance(first, TextContent)
+        assert first.text == "hi"
+    finally:
+        await host.stop(started.id)
