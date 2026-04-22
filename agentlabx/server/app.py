@@ -26,7 +26,11 @@ from agentlabx.mcp.transport import ServerFactory
 from agentlabx.security.fernet_store import FernetStore
 from agentlabx.security.keyring_store import get_or_create_session_secret
 from agentlabx.security.slot_resolver import SlotResolver
-from agentlabx.server.middleware import SessionConfig, install_session_middleware
+from agentlabx.server.middleware import (
+    SessionConfig,
+    install_session_middleware,
+    install_session_middleware_lazy,
+)
 from agentlabx.server.rate_limit import LoginRateLimiter
 from agentlabx.server.routers import auth as auth_router
 from agentlabx.server.routers import health as health_router
@@ -112,11 +116,17 @@ async def create_app(settings: AppSettings) -> FastAPI:
     # Modern FastAPI shutdown contract: a lifespan context manager that yields
     # immediately (startup already ran in this factory) and runs MCP teardown
     # on app exit. Replaces the deprecated ``@app.on_event("shutdown")``
-    # registration so we don't emit a DeprecationWarning on every boot. Folding
-    # the full startup body into the lifespan would require restructuring the
-    # ``async create_app`` factory contract that callers/tests already rely
-    # on, so we scope this conversion to just the shutdown half per the polish
-    # plan.
+    # registration so we don't emit a DeprecationWarning on every boot.
+    #
+    # NOTE: The ``async create_app`` path runs every async setup step (db
+    # connect, MCP server starts) in the *caller's* event loop. That works
+    # for the in-process ASGI test client because the test loop IS the
+    # request-handling loop — but it's wrong for ``uvicorn.run(app)`` where
+    # the caller's loop is a throwaway and Uvicorn spins up a new one. When
+    # called from the CLI, the seeded MCP servers' owner tasks would die
+    # with the throwaway loop and every request to invoke them would hang
+    # forever. ``create_app_for_uvicorn`` (below) is the production path
+    # and runs all async wiring inside Uvicorn's own loop via the lifespan.
     @asynccontextmanager
     async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
@@ -151,6 +161,128 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.state.mcp_registry = registry
     app.state.mcp_host = host
     app.state.mcp_dispatcher = dispatcher
+
+    return app
+
+
+def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
+    """Build a FastAPI app whose async wiring runs inside Uvicorn's loop.
+
+    The :func:`create_app` factory above is async and does its db / MCP
+    bootstrap in the caller's event loop — which is correct for in-process
+    ASGI test clients (where the test loop IS the request-handling loop)
+    but wrong for ``uvicorn.run(app)``: the CLI's outer ``asyncio.run`` loop
+    is torn down immediately after ``create_app`` returns, taking every
+    spawned MCP owner task with it. The first request to invoke a seeded
+    server then hangs forever because the owner task can never wake.
+
+    This wrapper defers ALL async setup into a FastAPI lifespan startup
+    phase that runs inside Uvicorn's loop. Routers and middleware are
+    attached eagerly (they're sync) but the app's :attr:`state` slots are
+    only populated when the lifespan starts, so request handlers see fully
+    wired state by the time the first request arrives.
+    """
+
+    crypto = FernetStore.from_keyring()
+    cfg = SessionConfig(
+        secret=get_or_create_session_secret(),
+        secure=(settings.bind_mode is BindMode.LAN),
+        max_age_seconds=settings.session_max_age_seconds,
+        remember_me_max_age_seconds=settings.remember_me_max_age_seconds,
+    )
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # ALL async wiring lives here so it executes inside Uvicorn's loop
+        # — the same loop that will later drive request handlers and the
+        # MCPHost owner tasks. Keep this body in sync with the legacy
+        # async ``create_app`` above.
+        db = DatabaseHandle(settings.db_path)
+        await db.connect()
+        await apply_migrations(db)
+        await _assert_schema_version_pinned(db)
+
+        bus = EventBus()
+        sink = JsonlEventSink(path=settings.audit_log_path)
+        sink.install(bus)
+
+        limiter = LoginRateLimiter()
+
+        session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
+            db.engine, expire_on_commit=False
+        )
+        slot_resolver = SlotResolver(crypto, session_factory)
+
+        bundles = _discover_bundles(event_bus=bus)
+        inprocess_factories: dict[str, ServerFactory] = {}
+        for _bundle_name, module in bundles:
+            if not hasattr(module, "build_server_factory"):
+                continue
+            spec = _bundle_spec(module, _bundle_name)
+            if spec is None or spec.transport != "inprocess" or spec.inprocess_key is None:
+                continue
+            inprocess_factories[spec.inprocess_key] = module.build_server_factory(session_factory)
+
+        registry = ServerRegistry(session_factory)
+        host = MCPHost(
+            registry=registry,
+            slot_resolver=slot_resolver,
+            event_bus=bus,
+            inprocess_factories=inprocess_factories,
+        )
+        dispatcher = ToolDispatcher(host, bus, AlwaysAllow())
+
+        disabled_reasons = await _seed_admin_bundles(
+            registry=registry,
+            slot_resolver=slot_resolver,
+            bundles=bundles,
+            event_bus=bus,
+        )
+        await _start_enabled_servers(registry=registry, host=host, event_bus=bus)
+        await _log_bootstrap_audit(
+            registry=registry,
+            host=host,
+            disabled_reasons=disabled_reasons,
+        )
+
+        app.state.db = db
+        app.state.settings = settings
+        app.state.crypto = crypto
+        app.state.events = bus
+        app.state.login_limiter = limiter
+        app.state.mcp_registry = registry
+        app.state.mcp_host = host
+        app.state.mcp_dispatcher = dispatcher
+
+        try:
+            yield
+        finally:
+            await host.stop_all()
+            await db.close()
+
+    app = FastAPI(title="AgentLabX", version="0.1.0", lifespan=_lifespan)
+
+    # All middleware must be attached before the lifespan starts (Starlette
+    # locks the middleware stack on first request). Both middlewares read
+    # ``app.state`` at request time, so the lifespan-populated state is
+    # live by the time anyone hits the app.
+    install_session_middleware_lazy(app, cfg=cfg)
+
+    @app.middleware("http")
+    async def inject_crypto_and_events(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        request.state.crypto = request.app.state.crypto
+        request.state.events = request.app.state.events
+        request.state.login_limiter = request.app.state.login_limiter
+        return await call_next(request)
+
+    app.include_router(health_router.router)
+    app.include_router(auth_router.router)
+    app.include_router(settings_router.router)
+    app.include_router(runs_router.router)
+    app.include_router(llm_router.router)
+    app.include_router(mcp_router.router)
 
     return app
 

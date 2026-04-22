@@ -10,7 +10,7 @@ from agentlabx.auth.default import DefaultAuther
 from agentlabx.config.settings import AppSettings, BindMode
 from agentlabx.db.migrations import apply_migrations
 from agentlabx.db.session import DatabaseHandle
-from agentlabx.server.app import create_app
+from agentlabx.server.app import create_app_for_uvicorn
 
 
 @click.group()
@@ -117,7 +117,13 @@ def serve(
         kwargs["workspace"] = workspace
 
     settings = AppSettings(**kwargs)  # type: ignore[arg-type]
-    app = asyncio.run(create_app(settings))
+    # Build the app synchronously: every async setup step (db connect,
+    # MCP host start, admin-bundle seeding) runs inside Uvicorn's lifespan
+    # — i.e. inside Uvicorn's own event loop. Doing the bootstrap in an
+    # outer ``asyncio.run`` (the previous arrangement) left every MCP
+    # server's owner task pinned to a torn-down loop, which made every
+    # subsequent invoke request hang forever.
+    app = create_app_for_uvicorn(settings)
 
     uv_kwargs: dict[str, str | int | None] = {
         "host": settings.bind_host,

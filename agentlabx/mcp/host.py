@@ -20,11 +20,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import ClientSession
 from mcp.shared.exceptions import McpError
 from mcp.types import (
@@ -100,23 +103,34 @@ def slot_to_env_var(slot: str) -> str:
     return f"AGENTLABX_SLOT_{_SLOT_ENV_SANITISE.sub('_', slot.upper())}"
 
 
+# Type alias for the single-shot result channel a caller hands to the owner
+# task. The owner sends exactly one item — either an SDK :class:`CallToolResult`
+# or the exception raised inside ``session.call_tool`` — then closes the send
+# end. The caller's ``async with`` over the receive end disposes the channel
+# either way. The buffer size is 1 so the owner's send never has to wait.
+_CallResult = CallToolResult | BaseException
+
+
 @dataclass(slots=True)
 class _CallRequest:
     """A queued ``call_tool`` request waiting for owner-task execution.
 
-    ``response`` is a future created on the caller's running loop and
-    resolved by the owner task with either the SDK's :class:`CallToolResult`
-    or the exception raised inside ``session.call_tool``. Routing every
-    invocation through the owner task is required because the MCP SDK's
-    :class:`ClientSession` wraps anyio memory-object streams whose cancel
-    scopes are bound to the task that opened them — a cross-task
-    ``call_tool`` from e.g. a Starlette request handler trips
-    ``anyio.ClosedResourceError`` immediately on send.
+    ``result_send`` is an anyio memory-object send stream created on the
+    caller's task. The owner task sends exactly one :class:`CallToolResult`
+    or :class:`BaseException` into it, then closes it. Anyio memory-object
+    streams traverse Starlette's per-request task-group boundary correctly,
+    which an :class:`asyncio.Future` does not — that mismatch is what made
+    in-process MCP invokes hang under live Uvicorn even though the
+    pure-ASGI test client worked.
+
+    Routing every invocation through the owner task is still required
+    because the MCP SDK's :class:`ClientSession` wraps anyio memory-object
+    streams whose cancel scopes are bound to the task that opened them.
     """
 
     tool: str
     args: dict[str, JSONValue]
-    response: asyncio.Future[CallToolResult]
+    result_send: MemoryObjectSendStream[_CallResult]
 
 
 @dataclass(slots=True)
@@ -129,11 +143,11 @@ class _Handle:
     cancel scopes raised by stdio / in-process launchers must be exited in
     the same task that entered them, which is the owner task by construction.
 
-    ``call_queue`` is the cross-task hand-off used by :meth:`MCPHost.call`:
-    callers enqueue a :class:`_CallRequest` and ``await`` the request's
-    future, while the owner task drains the queue and runs
-    ``session.call_tool`` from its own task context (where the underlying
-    anyio streams were created).
+    ``call_send`` is the cross-task hand-off used by :meth:`MCPHost.call`:
+    callers send a :class:`_CallRequest` (which carries its own single-shot
+    result-receive stream) into this anyio send stream, while the owner task
+    receives requests on the paired receive end and runs ``session.call_tool``
+    from its own task context (where the underlying SDK streams were created).
 
     ``exit_stack`` is retained for the synthetic-handle test path
     (``test_stop_all_tolerates_broken_handle``) which installs handles
@@ -146,8 +160,8 @@ class _Handle:
     exit_stack: contextlib.AsyncExitStack
     slot_values: tuple[str, ...]
     owner_task: asyncio.Task[None] | None = None
-    stop_event: asyncio.Event | None = None
-    call_queue: asyncio.Queue[_CallRequest] | None = None
+    stop_event: anyio.Event | None = None
+    call_send: MemoryObjectSendStream[_CallRequest] | None = None
 
 
 class MCPHost:
@@ -217,8 +231,10 @@ class MCPHost:
         ready: asyncio.Future[
             tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
         ] = asyncio.get_running_loop().create_future()
-        stop_event = asyncio.Event()
-        call_queue: asyncio.Queue[_CallRequest] = asyncio.Queue()
+        stop_event = anyio.Event()
+        call_send, call_recv = anyio.create_memory_object_stream[_CallRequest](
+            max_buffer_size=math.inf,
+        )
 
         owner_task = asyncio.create_task(
             self._owner_task(
@@ -226,7 +242,7 @@ class MCPHost:
                 env=env,
                 ready=ready,
                 stop_event=stop_event,
-                call_queue=call_queue,
+                call_recv=call_recv,
             ),
             name=f"mcp-owner-{server.id}",
         )
@@ -247,7 +263,7 @@ class MCPHost:
             slot_values=slot_values,
             owner_task=owner_task,
             stop_event=stop_event,
-            call_queue=call_queue,
+            call_send=call_send,
         )
 
         await self._event_bus.emit(
@@ -278,17 +294,25 @@ class MCPHost:
         ready: asyncio.Future[
             tuple[ClientSession, tuple[ToolDescriptor, ...], contextlib.AsyncExitStack]
         ],
-        stop_event: asyncio.Event,
-        call_queue: asyncio.Queue[_CallRequest],
+        stop_event: anyio.Event,
+        call_recv: MemoryObjectReceiveStream[_CallRequest],
     ) -> None:
         """Long-lived per-handle task that owns transport open + close.
 
         Lifecycle: open transport, snapshot tools, signal ``ready``, then
-        loop draining ``call_queue`` (running each enqueued
+        loop receiving from ``call_recv`` (running each request's
         ``session.call_tool`` in this task's context) until ``stop_event``
         fires. On stop, drain any pending requests by failing them with
         :class:`ServerNotRunning`, then close the transport. All inside one
         task so anyio cancel scopes never cross task boundaries.
+
+        The cross-task hand-off uses anyio memory-object streams (rather
+        than ``asyncio.Queue`` + ``asyncio.Future``) because anyio
+        primitives traverse Starlette's per-request inner task group
+        boundary correctly. With asyncio futures, in-process MCP invokes
+        hung indefinitely under live Uvicorn even though pure-ASGI tests
+        passed — see ``tests/integration/mcp/
+        test_router_live_invoke_through_middleware.py``.
         """
 
         stack = contextlib.AsyncExitStack()
@@ -323,49 +347,30 @@ class MCPHost:
             # Drive the request loop. ``session.call_tool`` is invoked from
             # *this* task so anyio's task-affine memory-object streams in
             # the SDK's ClientSession see send + receive from the same
-            # cancel scope that opened them. Without this routing every
-            # cross-task ``host.call`` (e.g. from a Starlette request task)
-            # trips ``anyio.ClosedResourceError`` on the first send.
-            stop_task = asyncio.create_task(stop_event.wait(), name="mcp-owner-stop-wait")
+            # cancel scope that opened them.
             try:
-                while True:
-                    get_task = asyncio.create_task(call_queue.get(), name="mcp-owner-queue-get")
-                    done, _pending = await asyncio.wait(
-                        {stop_task, get_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    if stop_task in done:
-                        # Cancel the in-flight queue read; it never produced
-                        # an item we'd be obliged to handle.
-                        get_task.cancel()
-                        with contextlib.suppress(BaseException):
-                            await get_task
-                        break
-                    # ``get_task`` completed: handle the request, then loop.
-                    req = get_task.result()
-                    try:
-                        result = await session.call_tool(req.tool, req.args)
-                    except BaseException as exc:
-                        if not req.response.done():
-                            req.response.set_exception(exc)
-                    else:
-                        if not req.response.done():
-                            req.response.set_result(result)
+                async with call_recv:
+                    while not stop_event.is_set():
+                        req = await _receive_or_stop(call_recv, stop_event)
+                        if req is None:
+                            break
+                        await _run_one_call(session, req)
             finally:
-                if not stop_task.done():
-                    stop_task.cancel()
-                    with contextlib.suppress(BaseException):
-                        await stop_task
                 # Fail-fast any requests that arrived after stop was
                 # signalled but before callers noticed the handle was
-                # popped from ``_handles``.
-                while True:
-                    try:
-                        pending = call_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-                    if not pending.response.done():
-                        pending.response.set_exception(ServerNotRunning(server.id))
+                # popped from ``_handles``. ``receive_nowait`` works on the
+                # already-closed-for-receive stream until the buffer is
+                # empty, which is exactly the drain semantics we want.
+                with contextlib.suppress(
+                    anyio.WouldBlock, anyio.EndOfStream, anyio.ClosedResourceError
+                ):
+                    while True:
+                        pending = call_recv.receive_nowait()
+                        async with pending.result_send:
+                            with contextlib.suppress(
+                                anyio.BrokenResourceError, anyio.ClosedResourceError
+                            ):
+                                await pending.result_send.send(ServerNotRunning(server.id))
         finally:
             # Always close in this task. Tolerate any close-time errors so
             # one bad handle does not poison the stop path.
@@ -386,6 +391,12 @@ class MCPHost:
 
         if handle.stop_event is not None and handle.owner_task is not None:
             handle.stop_event.set()
+            # Close the call-send end so any new ``host.call`` from a
+            # racing task fails fast with ``ServerNotRunning`` instead of
+            # silently buffering into a stream the owner will never drain.
+            if handle.call_send is not None:
+                with contextlib.suppress(BaseException):
+                    await handle.call_send.aclose()
             with contextlib.suppress(BaseException):
                 await handle.owner_task
         else:
@@ -486,7 +497,7 @@ class MCPHost:
         # handle.session.call_tool(...)`` from a different task (e.g. a
         # Starlette request handler) trips ``anyio.ClosedResourceError``
         # because anyio enforces task-affinity on memory-object streams.
-        if handle.call_queue is None:
+        if handle.call_send is None:
             # Synthetic-handle path (test_stop_all_tolerates_broken_handle
             # installs a handle without an owner task / queue). Preserve
             # the legacy direct-call semantics for that fixture.
@@ -497,18 +508,33 @@ class MCPHost:
             except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
                 raise ToolExecutionFailed(server_id, tool, exc) from exc
         else:
-            response: asyncio.Future[CallToolResult] = asyncio.get_running_loop().create_future()
-            await handle.call_queue.put(_CallRequest(tool=tool, args=args, response=response))
+            # Single-shot anyio result channel. Buffer size 1 so the owner
+            # task's send completes immediately. Both ends are closed by
+            # the ``async with`` blocks below.
+            result_send, result_recv = anyio.create_memory_object_stream[_CallResult](1)
+            req = _CallRequest(tool=tool, args=args, result_send=result_send)
             try:
-                sdk_result = await response
-            except McpError as exc:
-                raise ToolExecutionFailed(server_id, tool, exc) from exc
-            except ServerNotRunning:
-                # Owner task drained a pending request during stop; surface
-                # the canonical "not running" error to the caller.
-                raise
-            except Exception as exc:  # noqa: BLE001 — wrap-and-rethrow contract
-                raise ToolExecutionFailed(server_id, tool, exc) from exc
+                await handle.call_send.send(req)
+            except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+                # Owner task is gone (server stopped between the handle
+                # lookup above and the send). Match the canonical error.
+                async with result_send:
+                    pass
+                async with result_recv:
+                    pass
+                raise ServerNotRunning(server_id) from exc
+            try:
+                async with result_recv:
+                    outcome = await result_recv.receive()
+            except anyio.EndOfStream as exc:
+                raise ServerNotRunning(server_id) from exc
+            if isinstance(outcome, ServerNotRunning):
+                raise outcome
+            if isinstance(outcome, McpError):
+                raise ToolExecutionFailed(server_id, tool, outcome) from outcome
+            if isinstance(outcome, BaseException):
+                raise ToolExecutionFailed(server_id, tool, outcome) from outcome
+            sdk_result = outcome
 
         # SDK convention: server-side exceptions are *not* re-raised on the
         # client; instead the SDK returns a ``CallToolResult`` with
@@ -606,6 +632,61 @@ class MCPHost:
                 )
             )
         return tuple(descriptors)
+
+
+# ---------------------------------------------------------------------------
+# Owner-task helpers (anyio cross-task hand-off primitives)
+# ---------------------------------------------------------------------------
+
+
+async def _receive_or_stop(
+    call_recv: MemoryObjectReceiveStream[_CallRequest],
+    stop_event: anyio.Event,
+) -> _CallRequest | None:
+    """Wait for either a request or the stop signal, whichever arrives first.
+
+    Returns the received request, or ``None`` if the stop event fires (or the
+    send end is closed). Implemented via an anyio task group with cooperative
+    cancellation so the loser is cleanly torn down — anyio's structured
+    concurrency means we don't have to manage task handles by hand.
+    """
+
+    holder: list[_CallRequest | None] = [None]
+
+    async def _wait_stop() -> None:
+        await stop_event.wait()
+        tg.cancel_scope.cancel()
+
+    async def _wait_req() -> None:
+        try:
+            holder[0] = await call_recv.receive()
+        except (anyio.EndOfStream, anyio.ClosedResourceError):
+            holder[0] = None
+        tg.cancel_scope.cancel()
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(_wait_stop)
+        tg.start_soon(_wait_req)
+    return holder[0]
+
+
+async def _run_one_call(session: ClientSession, req: _CallRequest) -> None:
+    """Execute one queued tool call in the owner task and reply on its channel.
+
+    Catches every exception so a single failing call never breaks the owner
+    loop. The receive end's ``async with`` in :meth:`MCPHost.call` disposes
+    the stream regardless of which branch fires.
+    """
+
+    async with req.result_send:
+        try:
+            result = await session.call_tool(req.tool, req.args)
+        except BaseException as exc:
+            with contextlib.suppress(anyio.BrokenResourceError, anyio.ClosedResourceError):
+                await req.result_send.send(exc)
+            return
+        with contextlib.suppress(anyio.BrokenResourceError, anyio.ClosedResourceError):
+            await req.result_send.send(result)
 
 
 # ---------------------------------------------------------------------------

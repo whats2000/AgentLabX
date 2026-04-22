@@ -51,36 +51,88 @@ def _decode_session_cookie(
 
 
 def install_session_middleware(app: FastAPI, *, cfg: SessionConfig, db: DatabaseHandle) -> None:
+    """Attach the session middleware with an eagerly-bound ``db`` handle.
+
+    Used by the legacy ``async create_app`` path (test ASGI client) where
+    the ``db`` handle exists at app-construction time. Production / Uvicorn
+    setups should use :func:`install_session_middleware_lazy` instead — see
+    its docstring for why.
+    """
+
     serializer = URLSafeTimedSerializer(cfg.secret)
 
     @app.middleware("http")
     async def session_middleware(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        request.state.identity = None
-        request.state.session_config = cfg
-        request.state.session_serializer = serializer
-        request.state.session_remember_me = False
-        request.state.db = db
+        return await _session_dispatch(
+            request=request,
+            call_next=call_next,
+            cfg=cfg,
+            serializer=serializer,
+            db=db,
+        )
 
-        cookie = request.cookies.get(COOKIE_NAME)
-        if cookie is not None:
-            payload = _decode_session_cookie(serializer, cookie, cfg)
-            if isinstance(payload, dict) and "sid" in payload:
-                sid = payload["sid"]
-                if isinstance(sid, str):
-                    identity = await _load_identity_for_session(db, sid)
-                    request.state.identity = identity
-                    request.state.session_remember_me = bool(payload.get("rm"))
 
-        if request.state.identity is None:
-            header = request.headers.get("Authorization", "")
-            if header.startswith("Bearer "):
-                token = header[len("Bearer ") :].strip()
-                if token:
-                    request.state.identity = await _load_identity_for_bearer(db, token)
+def install_session_middleware_lazy(app: FastAPI, *, cfg: SessionConfig) -> None:
+    """Attach session middleware that resolves ``db`` from ``app.state`` at request time.
 
-        return await call_next(request)
+    The ``async create_app`` path constructs the db handle synchronously
+    in the caller's loop and binds it to a closure. Under Uvicorn that
+    handle would be on a torn-down loop — every db access would fail.
+    The lazy variant defers the binding until the first request fires, by
+    which point the lifespan startup phase has populated
+    ``app.state.db`` on Uvicorn's loop.
+    """
+
+    serializer = URLSafeTimedSerializer(cfg.secret)
+
+    @app.middleware("http")
+    async def session_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        db: DatabaseHandle = request.app.state.db
+        return await _session_dispatch(
+            request=request,
+            call_next=call_next,
+            cfg=cfg,
+            serializer=serializer,
+            db=db,
+        )
+
+
+async def _session_dispatch(
+    *,
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+    cfg: SessionConfig,
+    serializer: URLSafeTimedSerializer,
+    db: DatabaseHandle,
+) -> Response:
+    request.state.identity = None
+    request.state.session_config = cfg
+    request.state.session_serializer = serializer
+    request.state.session_remember_me = False
+    request.state.db = db
+
+    cookie = request.cookies.get(COOKIE_NAME)
+    if cookie is not None:
+        payload = _decode_session_cookie(serializer, cookie, cfg)
+        if isinstance(payload, dict) and "sid" in payload:
+            sid = payload["sid"]
+            if isinstance(sid, str):
+                identity = await _load_identity_for_session(db, sid)
+                request.state.identity = identity
+                request.state.session_remember_me = bool(payload.get("rm"))
+
+    if request.state.identity is None:
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            token = header[len("Bearer ") :].strip()
+            if token:
+                request.state.identity = await _load_identity_for_bearer(db, token)
+
+    return await call_next(request)
 
 
 async def _load_identity_for_bearer(db: DatabaseHandle, token: str) -> Identity | None:
