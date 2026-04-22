@@ -1,0 +1,169 @@
+"""Transport launchers — thin async-context-manager wrappers over the MCP SDK.
+
+Each launcher exposes the same shape::
+
+    async def open(self) -> AsyncContextManager[ClientSession]
+
+so :class:`agentlabx.mcp.host.MCPHost` can dispatch on
+:attr:`MCPServerSpec.transport` uniformly. The launchers themselves do not
+know about :class:`MCPServerSpec`; they raise a generic
+:class:`TransportOpenFailed` on failure, which the host then wraps in
+:class:`agentlabx.mcp.protocol.ServerStartupFailed` (the public
+caller-facing exception) with the spec attached.
+
+Three launchers ship in A3:
+
+* :class:`StdioLauncher` — subprocess stdio (the dominant transport for
+  third-party MCP servers shipped via ``npx`` / ``uvx``).
+* :class:`StreamableHTTPLauncher` — HTTP transport using the SDK's
+  streamable-HTTP client (used by HTTP-hosted MCP servers).
+* :class:`InProcessLauncher` — looks up an in-process server factory by key
+  and wires it via the SDK's in-memory transport. The host owns the master
+  factory registry and threads the same mapping reference through to every
+  ``InProcessLauncher`` it constructs.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager
+
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.server import Server
+from mcp.shared.exceptions import McpError
+from mcp.shared.memory import create_connected_server_and_client_session
+
+# `mcp.server.Server` is generic over `(LifespanResultT, RequestT)`; bundle
+# factories may parameterise either, so we keep the registry annotation loose
+# at the structural level (no `Any`, but accept the most permissive ``object``
+# parameterisation).
+ServerFactory = Callable[[], "Server[object, object]"]
+
+
+class TransportOpenFailed(RuntimeError):  # noqa: N818  — name fixed by Stage A3 plan
+    """Raised by a launcher when its underlying transport open fails.
+
+    The host catches this (and other narrow SDK errors) and re-raises a
+    :class:`agentlabx.mcp.protocol.ServerStartupFailed` carrying the
+    :class:`MCPServerSpec` that the launcher itself does not know about.
+    """
+
+
+class StdioLauncher:
+    """Launch an MCP server as a subprocess and connect over stdio.
+
+    ``command`` follows the conventional ``(executable, *args)`` shape; the
+    first element is the program to spawn and the remainder are positional
+    arguments. ``env`` is passed through to the child process verbatim — the
+    host is responsible for resolving secret slots into env-var values
+    (typically ``AGENTLABX_SLOT_<UPPER>``) before constructing the launcher.
+    """
+
+    def __init__(self, command: tuple[str, ...], env: Mapping[str, str]) -> None:
+        if not command:
+            raise ValueError("StdioLauncher requires a non-empty command tuple")
+        self._command: tuple[str, ...] = command
+        self._env: dict[str, str] = dict(env)
+
+    @asynccontextmanager
+    async def open(self) -> AsyncIterator[ClientSession]:
+        params = StdioServerParameters(
+            command=self._command[0],
+            args=list(self._command[1:]),
+            # Pass an empty dict (rather than ``None``) so the SDK propagates
+            # exactly the env we built; ``None`` would inherit the parent
+            # process env which is not what callers want for slot-resolved
+            # credentials.
+            env=self._env,
+        )
+        try:
+            async with (
+                stdio_client(params) as (read, write),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                yield session
+        except (McpError, OSError) as exc:
+            raise TransportOpenFailed(f"stdio transport open failed: {exc!r}") from exc
+
+
+class StreamableHTTPLauncher:
+    """Connect to an MCP server over the streamable-HTTP transport."""
+
+    def __init__(self, url: str, headers: Mapping[str, str]) -> None:
+        if not url:
+            raise ValueError("StreamableHTTPLauncher requires a non-empty url")
+        self._url: str = url
+        self._headers: dict[str, str] = dict(headers)
+
+    @asynccontextmanager
+    async def open(self) -> AsyncIterator[ClientSession]:
+        try:
+            async with (
+                streamablehttp_client(self._url, headers=self._headers) as (
+                    read,
+                    write,
+                    _get_session_id,
+                ),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                yield session
+        except (McpError, OSError) as exc:
+            raise TransportOpenFailed(f"http transport open failed: {exc!r}") from exc
+
+
+class InProcessLauncher:
+    """Wire an in-process MCP server to a client session via memory streams.
+
+    The host owns the master factory registry; each ``InProcessLauncher``
+    receives the same ``factories`` mapping reference so adding a bundle to
+    the host's registry at startup makes it instantly available to every
+    subsequent launch.
+    """
+
+    def __init__(
+        self,
+        inprocess_key: str,
+        factories: Mapping[str, ServerFactory],
+    ) -> None:
+        if not inprocess_key:
+            raise ValueError("InProcessLauncher requires a non-empty inprocess_key")
+        self._key: str = inprocess_key
+        self._factories: Mapping[str, ServerFactory] = factories
+
+    @asynccontextmanager
+    async def open(self) -> AsyncIterator[ClientSession]:
+        try:
+            factory = self._factories[self._key]
+        except KeyError as exc:
+            raise TransportOpenFailed(
+                f"no in-process MCP server factory registered for key {self._key!r}"
+            ) from exc
+        try:
+            server = factory()
+        except Exception as exc:  # noqa: BLE001 — intentional broad wrap
+            raise TransportOpenFailed(
+                f"in-process server factory for {self._key!r} raised: {exc!r}"
+            ) from exc
+        try:
+            async with create_connected_server_and_client_session(server) as session:
+                # The SDK's in-memory helper performs initialise itself when
+                # constructing the session; calling ``initialize`` again would
+                # double-handshake. Yield directly.
+                yield session
+        except McpError as exc:
+            raise TransportOpenFailed(
+                f"in-process transport open failed for {self._key!r}: {exc!r}"
+            ) from exc
+
+
+__all__ = [
+    "InProcessLauncher",
+    "ServerFactory",
+    "StdioLauncher",
+    "StreamableHTTPLauncher",
+    "TransportOpenFailed",
+]

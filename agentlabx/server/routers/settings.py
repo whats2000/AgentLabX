@@ -8,6 +8,7 @@ from sqlalchemy import select
 from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import EmailAlreadyRegisteredError, Identity
 from agentlabx.config.settings import AppSettings
+from agentlabx.core.json_types import JSONValue
 from agentlabx.db.schema import Capability, User, UserConfig
 from agentlabx.db.session import DatabaseHandle
 from agentlabx.events.bus import Event, EventBus
@@ -46,7 +47,7 @@ def _user_slot(slot: str) -> str:
 async def _emit(
     request: Request,
     kind: str,
-    payload: dict[str, str | int | float | bool | None],
+    payload: dict[str, JSONValue],
 ) -> None:
     bus: EventBus = request.state.events
     await bus.emit(Event(kind=kind, payload=payload))

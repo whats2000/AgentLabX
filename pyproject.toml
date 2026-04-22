@@ -18,6 +18,7 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "pyyaml>=6.0,<7.0",
     "litellm>=1.60,<2.0",
+    "mcp>=1.0",
 ]
 
 [project.scripts]
@@ -37,6 +38,14 @@ dev = [
 [project.entry-points."agentlabx.llm_providers"]
 litellm = "agentlabx.llm.litellm_provider:LiteLLMProvider"
 
+[project.entry-points."agentlabx.mcp_bundles"]
+filesystem = "agentlabx.mcp.bundles.filesystem"
+arxiv = "agentlabx.mcp.bundles.arxiv"
+semantic_scholar = "agentlabx.mcp.bundles.semantic_scholar"
+browser = "agentlabx.mcp.bundles.browser"
+code_execution = "agentlabx.mcp.bundles.code_execution"
+memory = "agentlabx.mcp.bundles.memory_server"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -44,6 +53,7 @@ build-backend = "hatchling.build"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = ["third_party"]
 
 [tool.ruff.lint]
 select = [

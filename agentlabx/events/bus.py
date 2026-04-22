@@ -5,13 +5,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from agentlabx.core.json_types import JSONValue
+
 Handler = Callable[["Event"], Awaitable[None]]
 
 
 @dataclass(frozen=True)
 class Event:
     kind: str
-    payload: dict[str, str | int | float | bool | None]
+    payload: dict[str, JSONValue]
     at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 

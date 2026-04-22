@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from agentlabx.auth.default import DefaultAuther
 from agentlabx.auth.protocol import AuthError, EmailAlreadyRegisteredError, Identity
 from agentlabx.auth.token import TokenAuther
+from agentlabx.core.json_types import JSONValue
 from agentlabx.db.schema import Session as SessionRow
 from agentlabx.db.schema import User, UserToken
 from agentlabx.db.session import DatabaseHandle
@@ -64,7 +65,7 @@ def _identity_response(identity: Identity) -> IdentityResponse:
 async def _emit(
     request: Request,
     kind: str,
-    payload: dict[str, str | int | float | bool | None],
+    payload: dict[str, JSONValue],
 ) -> None:
     bus: EventBus = request.state.events
     await bus.emit(Event(kind=kind, payload=payload))

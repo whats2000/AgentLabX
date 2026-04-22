@@ -24,8 +24,11 @@ async def test_all_tables_created(tmp_workspace: Path) -> None:
             tables = await conn.run_sync(_table_names)
         assert tables == sorted(
             [
+                "admin_configs",
                 "app_state",
                 "capabilities",
+                "mcp_servers",
+                "memory_entries",
                 "oauth_tokens",
                 "sessions",
                 "user_configs",
