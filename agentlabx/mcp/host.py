@@ -22,7 +22,7 @@ import asyncio
 import contextlib
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -101,6 +101,22 @@ def slot_to_env_var(slot: str) -> str:
     """Map a slot name to its conventional ``AGENTLABX_SLOT_<UPPER>`` env-var."""
 
     return f"AGENTLABX_SLOT_{_SLOT_ENV_SANITISE.sub('_', slot.upper())}"
+
+
+def _flatten_exception_group(group: BaseExceptionGroup[BaseException]) -> Iterator[BaseException]:
+    """Yield leaf exceptions from a (possibly nested) ``BaseExceptionGroup``.
+
+    anyio task groups frequently nest groups several levels deep when a child
+    fails while another is mid-await. Walking the tree to a leaf gives the
+    router a useful ``transport open failed: McpError(...)`` reason instead
+    of the recursive group repr.
+    """
+
+    for child in group.exceptions:
+        if isinstance(child, BaseExceptionGroup):
+            yield from _flatten_exception_group(child)
+        else:
+            yield child
 
 
 # Type alias for the single-shot result channel a caller hands to the owner
@@ -338,27 +354,26 @@ class MCPHost:
             except BaseExceptionGroup as group:
                 # anyio task groups (used inside the MCP SDK's stdio transport
                 # and ClientSession) re-raise child failures as
-                # BaseExceptionGroup. Walk the group, surface the first
-                # interesting transport-level cause as ServerStartupFailed so
-                # the router translates to a clean 502 instead of 500.
+                # BaseExceptionGroup, often nested several levels deep. Flatten
+                # to the first transport-level leaf so the router surfaces a
+                # readable 502 reason instead of a recursive group repr.
                 await stack.aclose()
                 cancelled = group.subgroup(asyncio.CancelledError)
                 if cancelled is not None:
                     if not ready.done():
                         ready.set_exception(cancelled)
                     raise
-                interesting = group.subgroup((McpError, OSError, ValueError))
-                if interesting is not None and interesting.exceptions:
-                    first = interesting.exceptions[0]
-                    wrapped = ServerStartupFailed(
-                        spec=server.spec,
-                        reason=f"transport open failed: {first!r}",
-                    )
-                else:
-                    wrapped = ServerStartupFailed(
-                        spec=server.spec,
-                        reason=f"transport open failed: {group!r}",
-                    )
+                leaves = list(_flatten_exception_group(group))
+                interesting = next(
+                    (e for e in leaves if isinstance(e, McpError | OSError | ValueError)),
+                    None,
+                )
+                reason = (
+                    f"transport open failed: {interesting!r}"
+                    if interesting is not None
+                    else f"transport open failed: {group!r}"
+                )
+                wrapped = ServerStartupFailed(spec=server.spec, reason=reason)
                 if not ready.done():
                     ready.set_exception(wrapped)
                 return
