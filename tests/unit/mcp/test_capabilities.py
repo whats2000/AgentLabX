@@ -1,15 +1,11 @@
-"""Unit tests for the capability taxonomy + resolver."""
+"""Unit tests for the capability taxonomy."""
 
 from __future__ import annotations
 
-import pytest
-
 from agentlabx.mcp.capabilities import (
     SEED_CAPABILITIES,
-    CapabilityResolver,
     CapabilitySet,
 )
-from agentlabx.mcp.protocol import ToolNotFound
 
 
 def test_capability_set_membership() -> None:
@@ -50,31 +46,6 @@ def test_capability_set_is_satisfied_by() -> None:
     assert required.is_satisfied_by(["paper_search", "paper_fetch", "extra"])
     assert not required.is_satisfied_by(["paper_search"])
     assert CapabilitySet().is_satisfied_by([])  # empty trivially satisfied
-
-
-def test_capability_resolver_for_tool_returns_registered_set() -> None:
-    resolver = CapabilityResolver()
-    resolver.register("arxiv", "search", CapabilitySet.of("paper_search"))
-    assert resolver.for_tool("arxiv", "search") == CapabilitySet.of("paper_search")
-
-
-def test_capability_resolver_for_tool_raises_on_unknown() -> None:
-    resolver = CapabilityResolver()
-    with pytest.raises(ToolNotFound) as excinfo:
-        resolver.for_tool("missing-server", "missing-tool")
-    assert excinfo.value.server == "missing-server"
-    assert excinfo.value.tool == "missing-tool"
-
-
-def test_capability_resolver_constructed_from_mapping() -> None:
-    mapping: dict[tuple[str, str], CapabilitySet] = {
-        ("arxiv", "search"): CapabilitySet.of("paper_search"),
-        ("arxiv", "fetch"): CapabilitySet.of("paper_fetch"),
-    }
-    resolver = CapabilityResolver(mapping)
-    assert len(resolver) == 2
-    assert resolver.for_tool("arxiv", "fetch") == CapabilitySet.of("paper_fetch")
-    assert ("arxiv", "search") in resolver
 
 
 def test_seed_taxonomy_has_unique_members() -> None:

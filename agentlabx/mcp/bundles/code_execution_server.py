@@ -107,6 +107,28 @@ DOCKER_OVERHEAD_SEC: float = 5.0
 """Extra wall-clock budget added on top of ``timeout_sec`` to absorb container
 start/teardown latency before the host-side ``subprocess.run`` timeout fires."""
 
+MAX_OUTPUT_BYTES: int = 256 * 1024
+"""Per-stream cap on captured stdout/stderr (256 KiB). Anything beyond this is
+truncated with a marker line. The container's own --memory=512m limit caps the
+*producer* side; this is the host-side buffer cap that prevents the AgentLabX
+process from OOMing on a runaway tool that floods stdout."""
+
+
+def _truncate(data: str, *, kind: str) -> str:
+    """Cap a captured stream at :data:`MAX_OUTPUT_BYTES`, marking truncation.
+
+    Counts UTF-8 bytes (not characters) so the cap matches the documented
+    256 KiB and a future writer that emits the JSON to disk gets predictable
+    line lengths. Truncation marker ends with a newline so it lands on a
+    fresh line in CLI viewers.
+    """
+
+    encoded = data.encode("utf-8", errors="replace")
+    if len(encoded) <= MAX_OUTPUT_BYTES:
+        return data
+    head = encoded[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+    return f"{head}\n[code.exec] {kind} truncated at {MAX_OUTPUT_BYTES} bytes\n"
+
 
 def _exec_schema() -> dict[str, object]:
     return {
@@ -206,10 +228,11 @@ def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
         if isinstance(partial_stderr, bytes):
             partial_stderr = partial_stderr.decode("utf-8", errors="replace")
         return {
-            "stdout": partial_stdout,
-            "stderr": (
+            "stdout": _truncate(partial_stdout, kind="stdout"),
+            "stderr": _truncate(
                 f"{partial_stderr}\n[code.exec] timed out after "
-                f"{wall_clock_budget:.1f}s of wall-clock"
+                f"{wall_clock_budget:.1f}s of wall-clock",
+                kind="stderr",
             ),
             "exit_code": -1,
         }
@@ -221,8 +244,8 @@ def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
         }
 
     return {
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
+        "stdout": _truncate(completed.stdout, kind="stdout"),
+        "stderr": _truncate(completed.stderr, kind="stderr"),
         "exit_code": completed.returncode,
     }
 

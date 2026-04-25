@@ -14,6 +14,7 @@ operators who need to swap in a fork or pin a different version.
 from __future__ import annotations
 
 import os
+import shlex
 
 from agentlabx.config.settings import AppSettings
 from agentlabx.mcp.protocol import MCPServerSpec
@@ -26,7 +27,7 @@ def spec() -> MCPServerSpec:
     cmd_override = os.environ.get("AGENTLABX_BUNDLE_FILESYSTEM_COMMAND")
     command: tuple[str, ...]
     if cmd_override:
-        command = tuple(cmd_override.split())
+        command = tuple(shlex.split(cmd_override))
     else:
         command = (
             "npx",

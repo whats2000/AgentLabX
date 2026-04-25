@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from agentlabx.mcp.capabilities import (
     SEED_CAPABILITIES,
-    CapabilityResolver,
     CapabilitySet,
 )
 from agentlabx.mcp.protocol import (
     CapabilityRefused,
     CapabilityRequest,
     ImageContent,
+    InvalidToolArgs,
     MCPError,
     MCPServerSpec,
     RegisteredServer,
@@ -37,9 +37,9 @@ __all__ = [
     "SEED_CAPABILITIES",
     "CapabilityRefused",
     "CapabilityRequest",
-    "CapabilityResolver",
     "CapabilitySet",
     "ImageContent",
+    "InvalidToolArgs",
     "MCPError",
     "MCPServerSpec",
     "RegisteredServer",

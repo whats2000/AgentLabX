@@ -14,6 +14,7 @@ that lands in a later stage with a Playwright-based bundle.
 from __future__ import annotations
 
 import os
+import shlex
 
 from agentlabx.mcp.protocol import MCPServerSpec
 
@@ -23,7 +24,7 @@ def spec() -> MCPServerSpec:
 
     cmd_override = os.environ.get("AGENTLABX_BUNDLE_BROWSER_COMMAND")
     command: tuple[str, ...] = (
-        tuple(cmd_override.split()) if cmd_override else ("uvx", "mcp-server-fetch")
+        tuple(shlex.split(cmd_override)) if cmd_override else ("uvx", "mcp-server-fetch")
     )
     return MCPServerSpec(
         name="browser",

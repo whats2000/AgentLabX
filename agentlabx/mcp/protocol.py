@@ -244,10 +244,27 @@ class RegistrationConflict(MCPError):  # noqa: N818  — name fixed by Stage A3 
         super().__init__(f"MCP server name {name!r} already registered in scope")
 
 
+class InvalidToolArgs(MCPError):  # noqa: N818  — name parallels other MCPError children
+    """Raised when ``args`` fail JSON-Schema validation against ``input_schema``.
+
+    Distinct from :class:`ToolExecutionFailed`: that wraps an exception raised
+    *inside* the tool; this fires *before* the host call when the caller
+    supplied invalid args (wrong type, missing required field, additional
+    properties when the schema forbids them, etc.). Routers map this to a 422.
+    """
+
+    def __init__(self, server: str, tool: str, reason: str) -> None:
+        self.server = server
+        self.tool = tool
+        self.reason = reason
+        super().__init__(f"invalid args for tool {tool!r} on server {server!r}: {reason}")
+
+
 __all__ = [
     "CapabilityRefused",
     "CapabilityRequest",
     "ImageContent",
+    "InvalidToolArgs",
     "MCPError",
     "MCPServerSpec",
     "RegisteredServer",

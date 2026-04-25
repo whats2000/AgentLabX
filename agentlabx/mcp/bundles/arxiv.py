@@ -11,6 +11,7 @@ in a fork or pin a different version without forking AgentLabX.
 from __future__ import annotations
 
 import os
+import shlex
 
 from agentlabx.mcp.protocol import MCPServerSpec
 
@@ -20,7 +21,7 @@ def spec() -> MCPServerSpec:
 
     cmd_override = os.environ.get("AGENTLABX_BUNDLE_ARXIV_COMMAND")
     command: tuple[str, ...] = (
-        tuple(cmd_override.split()) if cmd_override else ("uvx", "arxiv-mcp-server")
+        tuple(shlex.split(cmd_override)) if cmd_override else ("uvx", "arxiv-mcp-server")
     )
     return MCPServerSpec(
         name="arxiv",

@@ -22,6 +22,7 @@ The full launch command can be overridden via
 from __future__ import annotations
 
 import os
+import shlex
 
 from agentlabx.mcp.protocol import MCPServerSpec
 
@@ -31,7 +32,7 @@ def spec() -> MCPServerSpec:
 
     cmd_override = os.environ.get("AGENTLABX_BUNDLE_SEMANTIC_SCHOLAR_COMMAND")
     command: tuple[str, ...] = (
-        tuple(cmd_override.split()) if cmd_override else ("uvx", "semantic-scholar-mcp")
+        tuple(shlex.split(cmd_override)) if cmd_override else ("uvx", "semantic-scholar-mcp")
     )
     return MCPServerSpec(
         name="semantic_scholar",

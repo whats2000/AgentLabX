@@ -25,6 +25,7 @@ emit ``mcp.server.startup_failed`` at boot if Docker is missing.
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 
 from agentlabx.mcp.protocol import MCPServerSpec
@@ -36,7 +37,7 @@ def spec() -> MCPServerSpec:
     cmd_override = os.environ.get("AGENTLABX_BUNDLE_CODE_EXECUTION_COMMAND")
     command: tuple[str, ...]
     if cmd_override:
-        command = tuple(cmd_override.split())
+        command = tuple(shlex.split(cmd_override))
     else:
         # Use ``sys.executable`` so the subprocess inherits the same interpreter
         # AgentLabX is running under -- avoids PATH ambiguity in venv installs.
