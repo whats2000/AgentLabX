@@ -235,8 +235,14 @@ class MCPHost:
         slot_values: tuple[str, ...] = tuple(
             resolved_by_slot[slot] for slot in server.spec.env_slot_refs if slot in resolved_by_slot
         )
+        # Honour per-slot env-var overrides declared by the bundle (e.g.
+        # semantic_scholar maps its slot to SEMANTIC_SCHOLAR_API_KEY because
+        # that's what the upstream subprocess reads). Fall back to the
+        # AGENTLABX_SLOT_<UPPER> default for any slot not in the override map.
+        overrides: dict[str, str] = dict(server.spec.slot_env_overrides)
         env: dict[str, str] = {
-            slot_to_env_var(slot): value for slot, value in resolved_by_slot.items()
+            overrides.get(slot, slot_to_env_var(slot)): value
+            for slot, value in resolved_by_slot.items()
         }
 
         # Spawn a dedicated owner task that opens the session, signals

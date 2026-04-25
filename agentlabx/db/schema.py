@@ -174,6 +174,12 @@ class MCPServer(Base):
     inprocess_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     env_slot_refs_json: Mapped[str] = mapped_column(Text, nullable=False)
     declared_capabilities_json: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON list of [slot_ref, env_var_name] pairs. Empty list when no
+    # overrides are declared. Migration v5→v6 added this column with
+    # default '[]' for backward compatibility with pre-A3-patch rows.
+    slot_env_overrides_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

@@ -496,8 +496,11 @@ async def _seed_admin_bundles(
             if not desired_enabled:
                 await registry.set_enabled(registered.id, False)
         else:
-            # Reconcile enabled flag only — name/transport are part of the
-            # identity key and changing them would orphan the row.
+            # Reconcile launch spec in place: code changes to a bundle module
+            # (renamed PyPI package, added slot refs, tweaked capabilities)
+            # need to reach the DB row each boot. Name is the identity key so
+            # the row id is preserved across the update.
+            await registry.update_admin_spec(spec.name, spec)
             current_enabled = await registry.get_enabled(existing.id)
             if current_enabled is not None and current_enabled is not desired_enabled:
                 await registry.set_enabled(existing.id, desired_enabled)

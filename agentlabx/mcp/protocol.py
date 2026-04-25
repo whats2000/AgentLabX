@@ -84,6 +84,12 @@ class MCPServerSpec:
     inprocess_key: str | None
     env_slot_refs: tuple[str, ...]
     declared_capabilities: tuple[str, ...]
+    # Bundles whose upstream subprocess reads its API key from a fixed env-var
+    # name (e.g. SEMANTIC_SCHOLAR_API_KEY) override the default
+    # AGENTLABX_SLOT_<UPPER> mapping per-slot. Tuple of ``(slot_ref, env_var)``
+    # pairs; absent slot refs fall back to the default mapping. Empty by
+    # default for backward compatibility with existing specs.
+    slot_env_overrides: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         set_fields: tuple[str, ...] = tuple(

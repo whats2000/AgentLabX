@@ -64,6 +64,7 @@ class ServerRegistry:
             inprocess_key=spec.inprocess_key,
             env_slot_refs_json=json.dumps(list(spec.env_slot_refs)),
             declared_capabilities_json=json.dumps(list(spec.declared_capabilities)),
+            slot_env_overrides_json=json.dumps([list(p) for p in spec.slot_env_overrides]),
             enabled=1,
         )
         async with self._sessionmaker() as session:
@@ -148,6 +149,38 @@ class ServerRegistry:
             return None
         return bool(row)
 
+    async def update_admin_spec(self, name: str, spec: MCPServerSpec) -> bool:
+        """Overwrite the launch spec of an existing admin-scope row in place.
+
+        Used by the boot-time seed loop so a code change to a bundle module
+        (e.g. a renamed PyPI package, an added env-slot ref, a tweaked
+        capability list) actually reaches the database — without a manual
+        delete/re-register dance. The identity key ``(scope, owner_id, name)``
+        is unchanged so the row id is preserved (downstream consumers that
+        cached the id stay valid). Returns ``True`` when a row was updated,
+        ``False`` if no admin row exists with that name.
+        """
+        async with self._sessionmaker() as session:
+            result = await session.execute(
+                select(MCPServer).where(
+                    MCPServer.scope == "admin",
+                    MCPServer.owner_id.is_(None),
+                    MCPServer.name == name,
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return False
+            row.transport = spec.transport
+            row.command_json = _encode_optional_tuple(spec.command)
+            row.url = spec.url
+            row.inprocess_key = spec.inprocess_key
+            row.env_slot_refs_json = json.dumps(list(spec.env_slot_refs))
+            row.declared_capabilities_json = json.dumps(list(spec.declared_capabilities))
+            row.slot_env_overrides_json = json.dumps([list(p) for p in spec.slot_env_overrides])
+            await session.commit()
+        return True
+
     async def find_admin_by_name(self, name: str) -> RegisteredServer | None:
         """Look up an admin-scope (``owner_id IS NULL``) row by ``name``.
 
@@ -216,6 +249,25 @@ def _decode_required_tuple(value: str) -> tuple[str, ...]:
     return tuple(_require_str(item) for item in decoded)
 
 
+def _decode_pair_tuple(value: str | None) -> tuple[tuple[str, str], ...]:
+    """Decode a JSON ``[[a, b], [c, d], ...]`` payload into a tuple of pairs.
+
+    Used for ``slot_env_overrides_json``. ``None`` and ``"[]"`` both decode to
+    the empty tuple, keeping the v5→v6 default-value column friendly.
+    """
+    if value is None or value == "":
+        return ()
+    decoded = json.loads(value)
+    if not isinstance(decoded, list):
+        raise ValueError(f"expected JSON list in column, got {type(decoded).__name__}")
+    out: list[tuple[str, str]] = []
+    for item in decoded:
+        if not isinstance(item, list) or len(item) != 2:
+            raise ValueError(f"expected JSON pair (length 2), got {item!r}")
+        out.append((_require_str(item[0]), _require_str(item[1])))
+    return tuple(out)
+
+
 def _require_str(item: object) -> str:
     if not isinstance(item, str):
         raise ValueError(f"expected JSON string element, got {type(item).__name__}")
@@ -249,6 +301,7 @@ def _row_to_registered(row: MCPServer) -> RegisteredServer:
         inprocess_key=row.inprocess_key,
         env_slot_refs=_decode_required_tuple(row.env_slot_refs_json),
         declared_capabilities=_decode_required_tuple(row.declared_capabilities_json),
+        slot_env_overrides=_decode_pair_tuple(row.slot_env_overrides_json),
     )
     return RegisteredServer(
         id=row.id,

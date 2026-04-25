@@ -10,7 +10,7 @@ from sqlalchemy.sql.schema import Table  # noqa: TC002 — used for cast below
 from agentlabx.db.schema import AppState, Base, UserToken
 from agentlabx.db.session import DatabaseHandle
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 class SchemaVersionMismatchError(Exception):
@@ -141,11 +141,38 @@ async def _migrate_v4_to_v5(conn: AsyncConnection) -> None:
         )
 
 
+async def _migrate_v5_to_v6(conn: AsyncConnection) -> None:
+    """Add ``slot_env_overrides_json`` to ``mcp_servers``.
+
+    Bundles whose upstream subprocess reads its API key from a fixed env-var
+    name (e.g. ``SEMANTIC_SCHOLAR_API_KEY``) need to override the host's
+    default ``AGENTLABX_SLOT_<UPPER>`` mapping per-slot. Stored as a JSON
+    list of ``[slot_ref, env_var]`` pairs so the column is forward-compatible
+    with future per-bundle policy fields. Pre-existing rows default to
+    ``'[]'`` (no overrides) so the migration is non-breaking.
+    """
+    cols = await conn.execute(text("PRAGMA table_info(mcp_servers)"))
+    present_cols: set[str] = {row[1] for row in cols}
+    if "slot_env_overrides_json" not in present_cols:
+        await conn.execute(
+            text(
+                "ALTER TABLE mcp_servers ADD COLUMN "
+                "slot_env_overrides_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+
+
 _MIGRATIONS: tuple[Migration, ...] = (
     Migration(from_version=1, to_version=2, name="add_email_column", apply=_migrate_v1_to_v2),
     Migration(from_version=2, to_version=3, name="add_user_tokens", apply=_migrate_v2_to_v3),
     Migration(from_version=3, to_version=4, name="drop_token_revoked", apply=_migrate_v3_to_v4),
     Migration(from_version=4, to_version=5, name="add_a3_tables", apply=_migrate_v4_to_v5),
+    Migration(
+        from_version=5,
+        to_version=6,
+        name="add_slot_env_overrides",
+        apply=_migrate_v5_to_v6,
+    ),
 )
 
 
