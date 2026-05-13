@@ -162,6 +162,11 @@ class RegisteredServer:
     owner_id: str | None
     tools: tuple[ToolDescriptor, ...]
     started_at: datetime | None
+    # Last ``ServerStartupFailed.reason`` persisted against this row, or
+    # ``None`` when the row last started cleanly (or never attempted).
+    # Surfaced in the REST response so the frontend can render *why* a
+    # server is grey without consulting the audit log.
+    last_startup_error: str | None = None
 
     def __post_init__(self) -> None:
         if self.spec.scope == "user" and self.owner_id is None:

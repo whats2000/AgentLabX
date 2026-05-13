@@ -180,6 +180,11 @@ class MCPServer(Base):
     slot_env_overrides_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
+    # Last ``ServerStartupFailed.reason`` recorded against this row, or
+    # NULL when the row last started cleanly. Cleared on successful
+    # ``host.start``; populated on failure so the UI can surface why a
+    # row is grey without spelunking the audit log. Migration v6→v7.
+    last_startup_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow

@@ -149,6 +149,22 @@ class ServerRegistry:
             return None
         return bool(row)
 
+    async def set_startup_error(self, server_id: str, error: str | None) -> None:
+        """Record (or clear) the most recent startup-failure reason.
+
+        Pass ``error`` to populate, ``None`` to clear after a successful
+        :meth:`MCPHost.start`. Truncates to 4 KiB so a runaway upstream
+        stack-trace can't blow the row size out. No-op when the row is
+        absent.
+        """
+        truncated = error[:4096] if error is not None else None
+        async with self._sessionmaker() as session:
+            row = await session.get(MCPServer, server_id)
+            if row is None:
+                return
+            row.last_startup_error = truncated
+            await session.commit()
+
     async def update_admin_spec(self, name: str, spec: MCPServerSpec) -> bool:
         """Overwrite the launch spec of an existing admin-scope row in place.
 
@@ -309,6 +325,7 @@ def _row_to_registered(row: MCPServer) -> RegisteredServer:
         owner_id=row.owner_id,
         tools=(),
         started_at=None,
+        last_startup_error=row.last_startup_error,
     )
 
 

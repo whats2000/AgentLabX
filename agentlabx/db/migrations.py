@@ -10,7 +10,7 @@ from sqlalchemy.sql.schema import Table  # noqa: TC002 — used for cast below
 from agentlabx.db.schema import AppState, Base, UserToken
 from agentlabx.db.session import DatabaseHandle
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 class SchemaVersionMismatchError(Exception):
@@ -162,6 +162,20 @@ async def _migrate_v5_to_v6(conn: AsyncConnection) -> None:
         )
 
 
+async def _migrate_v6_to_v7(conn: AsyncConnection) -> None:
+    """Add ``last_startup_error`` to ``mcp_servers``.
+
+    Records the most recent ``ServerStartupFailed`` reason against the
+    ``enabled=true`` row so an operator can see *why* a server is grey
+    without spelunking the audit log. Cleared whenever a subsequent
+    ``host.start`` succeeds. Pre-existing rows default to NULL.
+    """
+    cols = await conn.execute(text("PRAGMA table_info(mcp_servers)"))
+    present_cols: set[str] = {row[1] for row in cols}
+    if "last_startup_error" not in present_cols:
+        await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN last_startup_error TEXT"))
+
+
 _MIGRATIONS: tuple[Migration, ...] = (
     Migration(from_version=1, to_version=2, name="add_email_column", apply=_migrate_v1_to_v2),
     Migration(from_version=2, to_version=3, name="add_user_tokens", apply=_migrate_v2_to_v3),
@@ -172,6 +186,12 @@ _MIGRATIONS: tuple[Migration, ...] = (
         to_version=6,
         name="add_slot_env_overrides",
         apply=_migrate_v5_to_v6,
+    ),
+    Migration(
+        from_version=6,
+        to_version=7,
+        name="add_last_startup_error",
+        apply=_migrate_v6_to_v7,
     ),
 )
 

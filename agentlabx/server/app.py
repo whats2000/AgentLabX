@@ -556,17 +556,31 @@ async def _start_enabled_servers(
                     },
                 )
             )
+            # Persist the reason on the row so the UI can render it next
+            # to the still-``enabled=true`` server card. Best-effort —
+            # a secondary DB failure must not block boot of the other
+            # bundles.
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, exc.reason)
         except Exception as exc:  # noqa: BLE001 — defensive: never abort boot
+            unexpected_reason = f"unexpected error: {type(exc).__name__}: {exc}"
             await event_bus.emit(
                 Event(
                     kind="mcp.server.startup_failed",
                     payload={
                         "server_id": registered.id,
                         "server_name": registered.spec.name,
-                        "reason": f"unexpected error: {exc!r}",
+                        "reason": unexpected_reason,
                     },
                 )
             )
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, unexpected_reason)
+        else:
+            # Successful start — clear any prior recorded failure so the
+            # UI stops showing a stale red banner on a now-healthy server.
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, None)
 
 
 async def _log_bootstrap_audit(

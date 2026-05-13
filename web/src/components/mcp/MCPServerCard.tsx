@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -148,14 +149,42 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {server.transport === "stdio" ? (
+        {server.last_startup_error ? (
+          <div className="flex gap-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0 space-y-1">
+              <div className="font-semibold uppercase tracking-wide text-[10px]">
+                {t("mcp.lastStartupError")}
+              </div>
+              <div className="break-words font-mono">{server.last_startup_error}</div>
+              <div className="text-[10px] opacity-75">{t("mcp.lastStartupErrorHint")}</div>
+            </div>
+          </div>
+        ) : null}
+
+        {server.transport === "stdio" && server.command ? (
           <div className="space-y-1">
             <Label className="text-xs">{t("mcp.commandLabel")}</Label>
             <code className="block rounded bg-muted px-2 py-1 text-xs font-mono break-all">
-              {/* The /api/mcp/servers response doesn't include command in MCPServerResponse;
-                  surface a placeholder so the slot is visible — operators look this up via
-                  the backend logs / pyproject. */}
-              {t("mcp.commandHidden")}
+              {server.command.join(" ")}
+            </code>
+          </div>
+        ) : null}
+
+        {server.transport === "http" && server.url ? (
+          <div className="space-y-1">
+            <Label className="text-xs">{t("mcp.urlLabel")}</Label>
+            <code className="block rounded bg-muted px-2 py-1 text-xs font-mono break-all">
+              {server.url}
+            </code>
+          </div>
+        ) : null}
+
+        {server.transport === "inprocess" && server.inprocess_key ? (
+          <div className="space-y-1">
+            <Label className="text-xs">{t("mcp.inprocessKeyLabel")}</Label>
+            <code className="block rounded bg-muted px-2 py-1 text-xs font-mono break-all">
+              {server.inprocess_key}
             </code>
           </div>
         ) : null}

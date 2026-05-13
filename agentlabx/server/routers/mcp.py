@@ -124,6 +124,7 @@ def _server_to_response(
         command=server.spec.command,
         url=server.spec.url,
         inprocess_key=server.spec.inprocess_key,
+        last_startup_error=server.last_startup_error,
         tools=[_tool_to_response(server, t) for t in tools],
         started_at=started_at,
     )
@@ -296,10 +297,18 @@ async def patch_server(
             try:
                 await host.start(server, owner_id=server.owner_id)
             except ServerStartupFailed as exc:
+                # Persist the failure reason so the UI can render the
+                # diagnostic next to the (still ``enabled=true``) row
+                # instead of silently going grey. Best-effort: a
+                # secondary DB failure must not mask the primary cause.
+                with contextlib.suppress(Exception):
+                    await registry.set_startup_error(server.id, exc.reason)
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"failed to start MCP server: {exc.reason}",
                 ) from exc
+            # Successful start — clear any prior recorded failure.
+            await registry.set_startup_error(server.id, None)
     else:
         with contextlib.suppress(ServerNotRunning):
             await host.stop(server.id)

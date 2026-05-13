@@ -77,6 +77,16 @@ export interface MCPServerDto {
   owner_id: string | null
   declared_capabilities: string[]
   env_slot_refs: string[]
+  command: string[] | null
+  url: string | null
+  inprocess_key: string | null
+  /**
+   * Last persisted ServerStartupFailed.reason for this row, or null when
+   * the row last started cleanly. Surfaced so the UI can render *why* a
+   * server is grey without consulting the audit log. Cleared on
+   * successful host.start.
+   */
+  last_startup_error: string | null
   tools: MCPToolDto[]
   started_at: string | null
 }
