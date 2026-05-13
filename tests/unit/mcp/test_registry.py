@@ -311,6 +311,36 @@ async def test_get_enabled_round_trip_with_set_enabled(
 
 
 @pytest.mark.asyncio
+async def test_set_startup_error_truncates_at_4_kib(
+    db: DatabaseHandle, two_users: tuple[str, str]
+) -> None:
+    """A runaway upstream stack-trace must not bloat the row.
+
+    The cap is 4 KiB; pass a 10 KiB error and assert the round-trip
+    returns exactly the first 4096 chars.
+    """
+
+    user_a, _ = two_users
+    registry = _make_registry(db)
+    registered = await registry.register(_user_spec("echo"), owner_id=user_a)
+
+    huge_error = "x" * 10_240
+    await registry.set_startup_error(registered.id, huge_error)
+
+    refreshed = await registry.get(registered.id)
+    assert refreshed is not None
+    assert refreshed.last_startup_error is not None
+    assert len(refreshed.last_startup_error) == 4096
+    assert refreshed.last_startup_error == "x" * 4096
+
+    # Clearing back to None works too.
+    await registry.set_startup_error(registered.id, None)
+    refreshed = await registry.get(registered.id)
+    assert refreshed is not None
+    assert refreshed.last_startup_error is None
+
+
+@pytest.mark.asyncio
 async def test_get_enabled_returns_none_for_missing_row(db: DatabaseHandle) -> None:
     registry = _make_registry(db)
     assert await registry.get_enabled("does-not-exist") is None
