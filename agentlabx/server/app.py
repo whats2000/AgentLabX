@@ -268,6 +268,17 @@ def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
             disabled_reasons=disabled_reasons,
         )
 
+        # Spec-name set of bundled admin servers — must match the same
+        # computation in the legacy ``create_app`` factory above so the
+        # router's bundled-delete guard fires identically under both
+        # entry-points (the previous omission was the B1 bug — production
+        # DELETE on arxiv silently succeeded because this set was empty).
+        bundled_names: set[str] = set()
+        for bundle_name, module in bundles:
+            spec = _bundle_spec(module, bundle_name)
+            if spec is not None and spec.scope == "admin":
+                bundled_names.add(spec.name)
+
         app.state.db = db
         app.state.settings = settings
         app.state.crypto = crypto
@@ -276,6 +287,7 @@ def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
         app.state.mcp_registry = registry
         app.state.mcp_host = host
         app.state.mcp_dispatcher = dispatcher
+        app.state.mcp_bundled_names = frozenset(bundled_names)
 
         try:
             yield
