@@ -43,6 +43,17 @@ class MCPServerResponse(BaseModel):  # type: ignore[explicit-any]
     enabled: bool
     owner_id: str | None
     declared_capabilities: tuple[str, ...]
+    env_slot_refs: tuple[str, ...] = ()
+    # Launch descriptor — exactly one is non-null per ``transport``. Surfaced
+    # so the UI can show what's running. Slot values are NEVER inlined here;
+    # they are env-injected from admin_configs/user_configs at start time.
+    command: tuple[str, ...] | None = None
+    url: str | None = None
+    inprocess_key: str | None = None
+    # Last ``ServerStartupFailed.reason`` recorded for this row, or null
+    # when the row last started cleanly. Surfaced so the frontend can
+    # render *why* a row is grey without consulting the audit log.
+    last_startup_error: str | None = None
     tools: list[MCPToolResponse] = Field(default_factory=list)
     started_at: datetime | None = None
 

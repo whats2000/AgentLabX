@@ -83,6 +83,10 @@ module = ["litellm.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["jsonschema.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["tests.unit.llm.test_protocol"]
 disable_error_code = ["comparison-overlap"]
 

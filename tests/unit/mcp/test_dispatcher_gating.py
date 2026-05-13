@@ -42,10 +42,15 @@ from agentlabx.mcp.protocol import (
 class FakeHost:
     """Structural stand-in for :class:`MCPHost`.
 
-    The dispatcher only invokes ``slot_values_for`` (sync) and ``call``
-    (async), so we expose exactly those two methods. ``calls`` records every
-    invocation for assertion. ``raise_on_call`` lets a test inject a
-    ``ToolExecutionFailed`` to drive the error path.
+    The dispatcher invokes ``tools_for`` (sync, for the capability cross-check
+    + schema lookup), ``slot_values_for`` (sync), and ``call`` (async).
+    ``calls`` records every invocation for assertion. ``raise_on_call`` lets a
+    test inject a ``ToolExecutionFailed`` to drive the error path.
+
+    ``tools`` is the descriptor list returned by ``tools_for``; default is a
+    permissive single-tool list whose name is ``"tool"``, capability is
+    ``"cap"``, and schema is empty (``{}``) so any args object validates.
+    Tests that need different shapes pass their own descriptors.
     """
 
     def __init__(
@@ -54,11 +59,16 @@ class FakeHost:
         slot_values: tuple[str, ...] = (),
         result: ToolCallResult | None = None,
         raise_on_call: BaseException | None = None,
+        tools: tuple[ToolDescriptor, ...] | None = None,
     ) -> None:
         self._slot_values = slot_values
         self._result = result or ToolCallResult(content=(), is_error=False, structured=None)
         self._raise = raise_on_call
+        self._tools = tools if tools is not None else (_default_tool(),)
         self.calls: list[tuple[str, str, dict[str, JSONValue]]] = []
+
+    def tools_for(self, server_id: str) -> tuple[ToolDescriptor, ...]:  # noqa: ARG002
+        return self._tools
 
     def slot_values_for(self, server_id: str) -> tuple[str, ...]:  # noqa: ARG002
         return self._slot_values
@@ -68,6 +78,23 @@ class FakeHost:
         if self._raise is not None:
             raise self._raise
         return self._result
+
+
+def _default_tool() -> ToolDescriptor:
+    """Permissive default tool descriptor used by FakeHost when no list is given.
+
+    Name ``"tool"``, capability ``"cap"`` (and a few aliases for the tests
+    that pass shorter names), empty input_schema so jsonschema.validate
+    accepts any args dict.
+    """
+
+    return ToolDescriptor(
+        server_name="srv",
+        tool_name="tool",
+        description="",
+        input_schema={},
+        capabilities=("cap", "c", "echo_speak"),
+    )
 
 
 class DenyCapability:
@@ -199,7 +226,21 @@ async def test_resolve_capability_no_match_raises_capability_refused() -> None:
 
 
 async def test_invoke_denied_emits_refused_event_and_raises() -> None:
-    host = FakeHost()
+    # Tool advertises "forbidden" so the C1 capability cross-check passes;
+    # the allow-list provider then denies it. This isolates the allow-list
+    # gate from the cross-check (the next test exercises the cross-check
+    # directly).
+    host = FakeHost(
+        tools=(
+            ToolDescriptor(
+                server_name="srv",
+                tool_name="tool",
+                description="",
+                input_schema={},
+                capabilities=("forbidden",),
+            ),
+        ),
+    )
     dispatcher, _, events = _make_dispatcher(host, DenyCapability("forbidden"))
 
     with pytest.raises(CapabilityRefused) as exc_info:
@@ -228,7 +269,46 @@ async def test_invoke_denied_emits_refused_event_and_raises() -> None:
         "capability": "forbidden",
         "server_id": "srv",
         "tool": "tool",
+        "reason": "allow-list denied",
     }
+
+
+async def test_invoke_capability_cross_check_blocks_lying_caller() -> None:
+    """C1 fix: caller passing a capability the tool doesn't advertise is refused.
+
+    Without this gate, an A8-permitted caller for ``paper_search`` could
+    invoke ``code.exec`` by passing ``capability="paper_search"`` while
+    targeting a code-exec tool. The dispatcher must cross-check the caller's
+    asserted capability against the tool's advertised capabilities BEFORE
+    consulting the allow-list.
+    """
+    host = FakeHost(
+        tools=(
+            ToolDescriptor(
+                server_name="srv",
+                tool_name="execute",
+                description="",
+                input_schema={},
+                capabilities=("code_exec",),
+            ),
+        ),
+    )
+    dispatcher, _, events = _make_dispatcher(host, AlwaysAllow())
+
+    with pytest.raises(CapabilityRefused):
+        await dispatcher.invoke(
+            stage="s",
+            agent="a",
+            capability="paper_search",  # lying — tool doesn't advertise this
+            server_id="srv",
+            tool="execute",
+            args={},
+        )
+    assert host.calls == []
+    refused = [e for e in events if e.kind == "mcp.tool.refused"]
+    assert len(refused) == 1
+    assert refused[0].payload["reason"] == "tool does not advertise capability"
+    assert refused[0].payload["advertised_capabilities"] == ["code_exec"]
 
 
 async def test_invoke_allowed_emits_called_with_redacted_args() -> None:
@@ -275,6 +355,15 @@ async def test_invoke_allowed_redacts_slot_values_in_result_text() -> None:
             ),
             is_error=False,
             structured=None,
+        ),
+        tools=(
+            ToolDescriptor(
+                server_name="srv",
+                tool_name="t",
+                description="",
+                input_schema={},
+                capabilities=("c",),
+            ),
         ),
     )
     dispatcher, _, events = _make_dispatcher(host, AlwaysAllow())

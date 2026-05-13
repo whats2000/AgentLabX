@@ -1,19 +1,16 @@
-"""Capability taxonomy + resolver.
+"""Capability taxonomy.
 
 Capabilities are the abstract permissions a stage declares it needs (e.g.
 ``paper_search``, ``code_exec``). Each MCP tool, at registration time, is
-tagged with the capabilities it provides. The dispatcher uses
-:class:`CapabilityResolver` to look up which capabilities a given
-``(server, tool)`` pair offers, and the gate compares that against the
-stage's allow-list.
+tagged with the capabilities it provides. The dispatcher reads the tool's
+own ``capabilities`` tuple at invoke time to cross-check the caller's
+declared capability — there is no separate resolver indirection.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-
-from agentlabx.mcp.protocol import ToolNotFound
 
 SEED_CAPABILITIES: tuple[str, ...] = (
     "paper_search",
@@ -95,44 +92,8 @@ class CapabilitySet:
         return self.members.issubset(declared_set)
 
 
-class CapabilityResolver:
-    """Lookup table from ``(server, tool)`` to the tool's capability set.
-
-    Built at server-registration time from each
-    :class:`agentlabx.mcp.protocol.ToolDescriptor` 's ``capabilities`` tuple.
-    """
-
-    def __init__(self, mapping: Mapping[tuple[str, str], CapabilitySet] | None = None) -> None:
-        self._mapping: dict[tuple[str, str], CapabilitySet] = (
-            dict(mapping) if mapping is not None else {}
-        )
-
-    def register(self, server: str, tool: str, capabilities: CapabilitySet) -> None:
-        """Add or replace the capability set for one ``(server, tool)`` pair."""
-
-        self._mapping[(server, tool)] = capabilities
-
-    def for_tool(self, server: str, tool: str) -> CapabilitySet:
-        """Return the capability set declared for ``(server, tool)``.
-
-        Raises :class:`ToolNotFound` if no entry has been registered.
-        """
-
-        try:
-            return self._mapping[(server, tool)]
-        except KeyError as exc:
-            raise ToolNotFound(server, tool) from exc
-
-    def __len__(self) -> int:
-        return len(self._mapping)
-
-    def __contains__(self, key: object) -> bool:
-        return key in self._mapping
-
-
 __all__ = [
     "KNOWN_UNCOVERED_CAPABILITIES",
     "SEED_CAPABILITIES",
-    "CapabilityResolver",
     "CapabilitySet",
 ]

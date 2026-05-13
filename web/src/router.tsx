@@ -6,6 +6,7 @@ import { LoginPage } from "@/auth/LoginPage"
 import { Layout } from "@/components/Layout"
 import { AdminActivityPage } from "@/pages/AdminActivityPage"
 import { AdminPage } from "@/pages/AdminPage"
+import { MCPServersPage } from "@/pages/MCPServersPage"
 import { PreferencesPage } from "@/pages/PreferencesPage"
 import { ProfilePage } from "@/pages/ProfilePage"
 import { RunsPage } from "@/pages/RunsPage"
@@ -81,6 +82,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireAuth>
             <RunsPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: "mcp",
+        element: (
+          <RequireAuth>
+            <MCPServersPage />
           </RequireAuth>
         ),
       },

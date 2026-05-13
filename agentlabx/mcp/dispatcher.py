@@ -26,17 +26,21 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
 
+import jsonschema
+
 from agentlabx.core.json_types import JSONValue
 from agentlabx.events.bus import Event, EventBus
 from agentlabx.mcp.host import MCPHost
 from agentlabx.mcp.protocol import (
     CapabilityRefused,
     CapabilityRequest,
+    InvalidToolArgs,
     RegisteredServer,
     TextContent,
     ToolCallResult,
     ToolDescriptor,
     ToolExecutionFailed,
+    ToolNotFound,
 )
 from agentlabx.mcp.redaction import redact_args, redact_text
 
@@ -135,11 +139,51 @@ class ToolDispatcher:
         tool: str,
         args: dict[str, JSONValue],
     ) -> ToolCallResult:
-        """Run a single tool call through the gate, host, and event bus."""
+        """Run a single tool call through the gate, host, and event bus.
+
+        Performs three pre-call checks in order, all gated by an emitted
+        ``mcp.tool.refused`` (gating) or ``mcp.tool.error`` (validation) event:
+
+        1. **Capability cross-check** (closes a security bypass): the caller
+           passes ``capability`` as a string, but the dispatcher must verify the
+           target tool actually advertises it. Without this, A8's allow-list
+           could be bypassed by passing a permitted capability string while
+           invoking a tool that requires a different capability (e.g. a
+           ``paper_search``-permitted caller invoking ``code.exec``).
+        2. **Allow-list provider** check (A8 swap point).
+        3. **JSON-Schema validation** of ``args`` against the tool's
+           ``input_schema``. Catches malformed args before they reach the
+           subprocess; failures raise :class:`InvalidToolArgs` (router → 422)
+           rather than letting the upstream return a vague "validation
+           failed" string buried in the result content.
+        """
 
         request = CapabilityRequest(stage_name=stage, agent_name=agent, capability=capability)
         redacted_args = redact_args(args)
 
+        # 1) Capability cross-check — propagates ServerNotRunning if absent.
+        descriptors = self._host.tools_for(server_id)
+        descriptor = next((t for t in descriptors if t.tool_name == tool), None)
+        if descriptor is None:
+            raise ToolNotFound(server=server_id, tool=tool)
+        if capability not in descriptor.capabilities:
+            await self._event_bus.emit(
+                Event(
+                    kind="mcp.tool.refused",
+                    payload={
+                        "stage": stage,
+                        "agent": agent,
+                        "capability": capability,
+                        "server_id": server_id,
+                        "tool": tool,
+                        "reason": "tool does not advertise capability",
+                        "advertised_capabilities": list(descriptor.capabilities),
+                    },
+                )
+            )
+            raise CapabilityRefused(stage=stage, agent=agent, capability=capability)
+
+        # 2) Allow-list provider (A8 swap point).
         if not self._allow_list.allowed(request):
             await self._event_bus.emit(
                 Event(
@@ -150,10 +194,38 @@ class ToolDispatcher:
                         "capability": capability,
                         "server_id": server_id,
                         "tool": tool,
+                        "reason": "allow-list denied",
                     },
                 )
             )
             raise CapabilityRefused(stage=stage, agent=agent, capability=capability)
+
+        # 3) Schema-validate args before the host call. We use jsonschema's
+        # default Draft7 validator — it gracefully tolerates schemas that
+        # carry our custom ``x-agentlabx-capabilities`` metadata key (unknown
+        # keywords are ignored per spec). On validation failure we emit
+        # mcp.tool.error so the audit trail captures every failed invocation
+        # (gating + validation + execution all share the same event family).
+        try:
+            jsonschema.validate(args, dict(descriptor.input_schema))
+        except jsonschema.ValidationError as exc:
+            reason = exc.message
+            await self._event_bus.emit(
+                Event(
+                    kind="mcp.tool.error",
+                    payload={
+                        "stage": stage,
+                        "agent": agent,
+                        "capability": capability,
+                        "server_id": server_id,
+                        "tool": tool,
+                        "args": redacted_args,
+                        "error_type": "InvalidToolArgs",
+                        "reason": reason,
+                    },
+                )
+            )
+            raise InvalidToolArgs(server=server_id, tool=tool, reason=reason) from exc
 
         # ``slot_values_for`` propagates ``ServerNotRunning`` to the caller —
         # the dispatcher does not catch it; the host's preconditions are the

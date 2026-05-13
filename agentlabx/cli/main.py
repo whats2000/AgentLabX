@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import click
@@ -93,6 +94,17 @@ def reset_passphrase(email: str, passphrase: str, workspace: Path | None) -> Non
 @click.option("--tls-cert", type=click.Path(path_type=Path), default=None)
 @click.option("--tls-key", type=click.Path(path_type=Path), default=None)
 @click.option("--workspace", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--reload",
+    "reload_",
+    is_flag=True,
+    default=False,
+    help=(
+        "Enable Uvicorn's hot-reload watcher (dev only). Watches agentlabx/ for "
+        "changes and respawns the worker. The parent process holds CLI options; "
+        "the reloaded child reads AGENTLABX_* env vars. Do not enable in prod."
+    ),
+)
 def serve(
     bind: str,
     host: str | None,
@@ -100,6 +112,7 @@ def serve(
     tls_cert: Path | None,
     tls_key: Path | None,
     workspace: Path | None,
+    reload_: bool,
 ) -> None:
     """Start the AgentLabX server."""
     mode = BindMode.LAN if bind == "lan" else BindMode.LOOPBACK
@@ -117,13 +130,6 @@ def serve(
         kwargs["workspace"] = workspace
 
     settings = AppSettings(**kwargs)  # type: ignore[arg-type]
-    # Build the app synchronously: every async setup step (db connect,
-    # MCP host start, admin-bundle seeding) runs inside Uvicorn's lifespan
-    # — i.e. inside Uvicorn's own event loop. Doing the bootstrap in an
-    # outer ``asyncio.run`` (the previous arrangement) left every MCP
-    # server's owner task pinned to a torn-down loop, which made every
-    # subsequent invoke request hang forever.
-    app = create_app_for_uvicorn(settings)
 
     uv_kwargs: dict[str, str | int | None] = {
         "host": settings.bind_host,
@@ -132,4 +138,38 @@ def serve(
     if mode is BindMode.LAN:
         uv_kwargs["ssl_certfile"] = str(settings.tls_cert)
         uv_kwargs["ssl_keyfile"] = str(settings.tls_key)
+
+    if reload_:
+        # Uvicorn's reloader spawns a subprocess that re-imports the app each
+        # cycle, so we can't pass a pre-built FastAPI instance. Push the CLI
+        # overrides into AGENTLABX_* env vars (pydantic-settings reads them)
+        # so the reloaded child constructs the same effective AppSettings.
+        os.environ["AGENTLABX_BIND_MODE"] = mode.value
+        os.environ["AGENTLABX_BIND_HOST"] = settings.bind_host
+        os.environ["AGENTLABX_BIND_PORT"] = str(settings.bind_port)
+        if workspace is not None:
+            os.environ["AGENTLABX_WORKSPACE"] = str(workspace)
+        if tls_cert is not None:
+            os.environ["AGENTLABX_TLS_CERT"] = str(tls_cert)
+        if tls_key is not None:
+            os.environ["AGENTLABX_TLS_KEY"] = str(tls_key)
+        click.echo(
+            "[dev] hot-reload enabled — watching agentlabx/ for changes (do NOT use in production)"
+        )
+        uvicorn.run(
+            "agentlabx.server.app:create_app_default",
+            factory=True,
+            reload=True,
+            reload_dirs=["agentlabx"],
+            **uv_kwargs,  # type: ignore[arg-type]
+        )
+        return
+
+    # Build the app synchronously: every async setup step (db connect,
+    # MCP host start, admin-bundle seeding) runs inside Uvicorn's lifespan
+    # — i.e. inside Uvicorn's own event loop. Doing the bootstrap in an
+    # outer ``asyncio.run`` (the previous arrangement) left every MCP
+    # server's owner task pinned to a torn-down loop, which made every
+    # subsequent invoke request hang forever.
+    app = create_app_for_uvicorn(settings)
     uvicorn.run(app, **uv_kwargs)  # type: ignore[arg-type]

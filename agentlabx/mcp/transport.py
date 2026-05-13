@@ -25,15 +25,56 @@ Three launchers ship in A3:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager
 
+import httpx
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.server import Server
 from mcp.shared.exceptions import McpError
 from mcp.shared.memory import create_connected_server_and_client_session
+
+
+def _leaf_exceptions(group: BaseExceptionGroup[BaseException]) -> Iterator[BaseException]:
+    """Yield leaf exceptions from a (possibly nested) ``BaseExceptionGroup``.
+
+    anyio task groups (used inside the MCP SDK's stdio + streamable-HTTP
+    clients) raise ``BaseExceptionGroup`` containing the actual cause.
+    Walking to leaves lets the launcher surface ``ConnectError(...)``
+    instead of ``ExceptionGroup(...)`` repr in the user-facing reason.
+    """
+
+    for child in group.exceptions:
+        if isinstance(child, BaseExceptionGroup):
+            yield from _leaf_exceptions(child)
+        else:
+            yield child
+
+
+def _format_http_failure(url: str, exc: BaseException) -> str:
+    """Render an httpx / OS-level transport failure as a clean English string.
+
+    Caller passes ``url`` so the message can name the target. Falls back to
+    ``str(exc)`` when no specific httpx subclass matches; never returns a
+    Python type repr.
+    """
+
+    if isinstance(exc, httpx.ConnectError):
+        return f"could not connect to {url!r}: {exc}"
+    if isinstance(exc, httpx.ReadTimeout | httpx.WriteTimeout | httpx.ConnectTimeout):
+        return f"timeout reaching {url!r}: {exc}"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"upstream returned {exc.response.status_code} from {url!r}: {exc}"
+    if isinstance(exc, httpx.HTTPError):
+        return f"http error from {url!r}: {exc}"
+    if isinstance(exc, OSError):
+        return f"OS error reaching {url!r}: {exc.strerror or exc}"
+    if isinstance(exc, McpError):
+        return f"MCP protocol error from {url!r}: {exc}"
+    return f"transport failure for {url!r}: {type(exc).__name__}: {exc}"
+
 
 # `mcp.server.Server` is generic over `(LifespanResultT, RequestT)`; bundle
 # factories may parameterise either, so we keep the registry annotation loose
@@ -85,8 +126,22 @@ class StdioLauncher:
             ):
                 await session.initialize()
                 yield session
-        except (McpError, OSError) as exc:
-            raise TransportOpenFailed(f"stdio transport open failed: {exc!r}") from exc
+        except FileNotFoundError as exc:
+            # Most common stdio failure: the launcher binary (uvx, npx,
+            # python, etc.) is missing from PATH. Translate to an English
+            # caller-actionable message instead of a localised OS string
+            # wrapped in repr().
+            argv0 = self._command[0] if self._command else "(no command)"
+            raise TransportOpenFailed(
+                f"stdio transport open failed: command not found: {argv0!r}"
+            ) from exc
+        except OSError as exc:
+            # ``exc.strerror`` is locale-dependent on Windows; fall back to
+            # ``str(exc)`` if absent. Either way no Python-type leakage.
+            detail = exc.strerror or str(exc)
+            raise TransportOpenFailed(f"stdio transport open failed: {detail}") from exc
+        except McpError as exc:
+            raise TransportOpenFailed(f"stdio transport open failed: {exc}") from exc
 
 
 class StreamableHTTPLauncher:
@@ -111,8 +166,25 @@ class StreamableHTTPLauncher:
             ):
                 await session.initialize()
                 yield session
-        except (McpError, OSError) as exc:
-            raise TransportOpenFailed(f"http transport open failed: {exc!r}") from exc
+        except BaseExceptionGroup as group:
+            # streamablehttp_client uses an inner anyio task group, so
+            # transport failures arrive wrapped in ``ExceptionGroup``.
+            # Flatten to the leaf so the user-facing reason names the
+            # actual cause (httpx.ConnectError, ReadTimeout, etc.) instead
+            # of an opaque ExceptionGroup repr.
+            leaves = list(_leaf_exceptions(group))
+            primary = leaves[0] if leaves else group
+            raise TransportOpenFailed(
+                f"http transport open failed: {_format_http_failure(self._url, primary)}"
+            ) from primary
+        except (httpx.HTTPError, OSError) as exc:
+            raise TransportOpenFailed(
+                f"http transport open failed: {_format_http_failure(self._url, exc)}"
+            ) from exc
+        except McpError as exc:
+            raise TransportOpenFailed(
+                f"http transport open failed: {_format_http_failure(self._url, exc)}"
+            ) from exc
 
 
 class InProcessLauncher:

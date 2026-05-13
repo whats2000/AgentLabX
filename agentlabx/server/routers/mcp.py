@@ -34,6 +34,7 @@ from agentlabx.mcp.dispatcher import ToolDispatcher
 from agentlabx.mcp.host import MCPHost
 from agentlabx.mcp.protocol import (
     CapabilityRefused,
+    InvalidToolArgs,
     MCPServerSpec,
     RegisteredServer,
     RegistrationConflict,
@@ -119,6 +120,11 @@ def _server_to_response(
         enabled=enabled,
         owner_id=server.owner_id,
         declared_capabilities=server.spec.declared_capabilities,
+        env_slot_refs=server.spec.env_slot_refs,
+        command=server.spec.command,
+        url=server.spec.url,
+        inprocess_key=server.spec.inprocess_key,
+        last_startup_error=server.last_startup_error,
         tools=[_tool_to_response(server, t) for t in tools],
         started_at=started_at,
     )
@@ -177,6 +183,21 @@ async def register_server(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="admin capability required to register an admin-scope server",
+        )
+
+    # I2: HTTP transport doesn't get env-injected slot values (a stdio
+    # subprocess inherits parent env; an HTTP request doesn't). Reject
+    # registrations that would silently drop their slot values rather than
+    # let users believe a key is wired through. Header-based slot
+    # forwarding for HTTP is a future addition.
+    if payload.transport == "http" and payload.env_slot_refs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "HTTP transport does not yet support env_slot_refs (slot values "
+                "would be silently dropped). Either remove env_slot_refs or use "
+                "a stdio/inprocess transport."
+            ),
         )
 
     try:
@@ -276,15 +297,31 @@ async def patch_server(
             try:
                 await host.start(server, owner_id=server.owner_id)
             except ServerStartupFailed as exc:
+                # Persist the failure reason so the UI can render the
+                # diagnostic next to the (still ``enabled=true``) row
+                # instead of silently going grey. Best-effort: a
+                # secondary DB failure must not mask the primary cause.
+                with contextlib.suppress(Exception):
+                    await registry.set_startup_error(server.id, exc.reason)
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"failed to start MCP server: {exc.reason}",
                 ) from exc
+            # Successful start — clear any prior recorded failure.
+            await registry.set_startup_error(server.id, None)
     else:
         with contextlib.suppress(ServerNotRunning):
             await host.stop(server.id)
 
     await registry.set_enabled(server.id, payload.enabled)
+    # Re-fetch so the response reflects post-mutation state — both
+    # ``enabled`` (just toggled) and ``last_startup_error`` (cleared on
+    # successful start, populated on failure). Reading the in-memory
+    # ``server`` snapshot taken at the top of the handler would render
+    # a stale red banner after a successful retry.
+    refreshed = await registry.get(server.id)
+    if refreshed is not None:
+        server = refreshed
     tools = _live_tools(host, server)
     # ``started_at`` is intentionally omitted on PATCH responses: we do not
     # currently track per-handle start timestamps inside :class:`MCPHost`, and
@@ -312,6 +349,20 @@ async def delete_server(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="not permitted to delete this server",
+        )
+
+    # Refuse to delete bundled admin rows: the seed loop re-creates them on
+    # next boot, so deletion is illusory. The user almost certainly meant
+    # PATCH enabled=false instead.
+    bundled_names: frozenset[str] = getattr(request.app.state, "mcp_bundled_names", frozenset())
+    if server.spec.scope == "admin" and server.spec.name in bundled_names:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"server {server.spec.name!r} is a bundled admin server — "
+                "the seed loop will re-create it on next boot. Use PATCH "
+                "enabled=false to keep it stopped instead."
+            ),
         )
 
     # Stop first (best-effort), then delete the persisted row.
@@ -380,17 +431,34 @@ async def invoke_tool(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="not permitted to invoke tools on this server",
         )
+    # The debug-invoke endpoint exercises the dispatcher path honestly
+    # (so trace events fire identically to stage-driven calls). It does
+    # NOT have a stage-declared capability the way A8's gating will, so
+    # we look up one the tool actually advertises and use that — the
+    # cross-check then validates rather than fails. If the tool has no
+    # capabilities at all (legitimate but unusual), we pass empty and
+    # accept the cross-check rejection.
+    host = _host(request)
+    descriptors = host.tools_for(server.id) if server.id in host.running_server_ids() else ()
+    descriptor = next((t for t in descriptors if t.tool_name == tool_name), None)
+    invoke_capability: str = (
+        descriptor.capabilities[0] if descriptor and descriptor.capabilities else "debug"
+    )
     try:
         result = await dispatcher.invoke(
             stage="debug",
             agent=identity.id,
-            capability="debug",
+            capability=invoke_capability,
             server_id=server.id,
             tool=tool_name,
             args=payload.args,
         )
     except CapabilityRefused as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except InvalidToolArgs as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     except ToolNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ServerNotRunning as exc:

@@ -4,6 +4,7 @@ import {
   KeyRound,
   ListChecks,
   LogOut,
+  Plug,
   Settings,
   User,
   Users,
@@ -65,6 +66,9 @@ export function Layout(): React.JSX.Element {
         <nav className="flex-1 overflow-auto p-2 space-y-1">
           <NavLink to="/runs" className={({ isActive }) => navClass(isActive)}>
             <ListChecks className="h-4 w-4" /> {t("nav.runs")}
+          </NavLink>
+          <NavLink to="/mcp" className={({ isActive }) => navClass(isActive)}>
+            <Plug className="h-4 w-4" /> {t("nav.mcp")}
           </NavLink>
           {identity.capabilities.includes("admin") && (
             <>

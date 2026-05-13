@@ -52,6 +52,62 @@ export interface LLMProviderDto {
   models: LLMModelDto[]
 }
 
+// ---------------------------------------------------------------------------
+// MCP (Model Context Protocol) — Stage A3 surface
+// ---------------------------------------------------------------------------
+
+export type MCPScope = "user" | "admin"
+export type MCPTransport = "stdio" | "http" | "inprocess"
+
+export interface MCPToolDto {
+  server_id: string
+  server_name: string
+  tool_name: string
+  description: string
+  input_schema: Record<string, unknown>
+  capabilities: string[]
+}
+
+export interface MCPServerDto {
+  id: string
+  name: string
+  scope: MCPScope
+  transport: MCPTransport
+  enabled: boolean
+  owner_id: string | null
+  declared_capabilities: string[]
+  env_slot_refs: string[]
+  command: string[] | null
+  url: string | null
+  inprocess_key: string | null
+  /**
+   * Last persisted ServerStartupFailed.reason for this row, or null when
+   * the row last started cleanly. Surfaced so the UI can render *why* a
+   * server is grey without consulting the audit log. Cleared on
+   * successful host.start.
+   */
+  last_startup_error: string | null
+  tools: MCPToolDto[]
+  started_at: string | null
+}
+
+export interface MCPServerCreateRequest {
+  name: string
+  scope: MCPScope
+  transport: MCPTransport
+  command: string[] | null
+  url: string | null
+  inprocess_key: string | null
+  env_slot_refs: string[]
+  declared_capabilities: string[]
+}
+
+export interface ToolInvokeResponse {
+  is_error: boolean
+  text: string
+  structured: Record<string, unknown> | null
+}
+
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, { credentials: "include", ...init })
   if (!res.ok) {
@@ -170,4 +226,45 @@ export const api = {
     request<IssuedTokenDto>(`/api/auth/me/tokens/${encodeURIComponent(token_id)}/refresh`, {
       method: "POST",
     }),
+  listMCPServers: () => request<MCPServerDto[]>("/api/mcp/servers"),
+  getMCPServer: (id: string) => request<MCPServerDto>(`/api/mcp/servers/${encodeURIComponent(id)}`),
+  registerMCPServer: (body: MCPServerCreateRequest) =>
+    request<MCPServerDto>("/api/mcp/servers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  patchMCPServer: (id: string, enabled: boolean) =>
+    request<MCPServerDto>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteMCPServer: (id: string) =>
+    request<void>(`/api/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  listMCPTools: () => request<MCPToolDto[]>("/api/mcp/tools"),
+  listAdminCredentials: () => request<CredentialSlotDto[]>("/api/settings/admin/credentials"),
+  putAdminCredential: (slot: string, value: string) =>
+    request<void>(`/api/settings/admin/credentials/${encodeURIComponent(slot)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    }),
+  deleteAdminCredential: (slot: string) =>
+    request<void>(`/api/settings/admin/credentials/${encodeURIComponent(slot)}`, {
+      method: "DELETE",
+    }),
+  revealAdminCredential: (slot: string) =>
+    request<{ slot: string; value: string }>(
+      `/api/settings/admin/credentials/${encodeURIComponent(slot)}/reveal`,
+    ),
+  invokeMCPTool: (server_id: string, tool: string, args: Record<string, unknown>) =>
+    request<ToolInvokeResponse>(
+      `/api/mcp/servers/${encodeURIComponent(server_id)}/tools/${encodeURIComponent(tool)}/invoke`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args }),
+      },
+    ),
 }

@@ -161,8 +161,31 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.state.mcp_registry = registry
     app.state.mcp_host = host
     app.state.mcp_dispatcher = dispatcher
+    # Spec names (NOT entry-point names) of admin-scope bundles discovered
+    # at boot — used by the router to mark rows as ``bundled`` in the
+    # response and to short-circuit DELETE with a clear error (deleting a
+    # bundle row is misleading: the seed loop re-creates it on next boot).
+    bundled: set[str] = set()
+    for bundle_name, module in bundles:
+        spec = _bundle_spec(module, bundle_name)
+        if spec is not None and spec.scope == "admin":
+            bundled.add(spec.name)
+    app.state.mcp_bundled_names = frozenset(bundled)
 
     return app
+
+
+def create_app_default() -> FastAPI:
+    """No-arg factory used by Uvicorn's ``--reload`` mode.
+
+    The reloader spawns a child subprocess that re-imports the app each time
+    a watched file changes, so it cannot accept a pre-built FastAPI instance.
+    This wrapper reads :class:`AppSettings` from ``AGENTLABX_*`` env vars
+    (the CLI sets these when ``--reload`` is on) and delegates to the
+    standard :func:`create_app_for_uvicorn` factory.
+    """
+
+    return create_app_for_uvicorn(AppSettings())
 
 
 def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
@@ -245,6 +268,17 @@ def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
             disabled_reasons=disabled_reasons,
         )
 
+        # Spec-name set of bundled admin servers — must match the same
+        # computation in the legacy ``create_app`` factory above so the
+        # router's bundled-delete guard fires identically under both
+        # entry-points (the previous omission was the B1 bug — production
+        # DELETE on arxiv silently succeeded because this set was empty).
+        bundled_names: set[str] = set()
+        for bundle_name, module in bundles:
+            spec = _bundle_spec(module, bundle_name)
+            if spec is not None and spec.scope == "admin":
+                bundled_names.add(spec.name)
+
         app.state.db = db
         app.state.settings = settings
         app.state.crypto = crypto
@@ -253,6 +287,7 @@ def create_app_for_uvicorn(settings: AppSettings) -> FastAPI:
         app.state.mcp_registry = registry
         app.state.mcp_host = host
         app.state.mcp_dispatcher = dispatcher
+        app.state.mcp_bundled_names = frozenset(bundled_names)
 
         try:
             yield
@@ -483,8 +518,11 @@ async def _seed_admin_bundles(
             if not desired_enabled:
                 await registry.set_enabled(registered.id, False)
         else:
-            # Reconcile enabled flag only — name/transport are part of the
-            # identity key and changing them would orphan the row.
+            # Reconcile launch spec in place: code changes to a bundle module
+            # (renamed PyPI package, added slot refs, tweaked capabilities)
+            # need to reach the DB row each boot. Name is the identity key so
+            # the row id is preserved across the update.
+            await registry.update_admin_spec(spec.name, spec)
             current_enabled = await registry.get_enabled(existing.id)
             if current_enabled is not None and current_enabled is not desired_enabled:
                 await registry.set_enabled(existing.id, desired_enabled)
@@ -518,17 +556,31 @@ async def _start_enabled_servers(
                     },
                 )
             )
+            # Persist the reason on the row so the UI can render it next
+            # to the still-``enabled=true`` server card. Best-effort —
+            # a secondary DB failure must not block boot of the other
+            # bundles.
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, exc.reason)
         except Exception as exc:  # noqa: BLE001 — defensive: never abort boot
+            unexpected_reason = f"unexpected error: {type(exc).__name__}: {exc}"
             await event_bus.emit(
                 Event(
                     kind="mcp.server.startup_failed",
                     payload={
                         "server_id": registered.id,
                         "server_name": registered.spec.name,
-                        "reason": f"unexpected error: {exc!r}",
+                        "reason": unexpected_reason,
                     },
                 )
             )
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, unexpected_reason)
+        else:
+            # Successful start — clear any prior recorded failure so the
+            # UI stops showing a stale red banner on a now-healthy server.
+            with contextlib.suppress(Exception):
+                await registry.set_startup_error(registered.id, None)
 
 
 async def _log_bootstrap_audit(

@@ -82,7 +82,7 @@ async def test_v4_to_v5_creates_a3_tables_and_bumps_version(tmp_workspace: Path)
             row = (
                 await session.execute(select(AppState).where(AppState.key == "schema_version"))
             ).scalar_one()
-        assert row.value == str(CURRENT_SCHEMA_VERSION) == "5"
+        assert row.value == str(CURRENT_SCHEMA_VERSION) == "7"
     finally:
         await handle.close()
 

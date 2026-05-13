@@ -164,3 +164,132 @@ async def test_assert_schema_version_pinned_raises_on_drift(
         assert str(CURRENT_SCHEMA_VERSION) in message
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_patch_enable_persists_and_clears_last_startup_error(
+    tmp_workspace: Path, ephemeral_keyring: dict[tuple[str, str], str]
+) -> None:
+    """PATCH enabled=true must record the failure reason on a doomed start
+    and clear it on a subsequent successful start.
+
+    This is the lean-B contract: an operator who hits a transient (or
+    permanent) start failure sees the cause inline on the server card,
+    fixes the underlying issue, and a fresh PATCH erases the banner. The
+    same persistence path also runs at lifespan boot via
+    ``_start_enabled_servers`` — covered indirectly because PATCH and the
+    lifespan share ``ServerRegistry.set_startup_error``.
+    """
+
+    settings = AppSettings(workspace=tmp_workspace)
+    app = await create_app(settings)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            # Bootstrap a user account.
+            r = await c.post(
+                "/api/auth/register",
+                json={
+                    "display_name": "Bob",
+                    "email": "bob@example.com",
+                    "passphrase": "bobpass1234",
+                },
+            )
+            assert r.status_code == 201
+            r = await c.post(
+                "/api/auth/login",
+                json={"email": "bob@example.com", "passphrase": "bobpass1234"},
+            )
+            assert r.status_code == 200
+
+            # Register an echo server (starts cleanly: no last_startup_error).
+            r = await c.post(
+                "/api/mcp/servers",
+                json={
+                    "name": "echo-fail-test",
+                    "scope": "user",
+                    "transport": "stdio",
+                    "command": ECHO_COMMAND,
+                    "declared_capabilities": ["echo_default"],
+                },
+            )
+            assert r.status_code == 201, r.text
+            server_id = r.json()["id"]
+            assert r.json()["last_startup_error"] is None
+
+            # Disable the row, then poison its command directly so PATCH
+            # enabled=true triggers ServerStartupFailed. Going through the
+            # registry directly is the cheapest way to force a doomed
+            # start without inventing a "set bad command" REST endpoint.
+            r = await c.patch(f"/api/mcp/servers/{server_id}", json={"enabled": False})
+            assert r.status_code == 200
+
+            registry = app.state.mcp_registry
+            from agentlabx.mcp.protocol import MCPServerSpec  # local import — test only
+
+            poisoned_spec = MCPServerSpec(
+                name="echo-fail-test",
+                scope="user",
+                transport="stdio",
+                command=("totally-nonexistent-binary-for-test-xyz",),
+                url=None,
+                inprocess_key=None,
+                env_slot_refs=(),
+                declared_capabilities=("echo_default",),
+            )
+            # Reach into the underlying row; admin-spec helper is the
+            # registry's blessed "rewrite spec in place" surface but
+            # only acts on admin-scope rows. We bypass via a raw UPDATE
+            # because this is a test-only poisoning.
+            from sqlalchemy import update as sql_update  # local import — test only
+
+            from agentlabx.db.schema import MCPServer
+
+            async with registry._sessionmaker() as session:  # noqa: SLF001 — test only
+                await session.execute(
+                    sql_update(MCPServer)
+                    .where(MCPServer.id == server_id)
+                    .values(command_json='["totally-nonexistent-binary-for-test-xyz"]')
+                )
+                await session.commit()
+            _ = poisoned_spec  # spec captured for documentation; UPDATE is the actual change.
+
+            # PATCH enabled=true → ServerStartupFailed → 502 + error persisted.
+            r = await c.patch(f"/api/mcp/servers/{server_id}", json={"enabled": True})
+            assert r.status_code == 502, r.text
+            detail = r.json()["detail"]
+            assert "command not found" in detail or "transport open failed" in detail
+
+            # Fetch the row via GET — last_startup_error must now be populated.
+            r = await c.get(f"/api/mcp/servers/{server_id}")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["last_startup_error"] is not None
+            assert (
+                "command not found" in body["last_startup_error"]
+                or "transport open failed" in body["last_startup_error"]
+            )
+
+            # Restore the working command, then PATCH enabled=true again.
+            # Successful start must clear the persisted error.
+            async with registry._sessionmaker() as session:  # noqa: SLF001 — test only
+                from json import dumps as _dumps
+
+                await session.execute(
+                    sql_update(MCPServer)
+                    .where(MCPServer.id == server_id)
+                    .values(command_json=_dumps(ECHO_COMMAND))
+                )
+                await session.commit()
+
+            r = await c.patch(f"/api/mcp/servers/{server_id}", json={"enabled": True})
+            assert r.status_code == 200, r.text
+            assert r.json()["last_startup_error"] is None
+
+            # And the row reflects the cleared state on a fresh GET too.
+            r = await c.get(f"/api/mcp/servers/{server_id}")
+            assert r.status_code == 200
+            assert r.json()["last_startup_error"] is None
+    finally:
+        await app.state.mcp_host.stop_all()
+        await app.state.db.close()
