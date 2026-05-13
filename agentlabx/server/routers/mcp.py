@@ -314,6 +314,14 @@ async def patch_server(
             await host.stop(server.id)
 
     await registry.set_enabled(server.id, payload.enabled)
+    # Re-fetch so the response reflects post-mutation state — both
+    # ``enabled`` (just toggled) and ``last_startup_error`` (cleared on
+    # successful start, populated on failure). Reading the in-memory
+    # ``server`` snapshot taken at the top of the handler would render
+    # a stale red banner after a successful retry.
+    refreshed = await registry.get(server.id)
+    if refreshed is not None:
+        server = refreshed
     tools = _live_tools(host, server)
     # ``started_at`` is intentionally omitted on PATCH responses: we do not
     # currently track per-handle start timestamps inside :class:`MCPHost`, and
