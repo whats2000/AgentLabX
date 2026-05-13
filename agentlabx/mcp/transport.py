@@ -85,8 +85,22 @@ class StdioLauncher:
             ):
                 await session.initialize()
                 yield session
-        except (McpError, OSError) as exc:
-            raise TransportOpenFailed(f"stdio transport open failed: {exc!r}") from exc
+        except FileNotFoundError as exc:
+            # Most common stdio failure: the launcher binary (uvx, npx,
+            # python, etc.) is missing from PATH. Translate to an English
+            # caller-actionable message instead of a localised OS string
+            # wrapped in repr().
+            argv0 = self._command[0] if self._command else "(no command)"
+            raise TransportOpenFailed(
+                f"stdio transport open failed: command not found: {argv0!r}"
+            ) from exc
+        except OSError as exc:
+            # ``exc.strerror`` is locale-dependent on Windows; fall back to
+            # ``str(exc)`` if absent. Either way no Python-type leakage.
+            detail = exc.strerror or str(exc)
+            raise TransportOpenFailed(f"stdio transport open failed: {detail}") from exc
+        except McpError as exc:
+            raise TransportOpenFailed(f"stdio transport open failed: {exc}") from exc
 
 
 class StreamableHTTPLauncher:
@@ -111,8 +125,11 @@ class StreamableHTTPLauncher:
             ):
                 await session.initialize()
                 yield session
-        except (McpError, OSError) as exc:
-            raise TransportOpenFailed(f"http transport open failed: {exc!r}") from exc
+        except OSError as exc:
+            detail = exc.strerror or str(exc)
+            raise TransportOpenFailed(f"http transport open failed: {detail}") from exc
+        except McpError as exc:
+            raise TransportOpenFailed(f"http transport open failed: {exc}") from exc
 
 
 class InProcessLauncher:

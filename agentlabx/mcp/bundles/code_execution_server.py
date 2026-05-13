@@ -193,21 +193,47 @@ def _docker_command(code: str) -> tuple[str, ...]:
     )
 
 
-def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
-    """Run ``code`` inside the sandbox and capture its stdout/stderr/exit_code.
+_DOCKER_DAEMON_DOWN_MARKERS: tuple[str, ...] = (
+    "cannot connect to the docker daemon",
+    "is the docker daemon running",
+    "error during connect",
+    "dockerdesktoplinuxengine",
+    "no such file or directory",  # Linux when /var/run/docker.sock is missing
+)
 
-    Failure modes (Docker missing, image pull failure, timeout) are surfaced
-    as a result dict with ``exit_code=-1`` and a descriptive ``stderr`` rather
-    than raised exceptions, so the MCP wire path always returns a structured
-    payload.
+
+def _looks_like_docker_daemon_down(stderr: str) -> bool:
+    """True iff stderr looks like a Docker daemon connectivity failure.
+
+    These are infra failures that the caller cannot debug from the result
+    payload, so the MCP server raises (→ ``is_error=true``) instead of
+    returning a fake ``exit_code=1`` dict that the UI renders as success.
+    """
+
+    lowered = stderr.lower()
+    return any(marker in lowered for marker in _DOCKER_DAEMON_DOWN_MARKERS)
+
+
+def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
+    """Run ``code`` inside the sandbox and capture stdout/stderr/exit_code.
+
+    Two failure shapes:
+
+    * **Infrastructure failure** (Docker not installed, daemon down, image
+      pull blocked, host-side ``subprocess`` couldn't launch ``docker.exe``):
+      raises ``RuntimeError``. The MCP SDK marshals the raise as
+      ``CallToolResult(isError=True, content=[...])`` and the host re-raises
+      as :class:`ToolExecutionFailed`, so the dispatcher emits
+      ``mcp.tool.error`` and the router returns 502. The caller knows their
+      env is broken.
+    * **User-code failure** (timeout exceeded, container exited non-zero with
+      stderr from the user's own program): returned as a structured payload
+      with the original exit code. The tool succeeded — the user's code
+      reported its own status.
     """
 
     if shutil.which("docker") is None:
-        return {
-            "stdout": "",
-            "stderr": "code.exec requires Docker on PATH; not found",
-            "exit_code": -1,
-        }
+        raise RuntimeError("code.exec requires Docker on PATH; not found")
 
     argv = _docker_command(code)
     wall_clock_budget = float(timeout_sec) + DOCKER_OVERHEAD_SEC
@@ -237,11 +263,19 @@ def _run_in_docker(code: str, timeout_sec: int) -> dict[str, str | int]:
             "exit_code": -1,
         }
     except FileNotFoundError as exc:
-        return {
-            "stdout": "",
-            "stderr": f"code.exec failed to launch docker: {exc!r}",
-            "exit_code": -1,
-        }
+        # ``docker.exe`` missing from PATH between the ``which`` check and
+        # this call (race) — re-raise as an infra failure so the dispatcher
+        # surfaces a clean 502 instead of a fake exit_code=-1 success.
+        raise RuntimeError(f"code.exec failed to launch docker: {exc.strerror}") from exc
+
+    if completed.returncode != 0 and _looks_like_docker_daemon_down(completed.stderr):
+        # Daemon connectivity failure — caller's docker isn't reachable. Raise
+        # so this surfaces as is_error=true / 502 instead of being rendered
+        # as a successful tool call by the UI.
+        raise RuntimeError(
+            "code.exec could not reach the Docker daemon — start Docker Desktop "
+            f"or check the daemon socket. Underlying stderr: {completed.stderr.strip()}"
+        )
 
     return {
         "stdout": _truncate(completed.stdout, kind="stdout"),

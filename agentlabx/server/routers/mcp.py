@@ -334,6 +334,20 @@ async def delete_server(
             detail="not permitted to delete this server",
         )
 
+    # Refuse to delete bundled admin rows: the seed loop re-creates them on
+    # next boot, so deletion is illusory. The user almost certainly meant
+    # PATCH enabled=false instead.
+    bundled_names: frozenset[str] = getattr(request.app.state, "mcp_bundled_names", frozenset())
+    if server.spec.scope == "admin" and server.spec.name in bundled_names:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"server {server.spec.name!r} is a bundled admin server — "
+                "the seed loop will re-create it on next boot. Use PATCH "
+                "enabled=false to keep it stopped instead."
+            ),
+        )
+
     # Stop first (best-effort), then delete the persisted row.
     with contextlib.suppress(ServerNotRunning):
         await host.stop(server.id)

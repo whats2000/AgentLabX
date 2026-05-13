@@ -161,6 +161,16 @@ async def create_app(settings: AppSettings) -> FastAPI:
     app.state.mcp_registry = registry
     app.state.mcp_host = host
     app.state.mcp_dispatcher = dispatcher
+    # Spec names (NOT entry-point names) of admin-scope bundles discovered
+    # at boot — used by the router to mark rows as ``bundled`` in the
+    # response and to short-circuit DELETE with a clear error (deleting a
+    # bundle row is misleading: the seed loop re-creates it on next boot).
+    bundled: set[str] = set()
+    for bundle_name, module in bundles:
+        spec = _bundle_spec(module, bundle_name)
+        if spec is not None and spec.scope == "admin":
+            bundled.add(spec.name)
+    app.state.mcp_bundled_names = frozenset(bundled)
 
     return app
 

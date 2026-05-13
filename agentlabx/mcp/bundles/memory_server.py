@@ -101,8 +101,8 @@ def _create_schema() -> dict[str, object]:
     return {
         "type": "object",
         "properties": {
-            "category": {"type": "string"},
-            "body": {"type": "string"},
+            "category": {"type": "string", "minLength": 1},
+            "body": {"type": "string", "minLength": 1},
             "source_run_id": {"type": ["string", "null"]},
         },
         "required": ["category", "body"],
@@ -115,7 +115,7 @@ def _get_schema() -> dict[str, object]:
     return {
         "type": "object",
         "properties": {
-            "id": {"type": "string"},
+            "id": {"type": "string", "minLength": 1},
         },
         "required": ["id"],
         "additionalProperties": False,
@@ -127,8 +127,13 @@ def _search_schema() -> dict[str, object]:
     return {
         "type": "object",
         "properties": {
+            # query_text MAY be empty (matches all entries); only category_filter
+            # and max_results have shape constraints beyond type.
             "query_text": {"type": "string"},
-            "category_filter": {"type": ["string", "null"]},
+            "category_filter": {
+                "type": ["string", "null"],
+                "minLength": 1,
+            },
             "max_results": {
                 "type": "integer",
                 "minimum": 1,
@@ -145,7 +150,7 @@ def _delete_schema() -> dict[str, object]:
     return {
         "type": "object",
         "properties": {
-            "id": {"type": "string"},
+            "id": {"type": "string", "minLength": 1},
         },
         "required": ["id"],
         "additionalProperties": False,

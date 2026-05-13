@@ -352,7 +352,7 @@ class MCPHost:
                 await stack.aclose()
                 wrapped = ServerStartupFailed(
                     spec=server.spec,
-                    reason=f"tools/list failed after open: {exc!r}",
+                    reason=f"tools/list failed after open: {type(exc).__name__}: {exc}",
                 )
                 if not ready.done():
                     ready.set_exception(wrapped)
