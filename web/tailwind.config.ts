@@ -26,6 +26,15 @@ export default {
       },
       borderColor: { DEFAULT: "hsl(var(--border))" },
       ringColor: { DEFAULT: "hsl(var(--ring))" },
+      transitionTimingFunction: {
+        "out-soft": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "out-snap": "cubic-bezier(0.16, 1, 0.3, 1)",
+        spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
+      transitionDuration: {
+        250: "250ms",
+        350: "350ms",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

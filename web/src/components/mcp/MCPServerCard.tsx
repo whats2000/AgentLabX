@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Cpu,
   Globe,
@@ -193,26 +192,42 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
 
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded border border-dashed border-border bg-muted/30 px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="alx-press group flex w-full items-center gap-2 rounded border border-dashed border-border bg-muted/30 px-2 py-1.5 text-left text-sm text-muted-foreground transition-all duration-200 ease-out-soft hover:border-border/80 hover:bg-muted/60 hover:text-foreground"
           onClick={() => {
             setToolsOpen((v) => !v)
           }}
+          aria-expanded={toolsOpen}
         >
-          {toolsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <ChevronRight
+            className={
+              "h-4 w-4 transition-transform duration-300 ease-out-snap " +
+              (toolsOpen ? "rotate-90" : "group-hover:translate-x-0.5")
+            }
+          />
           {toolsOpen ? t("mcp.hideTools") : t("mcp.showTools", { count: server.tools.length })}
         </button>
 
-        {toolsOpen ? (
-          server.tools.length > 0 ? (
-            <ul className="space-y-2">
-              {server.tools.map((tool) => (
-                <MCPToolRow key={`${tool.server_id}::${tool.tool_name}`} tool={tool} />
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t("mcp.noTools")}</p>
-          )
-        ) : null}
+        {/* Drawer — grid-rows 0fr → 1fr animates both open and close.
+            Keeps content mounted so collapse animates too. */}
+        <div
+          className={
+            "grid transition-[grid-template-rows,opacity] duration-300 ease-out-snap " +
+            (toolsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")
+          }
+          aria-hidden={!toolsOpen}
+        >
+          <div className="min-h-0 overflow-hidden">
+            {server.tools.length > 0 ? (
+              <ul className="space-y-2 pt-1">
+                {server.tools.map((tool) => (
+                  <MCPToolRow key={`${tool.server_id}::${tool.tool_name}`} tool={tool} />
+                ))}
+              </ul>
+            ) : (
+              <p className="pt-1 text-xs text-muted-foreground">{t("mcp.noTools")}</p>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

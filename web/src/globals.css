@@ -24,6 +24,14 @@
     --sidebar-border: 214 32% 91%;
     --sidebar-hover: 210 40% 96%;
     --sidebar-active: 210 40% 93%;
+
+    /* Motion tokens — one timing system, used everywhere. */
+    --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-out-snap: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --dur-fast: 140ms;
+    --dur-base: 220ms;
+    --dur-slow: 360ms;
   }
 
   .dark {
@@ -59,4 +67,176 @@ body {
   font-family: ui-sans-serif, system-ui, sans-serif;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+/* ---------- Motion primitives ---------- */
+
+@layer utilities {
+  @keyframes alx-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes alx-fade-up {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+  @keyframes alx-slide-in-left {
+    from {
+      opacity: 0;
+      transform: translate3d(-10px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+  @keyframes alx-pop-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    60% {
+      opacity: 1;
+      transform: scale(1.01);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes alx-shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes alx-pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--ring) / 0.35);
+    }
+    70% {
+      box-shadow: 0 0 0 8px hsl(var(--ring) / 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--ring) / 0);
+    }
+  }
+  @keyframes alx-spin-soft {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .animate-fade-in {
+    animation: alx-fade-in var(--dur-base) var(--ease-out-soft) both;
+  }
+  .animate-fade-up {
+    animation: alx-fade-up var(--dur-slow) var(--ease-out-soft) both;
+  }
+  .animate-slide-in-left {
+    animation: alx-slide-in-left var(--dur-base) var(--ease-out-soft) both;
+  }
+  .animate-pop-in {
+    animation: alx-pop-in var(--dur-slow) var(--ease-spring) both;
+  }
+  .animate-pulse-ring {
+    animation: alx-pulse-ring 1.6s var(--ease-out-soft) infinite;
+  }
+
+  /* Stagger helpers — wrap a list and items get a cascading delay. */
+  .alx-stagger > * {
+    animation: alx-fade-up var(--dur-slow) var(--ease-out-soft) both;
+  }
+  .alx-stagger > *:nth-child(1) {
+    animation-delay: 40ms;
+  }
+  .alx-stagger > *:nth-child(2) {
+    animation-delay: 100ms;
+  }
+  .alx-stagger > *:nth-child(3) {
+    animation-delay: 160ms;
+  }
+  .alx-stagger > *:nth-child(4) {
+    animation-delay: 220ms;
+  }
+  .alx-stagger > *:nth-child(5) {
+    animation-delay: 280ms;
+  }
+  .alx-stagger > *:nth-child(6) {
+    animation-delay: 340ms;
+  }
+  .alx-stagger > *:nth-child(n + 7) {
+    animation-delay: 400ms;
+  }
+
+  /* Card hover lift — subtle but tactile. */
+  .alx-card-lift {
+    transition:
+      transform var(--dur-base) var(--ease-out-soft),
+      box-shadow var(--dur-base) var(--ease-out-soft),
+      border-color var(--dur-base) var(--ease-out-soft);
+    will-change: transform;
+  }
+  .alx-card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 1px 2px hsl(222 47% 11% / 0.04),
+      0 8px 24px -8px hsl(222 47% 11% / 0.12);
+    border-color: hsl(var(--border) / 0.8);
+  }
+  .dark .alx-card-lift:hover {
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.4),
+      0 8px 24px -8px hsl(0 0% 0% / 0.6);
+  }
+
+  /* Button press feedback. */
+  .alx-press {
+    transition:
+      transform var(--dur-fast) var(--ease-out-soft),
+      background-color var(--dur-fast) var(--ease-out-soft),
+      color var(--dur-fast) var(--ease-out-soft),
+      box-shadow var(--dur-fast) var(--ease-out-soft);
+  }
+  .alx-press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Icon micro-motion on parent hover. */
+  .alx-icon {
+    transition: transform var(--dur-base) var(--ease-spring);
+  }
+  .group:hover > .alx-icon,
+  .alx-icon-host:hover .alx-icon {
+    transform: translateX(1px) scale(1.06);
+  }
+}
+
+/* Honor reduced-motion across the board, including our keyframes & radix data-state animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .alx-card-lift:hover {
+    transform: none;
+  }
+  .alx-press:active:not(:disabled) {
+    transform: none;
+  }
 }

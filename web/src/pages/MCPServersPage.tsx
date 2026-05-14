@@ -77,7 +77,7 @@ export function MCPServersPage(): React.JSX.Element {
           {servers.error.message}
         </div>
       ) : rows.length > 0 ? (
-        <div className="space-y-4">
+        <div className="space-y-4 alx-stagger">
           {rows.map((server) => (
             <MCPServerCard key={server.id} server={server} isAdmin={isAdmin} />
           ))}

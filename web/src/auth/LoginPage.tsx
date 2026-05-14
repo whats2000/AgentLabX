@@ -72,7 +72,7 @@ export function LoginPage(): React.JSX.Element {
 
   return (
     <div className="flex h-full items-center justify-center p-8">
-      <div className="w-full max-w-md space-y-4">
+      <div className="w-full max-w-md space-y-4 animate-pop-in">
         <Card>
           <CardHeader>
             <CardTitle>{mode === "register" ? t("auth.register") : t("auth.login")}</CardTitle>
