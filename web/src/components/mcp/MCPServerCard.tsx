@@ -230,7 +230,7 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
             "grid transition-[grid-template-rows,opacity] duration-300 ease-out-snap " +
             (toolsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")
           }
-          aria-hidden={!toolsOpen}
+          inert={!toolsOpen}
         >
           <div className="min-h-0 overflow-hidden">
             {toolsEverOpened ? (

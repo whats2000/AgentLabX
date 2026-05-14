@@ -170,7 +170,7 @@ export function MCPToolRow({ tool }: Props): React.JSX.Element {
           "grid transition-[grid-template-rows,opacity] duration-300 ease-out-snap " +
           (expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")
         }
-        aria-hidden={!expanded}
+        inert={!expanded}
       >
         <div className="min-h-0 overflow-hidden">
           {hasOpened ? <MCPInvokeForm tool={tool} /> : null}

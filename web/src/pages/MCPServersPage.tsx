@@ -75,7 +75,11 @@ export function MCPServersPage(): React.JSX.Element {
           "grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out-snap " +
           (showRegister ? "grid-rows-[1fr] opacity-100" : "-mt-6 grid-rows-[0fr] opacity-0")
         }
-        aria-hidden={!showRegister}
+        // inert (not aria-hidden) so the browser moves focus out of the
+        // collapsing form. aria-hidden on a focused subtree is an a11y
+        // violation Chrome flags loudly; inert hides from AT *and*
+        // suppresses focus, which is what we want here.
+        inert={!showRegister}
       >
         <div className="min-h-0 overflow-hidden">
           {hasOpened ? (
