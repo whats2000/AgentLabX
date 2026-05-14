@@ -74,6 +74,8 @@
     "scopeUser": "User",
     "scopeAdminDesc": "Admin (visible to everyone)",
     "scopeUserDesc": "Personal (only you)",
+    "bundled": "Bundled",
+    "bundledHint": "Built-in server seeded at boot. Disable it to stop running it; deletion is not offered because the seed loop would re-create it on next boot.",
     "showTools": "Show tools ({{count}})",
     "hideTools": "Hide tools",
     "noTools": "No tools discovered.",

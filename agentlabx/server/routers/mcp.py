@@ -72,6 +72,23 @@ def _dispatcher(request: Request) -> ToolDispatcher:
     return disp
 
 
+def _bundled_names(request: Request) -> frozenset[str]:
+    """Spec-name set of admin-scope bundles discovered at boot.
+
+    Mirrors the value the DELETE handler consults to reject deletion of
+    seeded bundles — surfaced on every response so the UI can hide the
+    delete affordance up-front instead of relying on the 409 round-trip.
+    Falls back to an empty set when the lifespan didn't populate it
+    (e.g. test apps that wire the router manually).
+    """
+    names: frozenset[str] = getattr(request.app.state, "mcp_bundled_names", frozenset())
+    return names
+
+
+def _is_bundled(server: RegisteredServer, bundled_names: frozenset[str]) -> bool:
+    return server.spec.scope == "admin" and server.spec.name in bundled_names
+
+
 def _can_view(server: RegisteredServer, identity: Identity) -> bool:
     if server.spec.scope == "admin":
         return True
@@ -111,6 +128,7 @@ def _server_to_response(
     tools: tuple[ToolDescriptor, ...],
     enabled: bool,
     started_at: datetime | None,
+    bundled: bool,
 ) -> MCPServerResponse:
     return MCPServerResponse(
         id=server.id,
@@ -127,6 +145,7 @@ def _server_to_response(
         last_startup_error=server.last_startup_error,
         tools=[_tool_to_response(server, t) for t in tools],
         started_at=started_at,
+        bundled=bundled,
     )
 
 
@@ -152,12 +171,21 @@ async def list_servers(
 ) -> list[MCPServerResponse]:
     registry = _registry(request)
     host = _host(request)
+    bundled_names = _bundled_names(request)
     visible = await registry.list_visible_to(identity.id)
     out: list[MCPServerResponse] = []
     for server in visible:
         tools = _live_tools(host, server)
         enabled = await _row_enabled(registry, server.id)
-        out.append(_server_to_response(server, tools=tools, enabled=enabled, started_at=None))
+        out.append(
+            _server_to_response(
+                server,
+                tools=tools,
+                enabled=enabled,
+                started_at=None,
+                bundled=_is_bundled(server, bundled_names),
+            )
+        )
     return out
 
 
@@ -241,7 +269,13 @@ async def register_server(
             detail=f"failed to start MCP server: {exc.reason}",
         ) from exc
 
-    return _server_to_response(registered, tools=tools, enabled=True, started_at=started_at)
+    return _server_to_response(
+        registered,
+        tools=tools,
+        enabled=True,
+        started_at=started_at,
+        bundled=_is_bundled(registered, _bundled_names(request)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +294,13 @@ async def get_server(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such server")
     tools = _live_tools(host, server)
     enabled = await _row_enabled(registry, server.id)
-    return _server_to_response(server, tools=tools, enabled=enabled, started_at=None)
+    return _server_to_response(
+        server,
+        tools=tools,
+        enabled=enabled,
+        started_at=None,
+        bundled=_is_bundled(server, _bundled_names(request)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +368,13 @@ async def patch_server(
     # synthesising ``datetime.now()`` here would mislead clients into thinking
     # the server (re-)started at PATCH-handler time. The field is informational
     # only at this stage; ``None`` is the honest answer.
-    return _server_to_response(server, tools=tools, enabled=payload.enabled, started_at=None)
+    return _server_to_response(
+        server,
+        tools=tools,
+        enabled=payload.enabled,
+        started_at=None,
+        bundled=_is_bundled(server, _bundled_names(request)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +400,7 @@ async def delete_server(
     # Refuse to delete bundled admin rows: the seed loop re-creates them on
     # next boot, so deletion is illusory. The user almost certainly meant
     # PATCH enabled=false instead.
-    bundled_names: frozenset[str] = getattr(request.app.state, "mcp_bundled_names", frozenset())
-    if server.spec.scope == "admin" and server.spec.name in bundled_names:
+    if _is_bundled(server, _bundled_names(request)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(

@@ -56,6 +56,12 @@ class MCPServerResponse(BaseModel):  # type: ignore[explicit-any]
     last_startup_error: str | None = None
     tools: list[MCPToolResponse] = Field(default_factory=list)
     started_at: datetime | None = None
+    # True when this row was seeded from an admin-scope bundled spec
+    # (matches the same ``mcp_bundled_names`` set the DELETE handler
+    # checks). Surfaced so the UI can hide the delete affordance — the
+    # seed loop re-creates the row on next boot, so deletion is illusory
+    # and the user almost certainly meant ``enabled=false`` instead.
+    bundled: bool = False
 
 
 class MCPServerCreateRequest(BaseModel):  # type: ignore[explicit-any]

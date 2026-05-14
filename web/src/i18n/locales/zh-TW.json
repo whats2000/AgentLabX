@@ -74,6 +74,8 @@
     "scopeUser": "個人",
     "scopeAdminDesc": "Admin(所有人可見)",
     "scopeUserDesc": "個人(僅你可見)",
+    "bundled": "內建",
+    "bundledHint": "啟動時自動載入的內建伺服器。可停用以停止運行;不提供刪除,因為下次啟動時 seed 流程會重新建立此列。",
     "showTools": "顯示工具({{count}})",
     "hideTools": "隱藏工具",
     "noTools": "未發現任何工具。",

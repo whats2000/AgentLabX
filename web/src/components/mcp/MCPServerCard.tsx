@@ -6,6 +6,7 @@ import {
   Cpu,
   Globe,
   Network,
+  Package,
   ShieldCheck,
   Trash2,
   User as UserIcon,
@@ -86,6 +87,14 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
               <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {transportIcon(server.transport)} {server.transport}
               </span>
+              {server.bundled ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  title={t("mcp.bundledHint")}
+                >
+                  <Package className="h-3 w-3" /> {t("mcp.bundled")}
+                </span>
+              ) : null}
             </CardTitle>
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {server.enabled ? (
@@ -131,7 +140,7 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
                 {server.enabled ? t("mcp.disable") : t("mcp.enable")}
               </Button>
             ) : null}
-            {canMutate ? (
+            {canMutate && !server.bundled ? (
               <ConfirmDialog
                 trigger={
                   <Button type="button" variant="outline" size="sm" disabled={del.isPending}>

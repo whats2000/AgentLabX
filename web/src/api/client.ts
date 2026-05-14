@@ -89,6 +89,13 @@ export interface MCPServerDto {
   last_startup_error: string | null
   tools: MCPToolDto[]
   started_at: string | null
+  /**
+   * True when this row was seeded from an admin-scope bundled spec.
+   * Surfaced so the UI can hide the delete affordance — the seed loop
+   * re-creates the row on next boot, so deletion is illusory; the user
+   * almost certainly meant to disable it instead.
+   */
+  bundled: boolean
 }
 
 export interface MCPServerCreateRequest {
