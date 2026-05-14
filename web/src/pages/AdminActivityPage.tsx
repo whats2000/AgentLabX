@@ -20,6 +20,18 @@ function str(v: string | number | boolean | null | undefined): string {
   return String(v)
 }
 
+function shortId(id: string | number | boolean | null | undefined): string {
+  const s = str(id)
+  return s.length > 12 ? `${s.slice(0, 8)}…` : s
+}
+
+function fmtCost(v: string | number | boolean | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "0.0000"
+  const n = typeof v === "number" ? v : Number(v)
+  if (!Number.isFinite(n)) return str(v)
+  return n.toFixed(4)
+}
+
 const SUMMARY: Record<string, (p: Payload) => string> = {
   "auth.registered": (p) =>
     i18n.t("activity.auth_registered", {
@@ -74,12 +86,118 @@ const SUMMARY: Record<string, (p: Payload) => string> = {
     }),
   "admin.audit_log_cleared": (p) =>
     i18n.t("activity.admin_audit_log_cleared", { actor: str(p.actor_email) }),
+  "auth.login_rate_limited": (p) =>
+    i18n.t("activity.auth_login_rate_limited", {
+      email: str(p.attempted_email),
+      seconds: str(p.retry_after_seconds),
+    }),
+  "auth.session_revoked": (p) =>
+    i18n.t("activity.auth_session_revoked", {
+      actor: str(p.actor_email),
+      session: shortId(p.session_id),
+    }),
+  "auth.token_issued": (p) =>
+    i18n.t("activity.auth_token_issued", { actor: str(p.actor_email), label: str(p.label) }),
+  "auth.token_deleted": (p) =>
+    i18n.t("activity.auth_token_deleted", {
+      actor: str(p.actor_email),
+      token: shortId(p.token_id),
+    }),
+  "auth.token_refreshed": (p) =>
+    i18n.t("activity.auth_token_refreshed", { actor: str(p.actor_email), label: str(p.label) }),
+  "llm.called": (p) =>
+    i18n.t("activity.llm_called", {
+      model: str(p.model),
+      total: str(p.total_tokens),
+      prompt: str(p.prompt_tokens),
+      completion: str(p.completion_tokens),
+      cost: fmtCost(p.cost_usd),
+    }),
+  "llm.error": (p) => i18n.t("activity.llm_error", { model: str(p.model), error: str(p.error) }),
+  "mcp.bundle.discovery_failed": (p) =>
+    i18n.t("activity.mcp_bundle_discovery_failed", {
+      bundle: str(p.entry_point),
+      error_type: str(p.error_type),
+      reason: str(p.reason),
+    }),
+  "mcp.bundle.seed_failed": (p) =>
+    i18n.t("activity.mcp_bundle_seed_failed", {
+      bundle: str(p.bundle),
+      error_type: str(p.error_type),
+      reason: str(p.reason),
+    }),
+  "mcp.server.started": (p) =>
+    i18n.t("activity.mcp_server_started", {
+      server: str(p.server_name),
+      transport: str(p.transport),
+      tool_count: str(p.tool_count),
+    }),
+  "mcp.server.stopped": (p) =>
+    i18n.t("activity.mcp_server_stopped", { server: shortId(p.server_id) }),
+  "mcp.server.startup_failed": (p) =>
+    i18n.t("activity.mcp_server_startup_failed", {
+      server: str(p.server_name),
+      reason: str(p.reason),
+    }),
+  "mcp.server.stop_failed": (p) =>
+    i18n.t("activity.mcp_server_stop_failed", {
+      server: shortId(p.server_id),
+      error_type: str(p.error_type),
+      reason: str(p.reason),
+    }),
+  "mcp.tool.called": (p) =>
+    i18n.t("activity.mcp_tool_called", {
+      stage: str(p.stage),
+      agent: str(p.agent),
+      tool: str(p.tool),
+      server: shortId(p.server_id),
+    }),
+  "mcp.tool.refused": (p) =>
+    i18n.t("activity.mcp_tool_refused", {
+      stage: str(p.stage),
+      agent: str(p.agent),
+      tool: str(p.tool),
+      reason: str(p.reason),
+    }),
+  "mcp.tool.error": (p) =>
+    i18n.t("activity.mcp_tool_error", {
+      stage: str(p.stage),
+      agent: str(p.agent),
+      tool: str(p.tool),
+      error_type: str(p.error_type),
+      reason: str(p.reason),
+    }),
 }
 
-function summarise(event: AuditEventDto): string {
+function summarise(event: AuditEventDto): string | null {
   const fn = SUMMARY[event.kind]
   if (fn) return fn(event.payload)
-  return JSON.stringify(event.payload)
+  return null
+}
+
+// Trim long scalar values to keep the row scannable. Full payload is
+// available in the JSONL audit file; the activity feed is a glance surface.
+function trimValue(v: string): string {
+  return v.length > 80 ? `${v.slice(0, 77)}…` : v
+}
+
+function PayloadChips({ payload }: { payload: AuditEventDto["payload"] }): React.JSX.Element {
+  const entries = Object.entries(payload).filter(([, v]) => v !== null && v !== "")
+  if (entries.length === 0) {
+    return <span className="text-xs italic text-muted-foreground">(no payload)</span>
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      {entries.map(([k, v]) => (
+        <span key={k} className="inline-flex items-baseline gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            {k}
+          </span>
+          <span className="font-mono text-foreground">{trimValue(String(v))}</span>
+        </span>
+      ))}
+    </span>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -190,15 +308,20 @@ export function AdminActivityPage(): React.JSX.Element {
           )}
           {events.data && events.data.length > 0 && (
             <ul className="divide-y divide-border text-sm">
-              {events.data.map((ev, i) => (
-                <li key={i} className="flex items-start gap-3 py-2 min-w-0">
-                  <span className="w-16 shrink-0 text-xs text-muted-foreground pt-0.5">
-                    {relativeTime(ev.at)}
-                  </span>
-                  <KindPill kind={ev.kind} />
-                  <span className="min-w-0 break-words text-foreground">{summarise(ev)}</span>
-                </li>
-              ))}
+              {events.data.map((ev, i) => {
+                const summary = summarise(ev)
+                return (
+                  <li key={i} className="flex items-start gap-3 py-2 min-w-0">
+                    <span className="w-16 shrink-0 text-xs text-muted-foreground pt-0.5">
+                      {relativeTime(ev.at)}
+                    </span>
+                    <KindPill kind={ev.kind} />
+                    <span className="min-w-0 break-words text-foreground">
+                      {summary !== null ? summary : <PayloadChips payload={ev.payload} />}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </CardContent>
