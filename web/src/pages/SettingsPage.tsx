@@ -85,6 +85,7 @@ export function SettingsPage(): React.JSX.Element {
                   setValue(e.target.value)
                 }}
                 required
+                autoComplete="off"
               />
             </div>
             {put.error ? (

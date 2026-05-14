@@ -229,6 +229,7 @@ function SlotRow({
               placeholder={t("mcp.slotValuePlaceholder")}
               required
               autoFocus
+              autoComplete="off"
             />
           </div>
           <Button type="submit" size="sm" disabled={put.isPending || value.length === 0}>

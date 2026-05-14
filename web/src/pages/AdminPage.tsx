@@ -113,6 +113,7 @@ export function AdminPage(): React.JSX.Element {
                 }}
                 required
                 minLength={8}
+                autoComplete="new-password"
               />
             </div>
             {create.error ? (

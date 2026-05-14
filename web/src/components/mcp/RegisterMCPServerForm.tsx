@@ -346,6 +346,7 @@ export function RegisterMCPServerForm({ isAdmin, onClose }: Props): React.JSX.El
                           patchSlot(idx, { value: e.target.value })
                         }}
                         placeholder={t("mcp.slotValuePlaceholder")}
+                        autoComplete="off"
                       />
                     </div>
                     <Button

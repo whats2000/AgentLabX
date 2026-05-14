@@ -202,6 +202,7 @@ export function ProfilePage(): React.JSX.Element {
                   setEmailPass(e.target.value)
                 }}
                 required
+                autoComplete="current-password"
               />
             </div>
             {updateEmail.error ? (
@@ -232,6 +233,7 @@ export function ProfilePage(): React.JSX.Element {
                   setOldP(e.target.value)
                 }}
                 required
+                autoComplete="current-password"
               />
             </div>
             <div className="space-y-2">
@@ -244,6 +246,7 @@ export function ProfilePage(): React.JSX.Element {
                 required
                 minLength={8}
                 maxLength={256}
+                autoComplete="new-password"
               />
             </div>
             <div className="space-y-2">
@@ -254,6 +257,7 @@ export function ProfilePage(): React.JSX.Element {
                   setConfirmP(e.target.value)
                 }}
                 required
+                autoComplete="new-password"
               />
             </div>
             {mismatch ? (
