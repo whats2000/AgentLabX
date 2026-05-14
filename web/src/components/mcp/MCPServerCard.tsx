@@ -38,6 +38,10 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [toolsOpen, setToolsOpen] = React.useState(false)
+  // Defer mounting the tool rows (each with their own form + hooks) until
+  // the user first opens this card. Stays mounted after that so the
+  // collapse animation completes and per-row state survives.
+  const [toolsEverOpened, setToolsEverOpened] = React.useState(false)
 
   const canMutate = isAdmin || server.scope === "user"
 
@@ -194,7 +198,10 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
           type="button"
           className="alx-press group flex w-full items-center gap-2 rounded border border-dashed border-border bg-muted/30 px-2 py-1.5 text-left text-sm text-muted-foreground transition-all duration-200 ease-out-soft hover:border-border/80 hover:bg-muted/60 hover:text-foreground"
           onClick={() => {
-            setToolsOpen((v) => !v)
+            setToolsOpen((v) => {
+              if (!v) setToolsEverOpened(true)
+              return !v
+            })
           }}
           aria-expanded={toolsOpen}
         >
@@ -217,15 +224,17 @@ export function MCPServerCard({ server, isAdmin }: Props): React.JSX.Element {
           aria-hidden={!toolsOpen}
         >
           <div className="min-h-0 overflow-hidden">
-            {server.tools.length > 0 ? (
-              <ul className="space-y-2 pt-1">
-                {server.tools.map((tool) => (
-                  <MCPToolRow key={`${tool.server_id}::${tool.tool_name}`} tool={tool} />
-                ))}
-              </ul>
-            ) : (
-              <p className="pt-1 text-xs text-muted-foreground">{t("mcp.noTools")}</p>
-            )}
+            {toolsEverOpened ? (
+              server.tools.length > 0 ? (
+                <ul className="space-y-2 pt-1">
+                  {server.tools.map((tool) => (
+                    <MCPToolRow key={`${tool.server_id}::${tool.tool_name}`} tool={tool} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="pt-1 text-xs text-muted-foreground">{t("mcp.noTools")}</p>
+              )
+            ) : null}
           </div>
         </div>
       </CardContent>

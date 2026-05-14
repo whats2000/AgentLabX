@@ -13,13 +13,12 @@ interface Props {
   tool: MCPToolDto
 }
 
-export function MCPToolRow({ tool }: Props): React.JSX.Element {
+// Inner invoke form. Kept in a child so its useState/useMemo/useMutation
+// hooks (and the prefillFromSchema cost) only run after the user expands
+// the row. With many servers × many tools, eagerly mounting one of these
+// per row was the dominant cost on the MCP page.
+function MCPInvokeForm({ tool }: Props): React.JSX.Element {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = React.useState(false)
-  // Prefill the args textarea from the tool's input_schema (best-effort
-  // skeleton). Recompute when the user opens the row for the first time so
-  // schemas hot-loaded after expand are picked up; do NOT re-derive on every
-  // render, that would blow away in-progress edits.
   const initialArgs = React.useMemo(() => prefillFromSchema(tool.input_schema), [tool.input_schema])
   const [argsJson, setArgsJson] = React.useState(initialArgs)
   const [argsError, setArgsError] = React.useState<string | null>(null)
@@ -57,12 +56,88 @@ export function MCPToolRow({ tool }: Props): React.JSX.Element {
   })
 
   return (
+    <div className="space-y-3 border-t border-border p-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">{t("mcp.argsJsonLabel")}</Label>
+        <Textarea
+          rows={4}
+          value={argsJson}
+          onChange={(e) => {
+            setArgsJson(e.target.value)
+            setArgsError(null)
+          }}
+          spellCheck={false}
+        />
+        {argsError ? <p className="text-xs text-red-600 dark:text-red-400">{argsError}</p> : null}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            invoke.mutate()
+          }}
+          disabled={invoke.isPending}
+        >
+          <PlayCircle className="h-4 w-4" />
+          {invoke.isPending ? t("mcp.invoking") : t("mcp.invoke")}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={resetToSchema}>
+          {t("mcp.resetArgs")}
+        </Button>
+        {invoke.error ? (
+          <span className="text-xs text-red-600 dark:text-red-400">{invoke.error.message}</span>
+        ) : null}
+      </div>
+
+      {result ? (
+        <div
+          className={
+            result.is_error
+              ? "rounded border border-red-300 bg-red-50 p-2 text-xs dark:border-red-800 dark:bg-red-950"
+              : "rounded border border-emerald-300 bg-emerald-50 p-2 text-xs dark:border-emerald-800 dark:bg-emerald-950"
+          }
+        >
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide">
+            {result.is_error ? t("mcp.resultError") : t("mcp.resultOk")}
+          </div>
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-snug">
+            {result.text}
+          </pre>
+          {result.structured ? (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-muted-foreground">
+                {t("mcp.structured")}
+              </summary>
+              <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs">
+                {JSON.stringify(result.structured, null, 2)}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function MCPToolRow({ tool }: Props): React.JSX.Element {
+  const [expanded, setExpanded] = React.useState(false)
+  // Defer the inner form's first mount until the user expands the row.
+  // Stays mounted after that so the collapse animation completes and
+  // in-progress edits survive a re-collapse.
+  const [hasOpened, setHasOpened] = React.useState(false)
+
+  return (
     <li className="rounded border border-border bg-background/50 transition-colors duration-200 ease-out-soft hover:border-border/80">
       <button
         type="button"
         className="group flex w-full items-start gap-2 p-3 text-left transition-colors duration-200 ease-out-soft hover:bg-muted/40"
         onClick={() => {
-          setExpanded((v) => !v)
+          setExpanded((v) => {
+            if (!v) setHasOpened(true)
+            return !v
+          })
         }}
         aria-expanded={expanded}
       >
@@ -98,72 +173,7 @@ export function MCPToolRow({ tool }: Props): React.JSX.Element {
         aria-hidden={!expanded}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="space-y-3 border-t border-border p-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("mcp.argsJsonLabel")}</Label>
-              <Textarea
-                rows={4}
-                value={argsJson}
-                onChange={(e) => {
-                  setArgsJson(e.target.value)
-                  setArgsError(null)
-                }}
-                spellCheck={false}
-              />
-              {argsError ? (
-                <p className="text-xs text-red-600 dark:text-red-400">{argsError}</p>
-              ) : null}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  invoke.mutate()
-                }}
-                disabled={invoke.isPending}
-              >
-                <PlayCircle className="h-4 w-4" />
-                {invoke.isPending ? t("mcp.invoking") : t("mcp.invoke")}
-              </Button>
-              <Button type="button" size="sm" variant="outline" onClick={resetToSchema}>
-                {t("mcp.resetArgs")}
-              </Button>
-              {invoke.error ? (
-                <span className="text-xs text-red-600 dark:text-red-400">
-                  {invoke.error.message}
-                </span>
-              ) : null}
-            </div>
-
-            {result ? (
-              <div
-                className={
-                  result.is_error
-                    ? "rounded border border-red-300 bg-red-50 p-2 text-xs dark:border-red-800 dark:bg-red-950"
-                    : "rounded border border-emerald-300 bg-emerald-50 p-2 text-xs dark:border-emerald-800 dark:bg-emerald-950"
-                }
-              >
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide">
-                  {result.is_error ? t("mcp.resultError") : t("mcp.resultOk")}
-                </div>
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-snug">
-                  {result.text}
-                </pre>
-                {result.structured ? (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {t("mcp.structured")}
-                    </summary>
-                    <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs">
-                      {JSON.stringify(result.structured, null, 2)}
-                    </pre>
-                  </details>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+          {hasOpened ? <MCPInvokeForm tool={tool} /> : null}
         </div>
       </div>
     </li>
