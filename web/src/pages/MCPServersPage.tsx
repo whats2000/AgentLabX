@@ -20,6 +20,12 @@ export function MCPServersPage(): React.JSX.Element {
   const { t } = useTranslation()
   const { identity } = useAuth()
   const [showRegister, setShowRegister] = React.useState(false)
+  // hasOpened defers the form's first mount until the user actually clicks
+  // "Register" — otherwise every page load would pay the mount cost of a
+  // form most visits never touch. After the first open it stays mounted
+  // across open/close cycles so the drawer can animate both directions and
+  // in-progress inputs survive an accidental close.
+  const [hasOpened, setHasOpened] = React.useState(false)
 
   const servers = useQuery<MCPServerDto[]>({
     queryKey: ["mcp-servers"],
@@ -52,7 +58,10 @@ export function MCPServersPage(): React.JSX.Element {
           <Button
             type="button"
             onClick={() => {
-              setShowRegister((v) => !v)
+              setShowRegister((v) => {
+                if (!v) setHasOpened(true)
+                return !v
+              })
             }}
           >
             <Plus className="h-4 w-4" />
@@ -61,14 +70,24 @@ export function MCPServersPage(): React.JSX.Element {
         </div>
       </div>
 
-      {showRegister ? (
-        <RegisterMCPServerForm
-          isAdmin={isAdmin}
-          onClose={() => {
-            setShowRegister(false)
-          }}
-        />
-      ) : null}
+      <div
+        className={
+          "grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out-snap " +
+          (showRegister ? "grid-rows-[1fr] opacity-100" : "-mt-6 grid-rows-[0fr] opacity-0")
+        }
+        aria-hidden={!showRegister}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {hasOpened ? (
+            <RegisterMCPServerForm
+              isAdmin={isAdmin}
+              onClose={() => {
+                setShowRegister(false)
+              }}
+            />
+          ) : null}
+        </div>
+      </div>
 
       {servers.isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
