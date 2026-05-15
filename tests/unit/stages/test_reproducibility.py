@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict
 
 import pytest
 from pydantic import ValidationError
@@ -13,7 +14,17 @@ from agentlabx.stages.reproducibility import ReproducibilityContract
 # Helpers
 # ---------------------------------------------------------------------------
 
-VALID_KWARGS: dict[str, object] = {
+
+class _RepoKwargs(TypedDict):
+    seed: int
+    env_hash: str
+    deps_snapshot: dict[str, str]
+    run_command: str
+    container_image: str | None
+    git_ref: str | None
+
+
+VALID_KWARGS: _RepoKwargs = {
     "seed": 42,
     "env_hash": "sha256:abc123",
     "deps_snapshot": {"numpy": "1.26.0", "torch": "2.3.0"},
@@ -24,42 +35,21 @@ VALID_KWARGS: dict[str, object] = {
 
 
 def make_contract(**overrides: object) -> ReproducibilityContract:
-    kwargs = {**VALID_KWARGS, **overrides}
-    return ReproducibilityContract(**kwargs)  # type: ignore[arg-type]
+    merged: dict[str, object] = {**VALID_KWARGS, **overrides}
+    return ReproducibilityContract(**merged)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
-# Round-trip
+# Round-trip (single consolidated test)
 # ---------------------------------------------------------------------------
 
 
-def test_round_trip_json_mode() -> None:
-    """model_dump(mode='json') -> model_validate produces an equal contract."""
-    original = make_contract()
-    dumped = original.model_dump(mode="json")
-    restored = ReproducibilityContract.model_validate(dumped)
-
-    assert restored.seed == original.seed
-    assert restored.env_hash == original.env_hash
-    assert restored.deps_snapshot == original.deps_snapshot
-    assert restored.run_command == original.run_command
-    assert restored.container_image == original.container_image
-    assert restored.git_ref == original.git_ref
-
-
-def test_round_trip_equality() -> None:
-    """Frozen Pydantic models compare equal after a JSON round-trip."""
+def test_round_trip() -> None:
+    """JSON round-trip produces an equal contract; created_at stays a datetime."""
     original = make_contract()
     dumped = original.model_dump(mode="json")
     restored = ReproducibilityContract.model_validate(dumped)
     assert restored == original
-
-
-def test_created_at_round_trip() -> None:
-    """created_at survives a JSON round-trip as a datetime instance."""
-    original = make_contract()
-    dumped = original.model_dump(mode="json")
-    restored = ReproducibilityContract.model_validate(dumped)
     assert isinstance(restored.created_at, datetime)
 
 
@@ -95,21 +85,13 @@ def test_none_git_ref_accepted() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_missing_git_ref_raises() -> None:
-    """Omitting git_ref (required, no default) must raise ValidationError."""
-    data = {k: v for k, v in VALID_KWARGS.items() if k != "git_ref"}
-    with pytest.raises(ValidationError):
-        ReproducibilityContract(**data)  # type: ignore[arg-type]
-
-
-def test_missing_container_image_raises() -> None:
-    data = {k: v for k, v in VALID_KWARGS.items() if k != "container_image"}
-    with pytest.raises(ValidationError):
-        ReproducibilityContract(**data)  # type: ignore[arg-type]
-
-
-def test_missing_seed_raises() -> None:
-    data = {k: v for k, v in VALID_KWARGS.items() if k != "seed"}
+@pytest.mark.parametrize(
+    "missing_field",
+    ["seed", "env_hash", "container_image", "git_ref", "run_command", "deps_snapshot"],
+)
+def test_required_field_missing_raises(missing_field: str) -> None:
+    """Omitting any required field must raise ValidationError."""
+    data = {k: v for k, v in VALID_KWARGS.items() if k != missing_field}
     with pytest.raises(ValidationError):
         ReproducibilityContract(**data)  # type: ignore[arg-type]
 
@@ -141,7 +123,7 @@ def test_empty_run_command_raises() -> None:
 
 def test_frozen_model_rejects_mutation() -> None:
     contract = make_contract()
-    with pytest.raises((ValidationError, TypeError)):
+    with pytest.raises(ValidationError):
         contract.seed = 99  # noqa: B010
 
 
