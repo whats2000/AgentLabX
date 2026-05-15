@@ -1,13 +1,13 @@
 """Stage I/O contracts for the `interpretation` stage.
 
-Capabilities (A8 allow-list reference): memory_read, code_exec.
+Capabilities (A8 allow-list reference):
+  Required: memory_read
+  Optional: code_exec (sanity-check derivations)
 
 Tool grounding:
 - findings: LLM-synthesised findings grounded in metrics and artifact content
 - confidence_notes: LLM-generated caveats; empty list is legitimate for
   confident findings
-
-# Capabilities: memory_read, code_exec
 """
 
 from __future__ import annotations

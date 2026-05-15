@@ -1,6 +1,8 @@
 """Stage I/O contracts for the `report_writing` stage.
 
-Capabilities (A8 allow-list reference): fs_read, fs_write, code_exec, web_fetch.
+Capabilities (A8 allow-list reference):
+  Required: fs_read, fs_write
+  Optional: code_exec, web_fetch
 
 Tool grounding:
 - report_markdown: filesystem.write_file path wrapped as ArtifactRef
@@ -11,8 +13,6 @@ Tool grounding:
 
 Required-no-default fields: report_latex, report_pdf, pandoc_log must be PRESENT
 (None is allowed, omission is rejected) per FR-7 pattern.
-
-# Capabilities: fs_read, fs_write, code_exec, web_fetch
 """
 
 from __future__ import annotations

@@ -1,6 +1,8 @@
 """Stage I/O contracts for the `plan_formulation` stage.
 
-Capabilities (A8 allow-list reference): memory_read, paper_search.
+Capabilities (A8 allow-list reference):
+  Required: memory_read
+  Optional: paper_search (related-work expansion)
 
 Tool grounding:
 - hypotheses: LLM-synthesised from citations and research question
@@ -10,8 +12,6 @@ Tool grounding:
 
 PI ratification is NOT carried on the output — A8 emits as event per Q6
 pushback.
-
-# Capabilities: memory_read, paper_search
 """
 
 from __future__ import annotations
