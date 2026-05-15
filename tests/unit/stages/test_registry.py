@@ -395,9 +395,8 @@ def test_discover_stages_no_entry_points_registered() -> None:
     """In a clean test environment, no entry points exist — registry stays empty."""
     registry = StageRegistry()
     # In a fresh install without registered entry points this should be a no-op.
-    # We call it and verify the registry remains empty for all stage names.
     discover_stages(registry)
     for name in STAGE_NAMES:
-        # Either empty (no eps registered) or populated (eps registered in dev install).
-        # This test only asserts that the call does not raise.
-        _ = registry.implementations_for(name)
+        assert registry.implementations_for(name) == [], (
+            f"expected no impls for {name!r} before any entry points are registered"
+        )

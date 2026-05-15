@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import warnings
 from importlib.metadata import entry_points
-from typing import ClassVar, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -171,8 +171,6 @@ class StageRegistry:
         impl_class = registry.default_for("literature_review")
     """
 
-    _registry: ClassVar[None] = None  # instance-level; declared for mypy
-
     def __init__(self) -> None:
         self._impls: dict[str, list[type[Stage[BaseModel, BaseModel]]]] = {}
 
@@ -260,6 +258,9 @@ class StageRegistry:
                 stacklevel=2,
             )
 
+        # TypeVar-bound generics (_InputT/_OutputT) vs concrete BaseModel storage:
+        # mypy's invariance on type[Stage[...]] makes the generic-to-concrete
+        # assignment unprovable at the append site, but the value is structurally correct.
         self._impls.setdefault(name, []).append(impl)  # type: ignore[arg-type]
 
     def implementations_for(self, stage_name: str) -> list[type[Stage[BaseModel, BaseModel]]]:
