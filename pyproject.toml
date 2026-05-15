@@ -48,13 +48,13 @@ memory = "agentlabx.mcp.bundles.memory_server"
 
 [project.entry-points."agentlabx.stages"]
 literature_review = "agentlabx.stages.echo.stages:EchoLiteratureReviewStage"
-plan_formulation  = "agentlabx.stages.echo.stages:EchoPlanFormulationStage"
-data_exploration  = "agentlabx.stages.echo.stages:EchoDataExplorationStage"
-data_preparation  = "agentlabx.stages.echo.stages:EchoDataPreparationStage"
-experimentation   = "agentlabx.stages.echo.stages:EchoExperimentationStage"
-interpretation    = "agentlabx.stages.echo.stages:EchoInterpretationStage"
-report_writing    = "agentlabx.stages.echo.stages:EchoReportWritingStage"
-peer_review       = "agentlabx.stages.echo.stages:EchoPeerReviewStage"
+plan_formulation = "agentlabx.stages.echo.stages:EchoPlanFormulationStage"
+data_exploration = "agentlabx.stages.echo.stages:EchoDataExplorationStage"
+data_preparation = "agentlabx.stages.echo.stages:EchoDataPreparationStage"
+experimentation = "agentlabx.stages.echo.stages:EchoExperimentationStage"
+interpretation = "agentlabx.stages.echo.stages:EchoInterpretationStage"
+report_writing = "agentlabx.stages.echo.stages:EchoReportWritingStage"
+peer_review = "agentlabx.stages.echo.stages:EchoPeerReviewStage"
 
 [build-system]
 requires = ["hatchling"]

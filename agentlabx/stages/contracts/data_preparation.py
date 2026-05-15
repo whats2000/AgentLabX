@@ -7,8 +7,6 @@ Tool grounding:
 - splits: dict keys train/val/test; each value is a filesystem.write_file ArtifactRef
 - transforms: LLM-described list of data transformations applied
 - exec_log: direct code.exec payload (stdout, stderr, exit_code)
-
-# Capabilities: fs_read, fs_write, code_exec
 """
 
 from __future__ import annotations

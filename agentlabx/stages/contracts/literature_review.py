@@ -6,8 +6,6 @@ Tool grounding:
 - citations: list[Citation] from arxiv.search_papers / semantic_scholar.paper_relevance_search
 - summaries: LLM-synthesised over arxiv.read_paper.content + A5 RAG chunks
 - corpus_id: assigned by A5 RAG ingestion
-
-# Capabilities: paper_search, paper_fetch, memory_read
 """
 
 from __future__ import annotations

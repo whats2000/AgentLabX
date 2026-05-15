@@ -334,11 +334,9 @@ async def test_echo_stage_produces_valid_output(
     )
     assert isinstance(validated, StageOutput)
 
-    # Reproducibility only on experimentation
-    if stage_name == "experimentation":
-        assert result.reproducibility is not None, (
-            "EchoExperimentationStage must have reproducibility"
-        )
+    # Reproducibility only on stages that declare requires_reproducibility = True
+    if stage_cls.requires_reproducibility:
+        assert result.reproducibility is not None, f"{stage_cls.__name__} must have reproducibility"
         assert isinstance(result.reproducibility, ReproducibilityContract)
     else:
         assert result.reproducibility is None, (

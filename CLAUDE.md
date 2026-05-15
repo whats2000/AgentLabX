@@ -58,4 +58,10 @@ documented anti-pattern (see the "spec alignment" memory note).
 - **Stage A3** — MCP host + dispatcher with capability gating, six
   bundled servers (filesystem, arxiv, semantic_scholar, browser,
   code_execution, memory), `/api/mcp/*` REST surface, `/mcp` UI.
+- **Stage A4** — Stage contract framework: `Stage` ABC + frozen Pydantic v2 I/O
+  contracts for all 8 pipeline stages, `ReproducibilityContract`,
+  `BacktrackSignal` (canonical `preserve` tags), `StageOutput`,
+  `StageContext` (`run_mode: Literal["auto","hitl"]`), `StageRegistry`
+  (entry-point discovery, 5-rule enforcement), `StageIOValidator`,
+  8 `Echo*Stage` stubs. No Layer B implementations yet.
 - See [`README.md`](README.md) for the full per-stage progress list.

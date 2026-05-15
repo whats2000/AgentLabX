@@ -11,8 +11,6 @@ Tool grounding:
 
 M-1 fix: metrics and methodology mirror ReportWritingInput so the reviewer can
 emit "fundamental issue" backtracks grounded in numeric results and methods.
-
-# Capabilities: fs_read, memory_read
 """
 
 from __future__ import annotations

@@ -11,8 +11,6 @@ Tool grounding:
 requires_reproducibility = True is set as a ClassVar on the Stage subclass
 (Task 8); the ReproducibilityContract itself lives on StageOutput.reproducibility
 from Task 2 and is NOT carried in this contract output.
-
-# Capabilities: fs_read, fs_write, code_exec, memory_write
 """
 
 from __future__ import annotations

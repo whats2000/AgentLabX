@@ -10,8 +10,6 @@ Tool grounding:
 
 Directory snapshots from filesystem.directory_tree are NOT carried — they
 land in events per Q5 pushback.
-
-# Capabilities: fs_read, fs_write, code_exec
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -109,10 +109,13 @@ def _make_dataset_ref() -> DatasetRef:
     return DatasetRef(dataset_id="ds-1", name="MedSeg", split_hint="train")
 
 
-def _make_artifact_ref(kind: str = "model", name: str = "model.pt") -> ArtifactRef:
+_ArtifactKind = Literal["dataset", "split", "script", "model", "report", "plot", "table", "other"]
+
+
+def _make_artifact_ref(kind: _ArtifactKind = "model", name: str = "model.pt") -> ArtifactRef:
     return ArtifactRef(
         artifact_id=f"a-{name}",
-        kind=kind,  # type: ignore[arg-type]
+        kind=kind,
         path=f"/workspace/runs/run-1/{name}",
         content_hash="sha256:deadbeef" * 4,
     )
