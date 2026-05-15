@@ -368,7 +368,7 @@ def test_echo_stage_registers_cleanly(
 ) -> None:
     """Each EchoStage registers in a fresh StageRegistry without raising."""
     registry = StageRegistry()
-    registry.register(stage_cls)  # type: ignore[misc]
+    registry.register(stage_cls)  # type: ignore[misc]  # mypy cannot unify the union of concrete Echo* class types to type[Stage[BaseModel, BaseModel]]
     impls = registry.implementations_for(stage_cls.stage_name)
     assert stage_cls in impls
 

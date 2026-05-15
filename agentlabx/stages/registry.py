@@ -152,6 +152,9 @@ backtrack targets, so preserve semantics are vacuous.
 
 _SEED_CAPABILITIES_SET: frozenset[str] = frozenset(SEED_CAPABILITIES)
 
+# TypeVars on register() prevent mypy invariance errors when callers pass concrete Stage
+# subclasses; the internal storage holds type[Stage[BaseModel, BaseModel]] which would
+# normally not unify with the concrete generic instantiation at the call site.
 _InputT = TypeVar("_InputT", bound=BaseModel)
 _OutputT = TypeVar("_OutputT", bound=BaseModel)
 

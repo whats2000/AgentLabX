@@ -84,13 +84,17 @@ def validate_output(
     to determine whether a :class:`~agentlabx.stages.reproducibility.ReproducibilityContract`
     is required.  Never queries the registered :class:`Stage` subclass.
 
-    Reproducibility policy:
+    Reproducibility handling per stage:
 
-    * Stages in :data:`~agentlabx.stages.registry.STAGE_REPRODUCIBILITY_REQUIRED`
-      **must** supply a complete ``reproducibility`` dict.  Supplying ``None`` or
-      an incomplete dict raises :class:`~agentlabx.stages.protocol.StageValidationError`.
-    * Stages **not** in ``STAGE_REPRODUCIBILITY_REQUIRED`` may supply
-      ``reproducibility`` or omit it; both are silently accepted.
+    * For stages in :data:`~agentlabx.stages.registry.STAGE_REPRODUCIBILITY_REQUIRED`:
+      a complete :class:`~agentlabx.stages.reproducibility.ReproducibilityContract`
+      is required.  Supplying ``None`` or a malformed dict raises
+      :class:`~agentlabx.stages.protocol.StageValidationError`.
+    * For other stages: ``None`` is fine; if a valid
+      :class:`~agentlabx.stages.reproducibility.ReproducibilityContract` dict is
+      provided it is accepted and attached to the output; if a *malformed* dict is
+      provided it still raises :class:`~agentlabx.stages.protocol.StageValidationError`
+      — the validator never silently accepts invalid Pydantic payloads.
 
     .. note::
         The return type is ``StageOutput[BaseModel]`` because Pydantic v2 generic
@@ -157,7 +161,8 @@ def validate_output(
                 str(e),
             ) from e
     elif reproducibility is not None:
-        # Silently accept reproducibility for stages that do not require it
+        # Accept a valid ReproducibilityContract for stages that do not require one;
+        # a malformed dict still raises StageValidationError via Pydantic validation.
         try:
             repro_obj = ReproducibilityContract.model_validate(reproducibility)
         except ValidationError as e:

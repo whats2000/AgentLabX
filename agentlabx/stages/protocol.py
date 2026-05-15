@@ -212,6 +212,10 @@ class Stage[InputT: BaseModel, OutputT: BaseModel](abc.ABC):
         """
 
 
+# Sentinel for missing ClassVar (avoids shadowing builtins).
+_MISSING: object = object()
+
+
 def _validate_stage_classvars(cls: type) -> None:
     """Perform structural-only ClassVar validation for a :class:`Stage` subclass.
 
@@ -293,10 +297,6 @@ def _validate_stage_classvars(cls: type) -> None:
             "backtrack_targets",
             f"must be a frozenset, got {type(backtrack_targets).__name__!r}",
         )
-
-
-# Sentinel for missing ClassVar (avoids shadowing builtins).
-_MISSING: object = object()
 
 
 # ---------------------------------------------------------------------------
