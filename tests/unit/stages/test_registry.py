@@ -383,20 +383,20 @@ class TestDefaultFor:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="entry points not yet registered — see Task 8")
 def test_discover_stages_loads_entry_points() -> None:
-    """Full entry-point discovery — skipped until Task 8 ships echo stubs."""
+    """Full entry-point discovery loads all 8 echo stubs into the registry."""
+    from agentlabx.stages.echo.stages import EchoLiteratureReviewStage
+
     registry = StageRegistry()
     discover_stages(registry)
-    # After Task 8, assert that known stub stages appear in the registry.
 
+    # literature_review should have exactly the echo stub
+    assert registry.implementations_for("literature_review") == [EchoLiteratureReviewStage]
 
-def test_discover_stages_no_entry_points_registered() -> None:
-    """In a clean test environment, no entry points exist — registry stays empty."""
-    registry = StageRegistry()
-    # In a fresh install without registered entry points this should be a no-op.
-    discover_stages(registry)
+    # All 8 canonical stages must have at least one registered impl
     for name in STAGE_NAMES:
-        assert registry.implementations_for(name) == [], (
-            f"expected no impls for {name!r} before any entry points are registered"
-        )
+        impls = registry.implementations_for(name)
+        assert len(impls) >= 1, f"expected ≥1 impl for {name!r} after discover_stages"
+
+    # default_for works on literature_review (sole impl)
+    assert registry.default_for("literature_review") is EchoLiteratureReviewStage
