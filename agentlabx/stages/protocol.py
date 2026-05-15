@@ -192,15 +192,6 @@ class Stage[InputT: BaseModel, OutputT: BaseModel](abc.ABC):
                 lives in Task 5.
         """
         super().__init_subclass__(**kwargs)
-
-        # Skip validation for abstract intermediate classes that deliberately
-        # omit ClassVars (e.g. a generic mixin that will be completed later).
-        # We detect this by checking abc.ABC's abstract method set.
-        if abc.ABC in cls.__mro__ and cls is not Stage:
-            # Still validate — only truly abstract intermediates should omit.
-            # We want leaf stage classes to always be validated.
-            pass
-
         _validate_stage_classvars(cls)
 
     @abc.abstractmethod

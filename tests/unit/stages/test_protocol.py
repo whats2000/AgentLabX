@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 from agentlabx.stages.protocol import (
     BacktrackSignal,
     BacktrackTargetError,
+    JSONValue,
     Stage,
     StageContext,
     StageContractMismatchError,
@@ -46,7 +47,7 @@ class _X(BaseModel):  # type: ignore[explicit-any]
 def _make_ctx() -> StageContext:
     """Return a minimal valid StageContext."""
 
-    async def _noop_emit(kind: str, payload: dict[str, object]) -> None:  # noqa: ARG001
+    async def _noop_emit(kind: str, payload: dict[str, JSONValue]) -> None:  # noqa: ARG001
         return
 
     return StageContext(
@@ -55,7 +56,7 @@ def _make_ctx() -> StageContext:
         stage_run_id="srun-1",
         identity_id="id-1",
         run_mode="auto",
-        emit_event=_noop_emit,  # type: ignore[arg-type]
+        emit_event=_noop_emit,
         now=lambda: datetime.now(UTC),
     )
 
