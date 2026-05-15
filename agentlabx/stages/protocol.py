@@ -232,11 +232,7 @@ def _validate_stage_classvars(cls: type) -> None:
         StageContractMismatchError: On any structural violation.
     """
     # stage_name
-    stage_name = cls.__dict__.get("stage_name", _MISSING)
-    if stage_name is _MISSING:
-        # Also check via class attribute (inherited) — but we want concrete
-        # classes to define their own, so check __dict__ first.
-        stage_name = getattr(cls, "stage_name", _MISSING)
+    stage_name = getattr(cls, "stage_name", _MISSING)
     if stage_name is _MISSING:
         raise StageContractMismatchError(
             cls.__name__,

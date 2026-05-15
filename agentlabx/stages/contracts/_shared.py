@@ -1,4 +1,9 @@
-"""Shared sub-models for stage contracts. Task 3 extends this file."""
+"""Shared sub-models for stage contracts (A4 Task 3).
+
+Frozen Pydantic v2 models referenced across multiple per-stage contracts.
+Every tool-output-derived model (``ExecLog``, ``MemoryEntryRef``) mirrors the
+JSON payload shape of the producing MCP tool exactly.
+"""
 
 from __future__ import annotations
 
